@@ -1,589 +1,138 @@
-import React, { useState } from 'react';
-import SignalPathModal from './SignalPathModal';
+import React, { useState, useEffect, useRef } from 'react';
+import Icon from './Icon';
+import Cover from './Cover';
+import SignalPathSteps from './SignalPathSteps';
+import QueueList from './QueueList';
+import { formatTime } from '../utils/audio';
+
+// Closes a popover when clicking anywhere outside `ref`
+const useOutside = (open, ref, onClose) => {
+  useEffect(() => {
+    if (!open) return undefined;
+    const handler = (e) => { if (!ref.current?.contains(e.target)) onClose(); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open, ref, onClose]);
+};
 
 const PlayerBar = ({
-  currentFile,
-  isPlaying,
-  currentTime,
-  onSeek,
-  onTogglePlay,
-  onNext,
-  onPrev,
-  volume,
-  onVolumeChange,
-  devices,
-  selectedDevice,
-  onDeviceChange,
-  loopMode,
-  onToggleLoop,
-  isShuffle,
-  onToggleShuffle,
-  onToggleQueue,
-  onToggleFavorite,
-  onAddPlaylist,
-  isFavorite,
-  isQueueOpen,
-  queueFiles,
-  onClearQueue,
-  onRemoveFromQueue,
-  onSaveQueueAsPlaylist,
-  theme,
-  eqEnabled,
-  setEqEnabled
+  currentFile, isPlaying, currentTime, onSeek, onTogglePlay, onNext, onPrev,
+  volume, onVolumeChange, muted, onToggleMute, selectedDevice,
+  loopMode, onToggleLoop, isShuffle, onToggleShuffle,
+  isQueueOpen, onToggleQueue, queueFiles = [], onClearQueue, onRemoveFromQueue, onSaveQueueAsPlaylist, onPlayQueued, onMoveQueued,
+  onToggleFavorite, isFavorite, eqEnabled, setEqEnabled, onOpenEq, signal, onOpenNowPlaying, stream,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isDeviceMenuOpen, setIsDeviceMenuOpen] = useState(false);
-  const [isPlayerCollapsed, setIsPlayerCollapsed] = useState(false);
-  const [isSignalPathOpen, setIsSignalPathOpen] = useState(false);
-  const [previousVolume, setPreviousVolume] = useState(volume || 100);
+  const [signalOpen, setSignalOpen] = useState(false);
+  const [favPop, setFavPop] = useState(0);
+  const rightRef = useRef(null);
+  const exclusive = selectedDevice && selectedDevice !== '-1';
 
-  const handleMuteToggle = () => {
-    if (selectedDevice !== '-1') return; // Exclusive mode
-    if (volume > 0) {
-      setPreviousVolume(volume);
-      onVolumeChange(0);
-    } else {
-      onVolumeChange(previousVolume);
-    }
-  };
+  useOutside(signalOpen, rightRef, () => setSignalOpen(false));
+  useOutside(isQueueOpen, rightRef, () => isQueueOpen && onToggleQueue());
 
-  // Helper function to handle timing strings outside of direct JSX text rendering
-  const formatTime = (time) => {
-    const mins = Math.floor((time || 0) / 60);
-    const secs = String(Math.floor((time || 0) % 60)).padStart(2, '0');
-    return `${mins}:${secs}`;
-  };
-
-  const currentFormattedTime = formatTime(currentTime);
-  const totalFormattedTime = currentFile?.metadata?.duration ? formatTime(currentFile.metadata.duration) : '0:00';
-
-  // Compute file metadata array outside of JSX tags to avoid tokenizer crashes
-  const audioSpecs = currentFile ? [
-    currentFile.ext?.toUpperCase().replace('.', ''),
-    currentFile.metadata?.bitsPerSample ? `${currentFile.metadata.bitsPerSample}-bit` : '',
-    currentFile.metadata?.sampleRate ? `${Math.round(currentFile.metadata.sampleRate / 1000)}kHz` : '',
-    currentFile.metadata?.bitrate ? `${Math.round(currentFile.metadata.bitrate / 1000)}kbps` : ''
-  ].filter(Boolean).join(' / ') : '';
-
-  const defaultCover = 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2260%22 height=%2260%22 viewBox=%220 0 60 60%22%3E%3Crect width=%2260%22 height=%2260%22 fill=%22%23333%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2224%22 fill=%22%23888%22%3E%E2%99%AB%3C/text%3E%3C/svg%3E';
+  const duration = currentFile?.metadata?.duration || 0;
+  const pct = duration ? Math.min(100, (currentTime / duration) * 100) : 0;
+  // TeleCloud stream: what is already downloaded, drawn behind the played part
+  const buffer = stream && !stream.complete && stream.ranges?.length
+    ? `linear-gradient(to right, ${stream.ranges.map(([a, b]) => `transparent ${a * 100}%, var(--buffered) ${a * 100}% ${b * 100}%, transparent ${b * 100}%`).join(', ')})`
+    : null;
 
   return (
-    <>
-      <style dangerouslySetInnerHTML={{
-        __html: `
-        .player-container {
-          position: fixed;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          height: 100px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 0 20px;
-          box-shadow: 0 -5px 20px rgba(0,0,0,0.4);
-          z-index: 100000;
-          transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s, color 0.3s;
-        }
-
-        .player-left {
-          display: flex;
-          align-items: center;
-          justify-content: flex-start;
-          flex: 0 0 auto;
-          height: 80px;
-          padding: 15px;
-          border-radius: 10px;
-          box-shadow: 0 -5px 20px rgba(230,57,70,0.2);
-          overflow: hidden;
-          position: relative;
-          margin-right: 15px;
-          transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s;
-          background: linear-gradient(to right, #ff4157, var(--accent-red));
-          z-index: 2;
-        }
-        
-        .player-controls-center {
-          position: absolute;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 100%;
-          max-width: 700px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          padding: 0 15px;
-          transition: max-width 0.3s;
-          z-index: 1;
-        }
-
-        .player-right {
-          display: flex;
-          align-items: center;
-          flex: 0 0 auto;
-          min-width: 150px;
-          justify-content: flex-end;
-          gap: 12px;
-          z-index: 2;
-        }
-
-        .progress-timeline-wrapper {
-          display: flex;
-          align-items: center;
-          width: 100%;
-          gap: 15px;
-        }
-
-        .queue-btn-text {
-          display: inline;
-        }
-
-        .responsive-dropdown {
-          position: absolute;
-          bottom: 50px;
-          right: 0;
-          z-index: 10000;
-          display: flex;
-          flex-direction: column;
-        }
-        
-        /* Tablet Breakpoints */
-        @media (max-width: 1400px) {
-          .player-controls-center {
-            max-width: 500px;
-          }
-        }
-        
-        @media (max-width: 1200px) {
-          .player-controls-center {
-            max-width: 380px;
-          }
-          .volume-slider {
-            display: none !important;
-          }
-        }
-
-        @media (max-width: 992px) {
-          .player-left {
-            width: 280px !important;
-          }
-          .expanded-actions-wrapper, .expand-arrow-toggle {
-            display: none !important;
-          }
-          .player-right {
-            min-width: auto;
-          }
-        }
-        
-        /* Mobile Breakpoints */
-        @media (max-width: 768px) {
-          .player-container {
-            height: 85px;
-            padding: 0 15px;
-            justify-content: flex-start;
-          }
-
-          .player-left {
-            flex: 1;
-            min-width: 0;
-            width: auto !important;
-            height: 65px;
-            padding: 0;
-            background: transparent !important;
-            box-shadow: none !important;
-            margin-right: 10px;
-          }
-
-          .player-left h4 {
-            color: currentColor !important;
-          }
-
-          .player-left p {
-            color: var(--text-muted) !important;
-          }
-
-          .metadata-specs-text {
-            display: none !important;
-          }
-
-          .player-controls-center {
-            position: static !important;
-            transform: none !important;
-            width: auto !important;
-            flex: 0 0 auto;
-            flex-direction: row;
-            padding: 0;
-            gap: 8px;
-            max-width: none;
-          }
-
-          .progress-timeline-wrapper {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            width: 100%;
-            gap: 0;
-          }
-
-          .progress-timeline-wrapper span {
-            display: none !important;
-          }
-
-          .progress-timeline-wrapper input[type="range"] {
-            height: 3px !important;
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            margin: 0;
-            border-radius: 0;
-          }
-
-          .player-right {
-            flex: 0 0 auto;
-            min-width: auto;
-            gap: 8px;
-          }
-
-          .hide-mobile {
-            display: none !important;
-          }
-
-          .queue-btn-text {
-            display: none !important;
-          }
-
-          .queue-trigger-btn {
-            padding: 8px !important;
-            border-radius: 50% !important;
-          }
-
-          .responsive-dropdown {
-            position: fixed;
-            bottom: 95px;
-            left: 12px;
-            right: 12px;
-            width: calc(100vw - 24px) !important;
-            max-height: 70vh !important;
-          }
-        }
-      `}} />
-
-      <div
-        className="player-container"
-        style={{
-          background: theme === 'light' ? '#f8f9fa' : 'var(--bg-secondary)',
-          color: theme === 'light' ? '#000000' : 'var(--text-main)',
-          transform: isPlayerCollapsed ? 'translateY(100px)' : 'translateY(0)'
-        }}
-      >
-        {/* Collapse Toggle Bump */}
-        <div
-          onClick={() => setIsPlayerCollapsed(!isPlayerCollapsed)}
-          style={{
-            position: 'absolute',
-            top: '-25px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: '60px',
-            height: '25px',
-            backgroundColor: 'var(--bg-secondary)',
-            borderTopLeftRadius: '30px',
-            borderTopRightRadius: '30px',
-            borderTop: '1px solid var(--bg-tertiary)',
-            borderLeft: '1px solid var(--bg-tertiary)',
-            borderRight: '1px solid var(--bg-tertiary)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            borderBottom: 'none',
-            zIndex: 3
-          }}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            width="20" height="20" fill="var(--text-muted)"
-            style={{ transform: isPlayerCollapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s' }}
-          >
-            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
-          </svg>
+    <footer className="player">
+      <div className="p-track">
+        <button className="cover-btn" onClick={onOpenNowPlaying} disabled={!currentFile} title="Open now playing" style={{ borderRadius: 8 }}>
+          <Cover file={currentFile} className={currentFile ? 'clickable' : ''} key={currentFile?.path + (currentFile?.cache_path || '')} />
+        </button>
+        <div className="meta">
+          <b>{currentFile?.metadata?.title || currentFile?.name || 'Nothing playing'}</b>
+          <span>{currentFile ? (currentFile.metadata?.artist || 'Unknown artist') : 'Pick a track to start'}</span>
         </div>
+        {currentFile && (
+          <button
+            className={`icon-btn sm ${isFavorite ? 'on' : ''} ${favPop ? 'pop' : ''}`}
+            key={favPop}
+            onClick={() => { onToggleFavorite(currentFile); setFavPop(n => n + 1); }}
+            title={isFavorite ? 'Remove from favourites' : 'Add to favourites'}
+          >
+            <Icon name="heart" filled={isFavorite} />
+          </button>
+        )}
+      </div>
 
-        {/* Current Track Info - Left Column */}
-        <div className="player-left" style={{ width: isExpanded ? '550px' : '300px' }}>
-          <img
-            src={currentFile?.path ? `media://${encodeURIComponent(currentFile.path)}` : (currentFile?.cover || defaultCover)}
-            alt="cover"
-            loading="lazy"
-            style={{ width: '60px', height: '60px', borderRadius: '4px', marginRight: '15px', objectFit: 'cover', background: 'var(--text-main)', flexShrink: 0 }}
+      <div className="p-center">
+        <div className="p-controls">
+          <button className={`icon-btn ${isShuffle ? 'on' : ''}`} onClick={onToggleShuffle} title="Shuffle"><Icon name="shuffle" /></button>
+          <button className="icon-btn" onClick={onPrev} title="Previous" disabled={!currentFile}><Icon name="prev" /></button>
+          <button className="play-btn" onClick={onTogglePlay} title={isPlaying ? 'Pause' : 'Play'} disabled={!currentFile}>
+            <Icon name={isPlaying ? 'pause' : 'play'} />
+          </button>
+          <button className="icon-btn" onClick={onNext} title="Next" disabled={!currentFile}><Icon name="next" /></button>
+          <button className={`icon-btn ${loopMode !== 'none' ? 'on' : ''}`} onClick={onToggleLoop} title={`Repeat: ${loopMode}`}>
+            <Icon name="repeat" />{loopMode === 'one' && <span className="one">1</span>}
+          </button>
+        </div>
+        <div className="p-seek">
+          <span className="mono">{formatTime(currentTime)}</span>
+          <input
+            type="range" className={`range ${buffer ? 'buffered' : ''}`} min="0" max={duration || 100} step="1"
+            value={Math.min(currentTime || 0, duration || 100)}
+            style={{ '--pct': `${pct}%`, ...(buffer ? { '--buffer': buffer } : {}) }}
+            onChange={(e) => onSeek && onSeek(parseInt(e.target.value, 10))}
+            disabled={!currentFile}
+            aria-label="Seek"
           />
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <h4 style={{ margin: '5px 0 5px 0', fontSize: '16px', fontWeight: 'bold', color: 'white', lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {currentFile?.metadata?.title || currentFile?.name || 'No song'}
-            </h4>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <p style={{ margin: 0, fontSize: '12px', color: '#ffcccc', lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
-                {currentFile?.metadata?.artist || 'Unknown Artist'}
-              </p>
-              {currentFile && (
-                <>
-                  <span style={{ color: '#ffcccc', fontSize: '10px' }}>•</span>
-                  <p style={{ margin: 0, fontSize: '10px', color: 'white', fontWeight: 'bold' }}>
-                    {[currentFile.ext?.toUpperCase().replace('.', ''), currentFile.metadata?.bitsPerSample ? `${currentFile.metadata.bitsPerSample}-bit` : '', currentFile.metadata?.sampleRate ? `${Math.round(currentFile.metadata.sampleRate / 1000)}kHz` : '', currentFile.metadata?.bitrate ? `${Math.round(currentFile.metadata.bitrate / 1000)}kbps` : ''].filter(Boolean).join(' / ')}
-                  </p>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Expanded Actions - Icon Only */}
-          <div
-            className="expanded-actions-wrapper"
-            style={{
-              display: isExpanded ? 'flex' : 'none',
-              alignItems: 'center',
-              opacity: isExpanded ? 1 : 0,
-              transition: 'opacity 0.2s',
-              marginLeft: '20px',
-              gap: '12px',
-              paddingRight: '35px'
-            }}
-          >
-            <button
-              style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', fontSize: '22px', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-              title="Download Now"
-            >
-              ⤓
-            </button>
-            <span style={{ color: '#ffcccc', fontSize: '18px', flexShrink: 0 }}>|</span>
-            <button
-              onClick={() => currentFile && onToggleFavorite(currentFile)}
-              style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', fontSize: '22px', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-              title={isFavorite ? 'Remove Favourite' : 'Add To Favourites'}
-            >
-              {isFavorite ? '♥' : '♡'}
-            </button>
-            <span style={{ color: '#ffcccc', fontSize: '18px', flexShrink: 0 }}>|</span>
-            <button
-              onClick={() => currentFile && onAddPlaylist(currentFile)}
-              style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', fontSize: '22px', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-              title="Add To Playlist"
-            >
-              ☰
-            </button>
-          </div>
-
-          <div
-            className="expand-arrow-toggle"
-            onClick={() => setIsExpanded(!isExpanded)}
-            style={{ cursor: 'pointer', border: '1px solid white', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'absolute', right: '10px', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s', color: 'white' }}
-          >
-            {isExpanded ? '‹' : '›'}
-          </div>
-        </div>
-
-        {/* Controls - Center Column */}
-        <div className="player-controls-center">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '5px' }}>
-            <div className="hide-mobile" style={{ position: 'relative', marginRight: '10px' }}>
-              <button
-                onClick={() => setIsSignalPathOpen(!isSignalPathOpen)}
-                style={{ background: 'transparent', border: 'none', color: '#25b682', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%', transition: 'background 0.2s' }}
-                onMouseOver={e => e.currentTarget.style.background = 'rgba(37, 182, 130, 0.1)'}
-                onMouseOut={e => e.currentTarget.style.background = 'transparent'}
-                title="Signal Path"
-              >
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M16 3l-4 4h3v5c0 1.1-.9 2-2 2H9c-2.21 0-4 1.79-4 4v3H3v-3c0-1.1.9-2 2-2h4c2.21 0 4-1.79 4-4V7h3l-4-4zM7 3l4 4H8v3c0 1.1.9 2 2 2h3c2.21 0 4 1.79 4 4v3h2v-3c0-1.1-.9-2-2-2h-3c-2.21 0-4-1.79-4-4V7H7z" /></svg>
-              </button>
-              {isSignalPathOpen && (
-                <div style={{ position: 'absolute', bottom: '60px', left: '0', zIndex: 10000 }}>
-                  <SignalPathModal
-                    currentFile={currentFile}
-                    selectedDevice={selectedDevice}
-                    devices={devices}
-                    eqEnabled={eqEnabled}
-                    setEqEnabled={setEqEnabled}
-                    onClose={() => setIsSignalPathOpen(false)}
-                  />
-                </div>
-              )}
-            </div>
-            <button onClick={onPrev} style={{ background: 'var(--bg-hover)', border: 'none', color: 'var(--text-main)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '44px', height: '44px', borderRadius: '50%', flexShrink: 0 }}>
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>
-            </button>
-            <button
-              onClick={onTogglePlay}
-              style={{
-                background: 'linear-gradient(to right, #ff4157, var(--accent-red))', border: 'none', borderRadius: '50%', width: '56px', height: '56px', flexShrink: 0,
-                color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 15px rgba(230,57,70,0.4)'
-              }}
-            >
-              {isPlaying ? (
-                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
-              ) : (
-                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-              )}
-            </button>
-            <button onClick={onNext} style={{ background: 'var(--bg-hover)', border: 'none', color: 'var(--text-main)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '44px', height: '44px', borderRadius: '50%', flexShrink: 0 }}>
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
-            </button>
-          </div>
-
-          {/* Progress Bar */}
-          <div className="progress-timeline-wrapper">
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 'bold' }}>
-              {currentFormattedTime}
-            </span>
-            <input
-              type="range"
-              min="0"
-              max={currentFile?.metadata?.duration || 100}
-              value={currentTime || 0}
-              onChange={(e) => onSeek && onSeek(parseInt(e.target.value))}
-              style={{ flex: 1, accentColor: 'var(--accent-red)', height: '4px', cursor: 'pointer', background: 'var(--bg-tertiary)', outline: 'none' }}
-              disabled={!currentFile}
-            />
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 'bold' }}>
-              {totalFormattedTime}
-            </span>
-          </div>
-        </div>
-
-        {/* Right Controls: Volume, Queue, Output - Right Column */}
-        <div className="player-right">
-          <div className="hide-mobile" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <div
-              onClick={handleMuteToggle}
-              style={{
-                width: '40px', height: '40px', borderRadius: '50%', border: '2px solid var(--accent-red)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-main)',
-                cursor: selectedDevice !== '-1' ? 'not-allowed' : 'pointer'
-              }}
-              title={selectedDevice !== '-1' ? 'Mute disabled in Exclusive Mode' : 'Toggle Mute'}
-            >
-              {volume === 0 ? (
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" /></svg>
-              ) : (
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" /></svg>
-              )}
-            </div>
-            <input
-              className="volume-slider"
-              type="range"
-              min="0" max="100"
-              value={volume}
-              onChange={(e) => onVolumeChange(parseInt(e.target.value))}
-              style={{ width: '80px', accentColor: 'var(--accent-red)', height: '4px' }}
-              disabled={selectedDevice !== '-1'}
-              title={selectedDevice !== '-1' ? "Volume locked in Exclusive Mode" : "Volume"}
-            />
-          </div>
-
-          <button className="hide-mobile" onClick={onToggleShuffle} style={{ background: 'var(--bg-hover)', border: 'none', color: isShuffle ? 'var(--accent-red)' : 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0 }}>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z" /></svg>
-          </button>
-          <button className="hide-mobile" onClick={onToggleLoop} style={{ background: 'var(--bg-hover)', border: 'none', color: loopMode !== 'none' ? 'var(--accent-red)' : 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0 }}>
-            {loopMode === 'one' ? (
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M13 15v-4h-2v4h2zm-1-11c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26l1.46-1.46C6.25 13.97 6 13.01 6 12c0-3.31 2.69-6 6-6v3l4-4-4-4v3zm8 8c0-1.57-.46-3.03-1.24-4.26l-1.46 1.46c.45.83.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8z" /></svg>
-            ) : (
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z" /></svg>
-            )}
-          </button>
-
-          <div style={{ position: 'relative', display: 'flex', gap: '10px' }}>
-            <button
-              className="queue-trigger-btn"
-              onClick={onToggleQueue}
-              style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'linear-gradient(to right, #ff4157, var(--accent-red))', border: 'none', borderRadius: '20px', padding: '8px 20px', color: 'white', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', flexShrink: 0 }}
-            >
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z" /></svg>
-              <span className="queue-btn-text">Queue</span>
-            </button>
-
-            {isQueueOpen && (
-              <div className="responsive-dropdown" style={{ background: 'var(--bg-card)', borderRadius: '12px', width: '320px', boxShadow: '0 -10px 40px rgba(0,0,0,0.8)', overflow: 'hidden' }}>
-                <div style={{ padding: '15px', borderBottom: '1px solid var(--bg-tertiary)', textAlign: 'center', fontWeight: 'bold', letterSpacing: '1px' }}>QUEUE</div>
-                <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
-                  {queueFiles && queueFiles.length > 0 ? queueFiles.map((file, idx) => {
-                    // Generate cover URL for local files using media:// protocol
-                    const coverUrl = file.source === 'tidal' ? file.cover : (file.path ? `media://${encodeURIComponent(file.path)}` : null);
-
-                    return (
-                      <div key={idx} style={{ display: 'flex', alignItems: 'center', padding: '10px 15px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                        <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'var(--bg-tertiary)', overflow: 'hidden', marginRight: '10px', flexShrink: 0 }}>
-                          {coverUrl ? (
-                            <img src={coverUrl} alt="cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : (
-                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg viewBox="0 0 24 24" width="20" height="20" fill="#777"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" /></svg></div>
-                          )}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: '13px', fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.metadata?.title || file.name}</div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.metadata?.artist || 'Unknown Artist'}</div>
-                        </div>
-                        <button
-                          onClick={() => onRemoveFromQueue(idx)}
-                          style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '5px', borderRadius: '50%', flexShrink: 0 }}
-                          onMouseOver={e => e.currentTarget.style.color = 'var(--text-main)'}
-                          onMouseOut={e => e.currentTarget.style.color = 'var(--text-muted)'}
-                        >
-                          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" /></svg>
-                        </button>
-                      </div>
-                    );
-                  }) : (
-                    <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>Queue is empty.</div>
-                  )}
-                </div>
-                <div style={{ padding: '15px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--bg-tertiary)' }}>
-                  <button
-                    onClick={onSaveQueueAsPlaylist}
-                    style={{ width: '100%', padding: '10px', borderRadius: '20px', background: 'linear-gradient(to right, #ff4157, var(--accent-red))', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}
-                  >
-                    Save Playlist
-                  </button>
-                  <button onClick={onClearQueue} style={{ width: '100%', padding: '8px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-main)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>Clear Queue</button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div style={{ position: 'relative' }}>
-            <button
-              onClick={() => setIsDeviceMenuOpen(!isDeviceMenuOpen)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '40px', height: '40px', borderRadius: '50%', background: 'var(--bg-hover)', border: 'none', color: 'var(--text-main)', cursor: 'pointer', flexShrink: 0 }}
-              title="Output Device"
-            >
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 3a9 9 0 0 0-9 9v7c0 1.1.9 2 2 2h4v-8H5v-1c0-3.87 3.13-7 7-7s7 3.13 7 7v1h-4v8h4c1.1 0 2-.9 2-2v-7a9 9 0 0 0-9-9z" /></svg>
-            </button>
-
-            {isDeviceMenuOpen && (
-              <div className="responsive-dropdown" style={{ background: 'var(--bg-hover)', borderRadius: '8px', padding: '10px', width: '300px', boxShadow: '0 -5px 20px rgba(0,0,0,0.5)', gap: '5px', maxHeight: '250px', overflowY: 'auto' }}>
-                <div style={{ fontSize: '12px', fontWeight: 'bold', padding: '5px 10px', color: 'var(--text-muted)', borderBottom: '1px solid var(--bg-tertiary)', marginBottom: '5px' }}>Output Device</div>
-                <div
-                  onClick={() => { onDeviceChange('-1'); setIsDeviceMenuOpen(false); }}
-                  style={{ padding: '8px 10px', fontSize: '12px', cursor: 'pointer', borderRadius: '4px', background: selectedDevice === '-1' ? 'linear-gradient(to right, #ff4157, var(--accent-red))' : 'transparent', color: selectedDevice === '-1' ? 'white' : 'var(--text-main)', flexShrink: 0 }}
-                >
-                  Default (Shared)
-                </div>
-                {devices.map(dev => (
-                  <div
-                    key={dev.id}
-                    onClick={() => onDeviceChange(dev.id)}
-                    style={{ padding: '8px 10px', fontSize: '12px', cursor: 'pointer', borderRadius: '4px', background: selectedDevice === dev.id ? 'linear-gradient(to right, #ff4157, var(--accent-red))' : 'transparent', color: selectedDevice === dev.id ? 'white' : 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0 }}
-                    title={dev.name}
-                  >
-                    {dev.name}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <span className="mono">{formatTime(duration)}</span>
         </div>
       </div>
-    </>
+
+      <div className="p-right" ref={rightRef}>
+        {signalOpen && signal && (
+          <div className="card popover">
+            <h4>{signal.verdict}</h4>
+            <p>{signal.bitPerfect
+              ? 'Nothing between the file and your DAC changes the samples.'
+              : 'Orange steps alter or may alter the samples before they reach your DAC.'}</p>
+            <SignalPathSteps signal={signal} eqEnabled={eqEnabled} setEqEnabled={setEqEnabled} onOpenEq={() => { setSignalOpen(false); onOpenEq(); }} />
+          </div>
+        )}
+        {isQueueOpen && (
+          <div className="card popover queue-pop">
+            <div className="q-head"><b>Up next</b><span className="badge b-lossy">{queueFiles.length}</span></div>
+            <div className="q-list">
+              {queueFiles.length
+                ? <QueueList files={queueFiles} onPlay={onPlayQueued} onMove={onMoveQueued} onRemove={onRemoveFromQueue} />
+                : <div className="empty">Queue is empty.</div>}
+            </div>
+            {queueFiles.length > 1 && <div className="q-hint">Click to play · drag to reorder</div>}
+            <div className="q-foot">
+              <button className="btn-ghost" onClick={onClearQueue}>Clear</button>
+              <button className="btn-primary" onClick={onSaveQueueAsPlaylist}>Save as playlist</button>
+            </div>
+          </div>
+        )}
+
+        {currentFile && signal && (
+          <button className={`fmt-pill ${signal.quality.tier === 'lossy' ? 'plain' : ''}`} onClick={() => { setSignalOpen(o => !o); if (isQueueOpen) onToggleQueue(); }} title="Signal path">
+            <span className={`bp ${signal.bitPerfect ? '' : 'off'}`} />
+            <span className="mono">{signal.quality.label}</span>
+          </button>
+        )}
+        <button className={`icon-btn hide-sm np-hide ${eqEnabled ? 'on' : ''}`} onClick={onOpenEq} title="Equalizer"><Icon name="eq" /></button>
+        <button className={`icon-btn hide-sm ${muted ? 'on' : ''}`} onClick={onToggleMute} title={muted ? 'Unmute (M)' : 'Mute (M)'}>
+          <Icon name={muted || (volume === 0 && !exclusive) ? 'mute' : 'volume'} />
+        </button>
+        <input
+          type="range" className={`range vol hide-sm ${muted ? 'muted' : ''}`} min="0" max="100"
+          value={exclusive ? 100 : volume}
+          style={{ '--pct': `${exclusive ? 100 : volume}%` }}
+          onChange={(e) => onVolumeChange(parseInt(e.target.value, 10))}
+          disabled={exclusive}
+          title={exclusive ? 'Volume is bypassed in exclusive mode' : `Volume ${volume}%`}
+          aria-label="Volume"
+        />
+        <button className={`icon-btn np-hide ${isQueueOpen ? 'on' : ''}`} onClick={() => { onToggleQueue(); setSignalOpen(false); }} title="Queue"><Icon name="queue" /></button>
+      </div>
+    </footer>
   );
 };
 

@@ -1,7 +1,6 @@
 node_modules/
 dist/
 build/
-release/
 .env
 *.log
 .DS_Store
@@ -9,3 +8,31 @@ release/
 mpv.com
 report/
 test-flac-metadata.js
+
+# Claude Code
+.claude/
+
+# Logs
+logs/
+crash.log
+npm-debug.log*
+
+# Tests
+test/
+tests/
+e2e/
+test-*.js
+*.test.js
+*.test.mjs
+*.spec.js
+coverage/
+
+# Local notes, demos and design drafts
+demo/
+design/
+telegram phases.md
+
+# Installers (published on GitHub Releases, too big for git)
+out/
+beta/
+release/

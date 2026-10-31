@@ -1,970 +1,420 @@
-const { ipcMain, dialog, app } = require('electron');
+// Local library: folder walking, metadata parsing, diffing against the database,
+// plus the small JSON stores (favorites, playlists, recent, settings).
+
+const { ipcMain, dialog, app, shell, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const database = require('./database');
+const { AUDIO_EXTENSIONS, getLibraryRoots, getDownloadFolder, isInLibrary, isInAppStorage, safeFileName } = require('./paths');
 
+// ---------- metadata ----------
 
-// Quick scan: only get file paths and basic stats (fast)
-async function quickScanDirectory(dirPath) {
-  let results = [];
-  try {
-    const list = fs.readdirSync(dirPath);
-    for (const file of list) {
-      const filePath = path.join(dirPath, file);
-      const stat = fs.statSync(filePath);
-      if (stat && stat.isDirectory()) {
-        const subResults = await quickScanDirectory(filePath);
-        results = results.concat(subResults);
-      } else {
-        const ext = path.extname(file).toLowerCase();
-        if (['.flac', '.mp3', '.wav', '.dsf', '.dff', '.m4a'].includes(ext)) {
-          results.push({
-            path: filePath,
-            size: stat.size,
-            mtime: stat.mtimeMs,
-            name: file,
-            ext: ext
-          });
-        }
-      }
-    }
-  } catch (err) {
-    console.error(`Error quick scanning directory ${dirPath}:`, err);
-  }
-  return results;
-}
+const { parseTrack } = require('./tags');
+const tagPool = require('./tagPool');
 
-// Full scan with metadata parsing (slow, for new files only)
-async function scanDirectory(dirPath) {
-  let results = [];
-  try {
-    const list = fs.readdirSync(dirPath);
-    for (const file of list) {
-      const filePath = path.join(dirPath, file);
-      const stat = fs.statSync(filePath);
-      if (stat && stat.isDirectory()) {
-        const subResults = await scanDirectory(filePath);
-        results = results.concat(subResults);
-      } else {
-        const ext = path.extname(file).toLowerCase();
-        if (['.flac', '.mp3', '.wav', '.dsf', '.dff', '.m4a'].includes(ext)) {
-          let metadata = {};
-          let base64Cover = null;
-          try {
-            const mm = await import('music-metadata');
-            const parsed = await mm.parseFile(filePath, { duration: true, skipCovers: false });
-            let lyricsStr = '';
-
-            // Check for lyrics in parsed.common.lyrics (LYRICS tag)
-            if (parsed.common.lyrics && parsed.common.lyrics.length > 0) {
-              lyricsStr = parsed.common.lyrics.map(l => {
-                if (typeof l === 'string') return l;
-                if (l && l.syncText) {
-                  return l.syncText.map(t => {
-                    const min = Math.floor(t.timestamp / 1000 / 60).toString().padStart(2, '0');
-                    const sec = ((t.timestamp / 1000) % 60).toFixed(2).padStart(5, '0');
-                    return `[${min}:${sec}]${t.text}`;
-                  }).join('\n');
-                }
-                if (l && l.text) return l.text;
-                return JSON.stringify(l);
-              }).join('\n');
-            }
-
-            // Also check native tags for UNSYNCEDLYRICS or UNSYNCED LYRICS
-            if (!lyricsStr && parsed.native) {
-              for (const tagType in parsed.native) {
-                const tags = parsed.native[tagType];
-                for (const tag of tags) {
-                  // Check for various unsynced lyrics tag names
-                  if (tag.id && (
-                    tag.id.toUpperCase() === 'UNSYNCEDLYRICS' ||
-                    tag.id.toUpperCase() === 'UNSYNCED LYRICS' ||
-                    tag.id.toUpperCase() === 'USLT' ||
-                    tag.id.toUpperCase() === 'LYRICS'
-                  )) {
-                    if (typeof tag.value === 'string') {
-                      lyricsStr = tag.value;
-                      break;
-                    } else if (tag.value && tag.value.text) {
-                      lyricsStr = tag.value.text;
-                      break;
-                    }
-                  }
-                }
-                if (lyricsStr) break;
-              }
-            }
-
-            metadata = {
-              title: parsed.common.title || file,
-              artist: parsed.common.artist || 'Unknown Artist',
-              album: parsed.common.album || 'Unknown Album',
-              duration: parsed.format.duration || 0,
-              track: parsed.common.track?.no || 0,
-              bitrate: parsed.format.bitrate || 0,
-              sampleRate: parsed.format.sampleRate || 0,
-              bitsPerSample: parsed.format.bitsPerSample || 0,
-              lyrics: lyricsStr
-            };
-            // Cover extraction removed - using media:// protocol for on-demand loading
-          } catch (e) {
-            console.error(`Error parsing metadata for ${file}`, e);
-            metadata = { title: file, artist: 'Unknown Artist', album: 'Unknown Album', duration: 0 };
-          }
-
-          results.push({
-            name: file,
-            path: filePath,
-            ext: ext,
-            size: stat.size,
-            metadata,
-            cover: null  // Covers loaded on-demand via media:// protocol
-          });
-        }
-      }
-    }
-  } catch (err) {
-    console.error(`Error scanning directory ${dirPath}:`, err);
-  }
-  return results;
-}
-
-// Database-backed differential scanning with progress events
-async function scanWithDatabaseCache(folders, progressCallback) {
-  database.initDatabase();
-
-  // Step 1: Fast directory traversal
-  if (progressCallback) {
-    progressCallback({ stage: 'indexing', current: 0, total: 0, message: 'Indexing files...' });
-  }
-
-  let allFiles = [];
-  for (const folder of folders) {
-    if (typeof folder === 'string' && folder) {
-      const files = await quickScanDirectory(folder);
-      allFiles = allFiles.concat(files);
-    }
-  }
-
-  console.log(`[Scan] Found ${allFiles.length} music files on disk`);
-
-  // Step 2: Check database cache
-  const { needsUpdate, cached, deleted } = database.getFilesNeedingUpdate(allFiles);
-
-  console.log(`[Scan] Cached: ${cached.length}, Needs update: ${needsUpdate.length}, Deleted: ${deleted.length}`);
-
-  // Step 3: Delete removed files from database
-  if (deleted.length > 0) {
-    database.deleteFilesBatch(deleted);
-  }
-
-  // Step 4: Parse only files that need updating
-  const parsedFiles = [];
-  for (let i = 0; i < needsUpdate.length; i++) {
-    const fileInfo = needsUpdate[i];
-
-    if (progressCallback && i % 10 === 0) {
-      progressCallback({
-        stage: 'parsing',
-        current: i,
-        total: needsUpdate.length,
-        message: `Parsing metadata (${i}/${needsUpdate.length})...`
-      });
-    }
-
-    try {
-      const mm = await import('music-metadata');
-      const parsed = await mm.parseFile(fileInfo.path, { duration: true, skipCovers: false });
-
-      let lyricsStr = '';
-      if (parsed.common.lyrics && parsed.common.lyrics.length > 0) {
-        lyricsStr = parsed.common.lyrics.map(l => {
-          if (typeof l === 'string') return l;
-          if (l && l.syncText) {
-            return l.syncText.map(t => {
-              const min = Math.floor(t.timestamp / 1000 / 60).toString().padStart(2, '0');
-              const sec = ((t.timestamp / 1000) % 60).toFixed(2).padStart(5, '0');
-              return `[${min}:${sec}]${t.text}`;
-            }).join('\n');
-          }
-          if (l && l.text) return l.text;
-          return JSON.stringify(l);
-        }).join('\n');
-      }
-
-      if (!lyricsStr && parsed.native) {
-        for (const tagType in parsed.native) {
-          const tags = parsed.native[tagType];
-          for (const tag of tags) {
-            if (tag.id && (
-              tag.id.toUpperCase() === 'UNSYNCEDLYRICS' ||
-              tag.id.toUpperCase() === 'UNSYNCED LYRICS' ||
-              tag.id.toUpperCase() === 'USLT' ||
-              tag.id.toUpperCase() === 'LYRICS'
-            )) {
-              if (typeof tag.value === 'string') {
-                lyricsStr = tag.value;
-                break;
-              } else if (tag.value && tag.value.text) {
-                lyricsStr = tag.value.text;
-                break;
-              }
-            }
-          }
-          if (lyricsStr) break;
-        }
-      }
-
-      // Cover extraction removed - using media:// protocol for on-demand loading
-      const hasCover = !!(parsed.common.picture && parsed.common.picture.length > 0);
-
-      // 🔍 DEBUG: Log bit depth and lyrics extraction
-      console.log(`[Scan] Parsing: ${fileInfo.name}`);
-      console.log(`[Scan]   Track Number: ${parsed.common.track?.no}`);
-      console.log(`[Scan]   Lyrics Found: ${lyricsStr ? `YES (${lyricsStr.length} chars)` : 'NO'}`);
-      console.log(`[Scan]   Bit Depth: ${parsed.format.bitsPerSample}`);
-      console.log(`[Scan]   Sample Rate: ${parsed.format.sampleRate}`);
-
-      // Store in database
-      const dbData = {
-        path: fileInfo.path,
-        mtime: fileInfo.mtime,
-        size: fileInfo.size,
-        title: parsed.common.title || fileInfo.name,
-        artist: parsed.common.artist || 'Unknown Artist',
-        album: parsed.common.album || 'Unknown Album',
-        year: parsed.common.year || null,
-        genre: (parsed.common.genre && parsed.common.genre[0]) || null,
-        trackNumber: parsed.common.track?.no || null,
-        discNumber: parsed.common.disk?.no || null,
-        duration: parsed.format.duration || 0,
-        bitrate: parsed.format.bitrate || 0,
-        sampleRate: parsed.format.sampleRate || 0,
-        bitDepth: parsed.format.bitsPerSample || 0,  // FIX: camelCase to match database.js
-        lyrics: lyricsStr,
-        cover: null,  // Not storing covers - loaded via media:// protocol
-        hasCover: hasCover
-      };
-
-      database.insertOrUpdateFile(dbData);
-
-      // Prepare file object for frontend
-      parsedFiles.push({
-        name: fileInfo.name,
-        path: fileInfo.path,
-        ext: fileInfo.ext,
-        size: fileInfo.size,
-        mtime: fileInfo.mtime,
-        metadata: {
-          title: dbData.title,
-          artist: dbData.artist,
-          album: dbData.album,
-          duration: dbData.duration,
-          track: dbData.trackNumber || 0,
-          bitrate: dbData.bitrate,
-          sampleRate: dbData.sampleRate,
-          bitsPerSample: parsed.format.bitsPerSample || 0,
-          lyrics: dbData.lyrics
-        },
-        cover: null  // Covers loaded on-demand via media:// protocol
-      });
-    } catch (e) {
-      console.error(`Error parsing ${fileInfo.name}:`, e);
-      parsedFiles.push({
-        name: fileInfo.name,
-        path: fileInfo.path,
-        ext: fileInfo.ext,
-        size: fileInfo.size,
-        mtime: fileInfo.mtime,
-        metadata: { title: fileInfo.name, artist: 'Unknown Artist', album: 'Unknown Album', duration: 0 },
-        cover: null
-      });
-    }
-  }
-
-  // Step 5: Convert cached database entries to frontend format
-  const cachedFiles = cached.map(dbFile => ({
-    name: path.basename(dbFile.path),
-    path: dbFile.path,
-    ext: path.extname(dbFile.path).toLowerCase(),
-    size: dbFile.size,
-    mtime: dbFile.mtime,
+/** Database row → object the renderer works with. */
+function toFrontend(row) {
+  return {
+    name: row.name || path.basename(row.path),
+    path: row.path,
+    ext: (row.ext || path.extname(row.path)).toLowerCase(),
+    size: row.size,
+    mtime: row.mtime,
     metadata: {
-      title: dbFile.title,
-      artist: dbFile.artist,
-      album: dbFile.album,
-      duration: dbFile.duration,
-      track: dbFile.track_number || 0,
-      bitrate: dbFile.bitrate,
-      sampleRate: dbFile.sample_rate,
-      bitsPerSample: dbFile.bit_depth || 0,  // Fixed: use actual bit depth from database
-      lyrics: dbFile.lyrics || ''
+      title: row.title,
+      artist: row.artist,
+      album: row.album,
+      year: row.year,
+      genre: row.genre,
+      track: row.track_number || 0,
+      disc: row.disc_number || 0,
+      duration: row.duration,
+      bitrate: row.bitrate,
+      sampleRate: row.sample_rate,
+      bitsPerSample: row.bit_depth,
+      codec: row.codec,
+      lossless: row.lossless,
+      lyrics: row.lyrics || '',
     },
-    cover: dbFile.cover || null  // Use cached cover if available
-  }));
-
-  // Step 6: Combine and return
-  let allResults = [...cachedFiles, ...parsedFiles];
-
-  allResults.sort((a, b) => {
-    const trackA = a.metadata?.track || 0;
-    const trackB = b.metadata?.track || 0;
-    if (trackA !== trackB) return trackA - trackB;
-    return a.name.localeCompare(b.name);
-  });
-
-  if (progressCallback) {
-    progressCallback({ stage: 'complete', current: allResults.length, total: allResults.length, message: 'Scan complete!' });
-  }
-
-  console.log(`[Scan] Returning ${allResults.length} total files (${cachedFiles.length} cached, ${parsedFiles.length} newly parsed)`);
-
-  return allResults;
+    hasCover: !!row.has_cover,
+    storage_type: row.storage_type || 'local',
+    telegram_message_id: row.telegram_message_id,
+    telegram_channel_id: row.telegram_channel_id,
+    cache_path: row.cache_path,
+    cloud_checksum: row.cloud_checksum,
+    last_synced_at: row.last_synced_at,
+    added_at: row.created_at,
+  };
 }
 
-// New database-backed scan with progress events
-ipcMain.handle('scan-local-music-cached', async (event, folderPath) => {
-  const folders = Array.isArray(folderPath) ? folderPath : [folderPath];
+// ---------- folder walking ----------
 
-  const progressCallback = (progress) => {
-    event.sender.send('scan-progress', progress);
+/**
+ * Iterative walk (no recursion limit, skips hidden folders and symlink loops).
+ * Returns the folders that could not be read, so their tracks aren't mistaken for deleted ones.
+ */
+async function walk(root, onFile) {
+  const unreadable = [];
+  const seen = new Set();
+  const stack = [root];
+  while (stack.length) {
+    const dir = stack.pop();
+    let real;
+    try { real = await fs.promises.realpath(dir); } catch { unreadable.push(dir); continue; }
+    if (seen.has(real)) continue;
+    seen.add(real);
+    let entries;
+    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch (err) {
+      console.error(`[Library] Cannot read ${dir}: ${err.message}`);
+      unreadable.push(dir);
+      continue;
+    }
+    const audio = [];
+    for (const e of entries) {
+      if (e.name.startsWith('.')) continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) stack.push(full);
+      else if (e.isFile() && AUDIO_EXTENSIONS.has(path.extname(e.name).toLowerCase())) audio.push(full);
+    }
+    const stats = await Promise.all(audio.map(f => fs.promises.stat(f).catch(() => null)));
+    stats.forEach((st, i) => { if (st) onFile(audio[i], st); });
+  }
+  return unreadable;
+}
+
+const isUnder = (file, dir) => {
+  const rel = path.relative(dir.toLowerCase(), file.toLowerCase());
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+};
+
+// ---------- sync (refresh / full scan) ----------
+
+let syncInFlight = null;
+const cloudChangeListeners = [];
+/** Called with the paths of backed-up files whose content changed on disk */
+const onCloudFilesChanged = (fn) => cloudChangeListeners.push(fn);
+let cancelRequested = false;
+const BATCH = 200;          // rows per database transaction / UI update
+
+const yieldToEventLoop = () => new Promise(r => setImmediate(r));
+
+/**
+ * Bring the database in line with the music folders.
+ *  - refresh: parse only new files and files whose size/mtime changed; drop files that vanished
+ *  - full:    re-read the tags of every file (after editing tags in another app, for example)
+ * Cloud-backed tracks whose local copy disappeared are kept as cloud-only.
+ *
+ * Results are written and reported in batches (`onBatch`), so the library fills in while the
+ * scan is still running and the main process never blocks for long.
+ */
+async function syncLibrary({ mode = 'refresh', onProgress, onBatch } = {}) {
+  database.initDatabase();
+  cancelRequested = false;
+  const roots = getLibraryRoots();
+  const progress = (p) => onProgress && onProgress(p);
+  progress({ stage: 'indexing', current: 0, total: 0, message: 'Looking for music files…' });
+
+  const onDisk = new Map();
+  const unreadable = [];
+  for (const root of roots) {
+    unreadable.push(...await walk(root, (p, stat) => onDisk.set(p, stat)));
+  }
+  // A whole music folder offline (external drive unplugged, network share down)
+  const unavailable = roots.filter(r => unreadable.some(u => isUnder(r, u)));
+
+  const rows = database.getAllFiles();
+  const byPath = new Map(rows.map(r => [r.path, r]));
+
+  const toParse = [];
+  const cloudChanged = []; // backed-up files that are different now (edited tags, re-encoded…)
+  let unchanged = 0;
+  for (const [p, stat] of onDisk) {
+    const row = byPath.get(p);
+    const changed = !row || Math.round(row.mtime) !== Math.round(stat.mtimeMs) || row.size !== stat.size;
+    if (row && changed && row.telegram_message_id && (row.storage_type === 'both' || row.storage_type === 'cloud')) cloudChanged.push(p);
+    if (mode === 'full' || changed) toParse.push({ p, stat, isNew: !row });
+    else unchanged++;
+  }
+  // New files first, then folder by folder so the disk reads neighbouring files together
+  toParse.sort((a, b) => (a.isNew === b.isNew ? (a.p < b.p ? -1 : 1) : a.isNew ? -1 : 1));
+
+  // Files that are gone from disk (or whose folder was removed from the library)
+  const removed = [];
+  const demoted = [];
+  for (const row of rows) {
+    if (onDisk.has(row.path)) continue;
+    // Can't see the folder right now: keep the track (and its lyrics, playlists, plays)
+    if (unreadable.some(dir => isUnder(row.path, dir))) continue;
+    const inCloud = row.telegram_message_id && (row.storage_type === 'both' || row.storage_type === 'cloud');
+    if (inCloud) {
+      if (row.storage_type !== 'cloud') demoted.push(row.path);
+    } else if (!isInAppStorage(row.path)) {
+      removed.push(row.path);
+    }
+  }
+  // Backed-up files that are on disk again (moved back, drive reconnected): local + cloud again
+  const promoted = rows.filter(r => r.storage_type === 'cloud' && r.telegram_message_id && onDisk.has(r.path)).map(r => r.path);
+
+  if (removed.length) database.deleteFilesBatch(removed);
+  demoted.forEach(p => database.setStorageType(p, 'cloud'));
+  promoted.forEach(p => database.setStorageType(p, 'both'));
+  if (onBatch && (removed.length || demoted.length || promoted.length)) {
+    onBatch({ removed, files: database.getFilesByPaths([...demoted, ...promoted]).map(toFrontend) });
+  }
+
+  let added = 0;
+  let updated = 0;
+  let done = 0;
+  const addedAt = Date.now();
+  let pending = [];
+  let lastProgress = 0;
+
+  const flush = async () => {
+    if (!pending.length) return;
+    const batch = pending;
+    pending = [];
+    database.insertOrUpdateFilesBatch(batch);
+    if (onBatch) onBatch({ files: database.getFilesByPaths(batch.map(b => b.path)).map(toFrontend) });
+    await yieldToEventLoop();
   };
 
-  const results = await scanWithDatabaseCache(folders, progressCallback);
-  return results;
-});
+  // Tags are read off the main thread in chunks; results are written as they come back
+  const CHUNK = 40;
+  let next = 0;
+  const feeder = async () => {
+    while (next < toParse.length && !cancelRequested) {
+      const chunk = toParse.slice(next, next + CHUNK);
+      next += chunk.length;
+      const results = await tagPool.parseMany(chunk.map(({ p, stat }) => ({ path: p, mtimeMs: stat.mtimeMs, size: stat.size })));
+      chunk.forEach(({ isNew }, i) => {
+        pending.push({ ...results[i], addedAt });
+        if (isNew) added++; else updated++;
+      });
+      done += chunk.length;
+      if (pending.length >= BATCH) await flush();
+      const now = Date.now();
+      if (now - lastProgress > 250 || done === toParse.length) {
+        lastProgress = now;
+        progress({ stage: 'parsing', current: done, total: toParse.length, message: `Reading tags ${done.toLocaleString()} / ${toParse.length.toLocaleString()}` });
+      }
+    }
+  };
+  // Keep every worker busy: a few chunks in flight per worker
+  await Promise.all(Array.from({ length: Math.min(tagPool.size() * 2, Math.ceil(toParse.length / CHUNK)) }, feeder));
+  await flush();
 
-// Smart scan: quick scan first, then only parse metadata for new/changed files
-ipcMain.handle('scan-local-music', async (event, folderPath) => {
-  const folders = Array.isArray(folderPath) ? folderPath : [folderPath];
+  const cancelled = cancelRequested;
+  cancelRequested = false;
+  if (cloudChanged.length) {
+    // their cloud copy is out of date: back them up again (TeleCloud replaces the old copy)
+    cloudChanged.forEach(p => database.setStorageType(p, 'local'));
+    cloudChangeListeners.forEach(fn => { try { fn(cloudChanged); } catch (err) { console.error('[Library] cloud change listener:', err.message); } });
+  }
+  // With onBatch the UI already has every change; skip re-sending the whole library
+  const files = onBatch ? null : database.getAllFiles().map(toFrontend);
+  const total = files ? files.length : database.countFiles();
+  const summary = { added, updated, removed: removed.length, unchanged, total, mode, cancelled, unavailable };
+  progress({ stage: 'complete', current: total, total, message: cancelled ? `Stopped · ${describe(summary)}` : describe(summary) });
+  return files ? { files, ...summary } : summary;
+}
 
-  // Load existing library for comparison
-  let existingLibrary = [];
+function describe(s) {
+  const parts = [];
+  if (s.added) parts.push(`${s.added.toLocaleString()} added`);
+  if (s.updated) parts.push(`${s.updated.toLocaleString()} ${s.mode === 'full' ? 're-read' : 'updated'}`);
+  if (s.removed) parts.push(`${s.removed.toLocaleString()} removed`);
+  if (s.unavailable?.length) parts.push(`${s.unavailable.length} ${s.unavailable.length === 1 ? 'folder' : 'folders'} offline, tracks kept`);
+  return parts.length ? parts.join(' · ') : 'No changes';
+}
+
+const sendToUi = (ch, payload) => {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (win && !win.isDestroyed()) win.webContents.send(ch, payload);
+};
+
+let rerunRequested = false;
+const afterSync = () => {
+  syncInFlight = null;
+  if (rerunRequested) {
+    rerunRequested = false;
+    backgroundRefresh();
+  }
+};
+
+/** Quiet refresh triggered by the folder watcher; queues itself if a scan is running. */
+async function backgroundRefresh() {
+  if (syncInFlight) { rerunRequested = true; return; }
+  syncInFlight = syncLibrary({ mode: 'refresh', onBatch: (b) => sendToUi('library:partial', b) });
   try {
-    if (fs.existsSync(libraryPath)) {
-      const data = fs.readFileSync(libraryPath, 'utf8');
-      existingLibrary = JSON.parse(data);
-    }
+    const r = await syncInFlight;
+    if (r.added || r.removed) sendToUi('library:partial', { summary: { added: r.added, removed: r.removed } });
   } catch (err) {
-    console.error('Error loading library for comparison:', err);
+    console.error('[Library] Background refresh failed:', err.message);
+  } finally {
+    afterSync();
   }
+}
 
-  // Create a map of existing files by path for O(1) lookup
-  const existingMap = new Map();
-  for (const file of existingLibrary) {
-    existingMap.set(file.path, file);
-  }
-
-  // Step 1: Quick scan - just get file paths and stats (FAST!)
-  let quickScanResults = [];
-  for (const folder of folders) {
-    if (typeof folder === 'string' && folder) {
-      const folderFiles = await quickScanDirectory(folder);
-      quickScanResults = quickScanResults.concat(folderFiles);
-    }
-  }
-
-  // Step 2: Determine which files need metadata parsing
-  const filesToParse = [];
-  const filesToKeep = [];
-
-  for (const quickFile of quickScanResults) {
-    const existing = existingMap.get(quickFile.path);
-
-    // If file is new or has changed (different size/mtime), parse metadata
-    // OR if file is missing cover/lyrics, also re-parse it
-    const needsMetadata = existing && (!existing.cover || !existing.metadata?.lyrics);
-
-    if (!existing || existing.size !== quickFile.size ||
-      Math.abs((existing.mtime || 0) - quickFile.mtime) > 1000 || needsMetadata) {
-      filesToParse.push(quickFile);
-    } else {
-      // File unchanged and has complete metadata, keep as-is
-      filesToKeep.push(existing);
-    }
-  }
-
-  // Step 3: Only parse metadata for new/changed files
-  const parsedFiles = [];
-  for (const quickFile of filesToParse) {
-    try {
-      const mm = await import('music-metadata');
-      const parsed = await mm.parseFile(quickFile.path, { duration: true, skipCovers: false });
-
-      let lyricsStr = '';
-      if (parsed.common.lyrics && parsed.common.lyrics.length > 0) {
-        lyricsStr = parsed.common.lyrics.map(l => {
-          if (typeof l === 'string') return l;
-          if (l && l.syncText) {
-            return l.syncText.map(t => {
-              const min = Math.floor(t.timestamp / 1000 / 60).toString().padStart(2, '0');
-              const sec = ((t.timestamp / 1000) % 60).toFixed(2).padStart(5, '0');
-              return `[${min}:${sec}]${t.text}`;
-            }).join('\n');
-          }
-          if (l && l.text) return l.text;
-          return JSON.stringify(l);
-        }).join('\n');
-      }
-
-      if (!lyricsStr && parsed.native) {
-        for (const tagType in parsed.native) {
-          const tags = parsed.native[tagType];
-          for (const tag of tags) {
-            if (tag.id && (
-              tag.id.toUpperCase() === 'UNSYNCEDLYRICS' ||
-              tag.id.toUpperCase() === 'UNSYNCED LYRICS' ||
-              tag.id.toUpperCase() === 'USLT' ||
-              tag.id.toUpperCase() === 'LYRICS'
-            )) {
-              if (typeof tag.value === 'string') {
-                lyricsStr = tag.value;
-                break;
-              } else if (tag.value && tag.value.text) {
-                lyricsStr = tag.value.text;
-                break;
-              }
-            }
-          }
-          if (lyricsStr) break;
-        }
-      }
-
-      const metadata = {
-        title: parsed.common.title || quickFile.name,
-        artist: parsed.common.artist || 'Unknown Artist',
-        album: parsed.common.album || 'Unknown Album',
-        duration: parsed.format.duration || 0,
-        track: parsed.common.track?.no || 0,
-        bitrate: parsed.format.bitrate || 0,
-        sampleRate: parsed.format.sampleRate || 0,
-        bitsPerSample: parsed.format.bitsPerSample || 0,
-        lyrics: lyricsStr
-      };
-
-      // Cover extraction removed - using media:// protocol for on-demand loading
-
-      parsedFiles.push({
-        name: quickFile.name,
-        path: quickFile.path,
-        ext: quickFile.ext,
-        size: quickFile.size,
-        mtime: quickFile.mtime,
-        metadata,
-        cover: null  // Covers loaded on-demand via media:// protocol
-      });
-    } catch (e) {
-      console.error(`Error parsing metadata for ${quickFile.name}`, e);
-      parsedFiles.push({
-        name: quickFile.name,
-        path: quickFile.path,
-        ext: quickFile.ext,
-        size: quickFile.size,
-        mtime: quickFile.mtime,
-        metadata: { title: quickFile.name, artist: 'Unknown Artist', album: 'Unknown Album', duration: 0 },
-        cover: null
-      });
-    }
-  }
-
-  // Step 4: Combine unchanged files with newly parsed files
-  let files = [...filesToKeep, ...parsedFiles];
-
-  // Remove duplicates by path if any
-  const seen = new Set();
-  files = files.filter(f => {
-    if (seen.has(f.path)) return false;
-    seen.add(f.path);
-    return true;
-  });
-
-  files.sort((a, b) => {
-    const trackA = a.metadata?.track || 0;
-    const trackB = b.metadata?.track || 0;
-    if (trackA !== trackB) return trackA - trackB;
-    return a.name.localeCompare(b.name);
-  });
-
-  return files;
-});
-
-// Fast refresh: check for new/deleted files (lightweight - no metadata re-parsing)
-ipcMain.handle('refresh-library', async (event, folders) => {
-  // Load existing library
-  let existingLibrary = [];
+ipcMain.handle('library:sync', async (event, opts = {}) => {
+  const mode = opts.mode === 'full' ? 'full' : 'refresh';
+  if (syncInFlight) return { busy: true };
+  const onProgress = opts.silent ? null : (p) => sendToUi('scan-progress', { ...p, mode });
+  const onBatch = (b) => sendToUi('library:partial', b);
+  syncInFlight = syncLibrary({ mode, onProgress, onBatch });
   try {
-    if (fs.existsSync(libraryPath)) {
-      const data = fs.readFileSync(libraryPath, 'utf8');
-      existingLibrary = JSON.parse(data);
-    }
-  } catch (err) {
-    console.error('Error loading library for refresh:', err);
-    return [];
+    return await syncInFlight;
+  } finally {
+    afterSync();
   }
-
-  // Build a map of existing files for quick lookup
-  const existingMap = new Map();
-  for (const file of existingLibrary) {
-    existingMap.set(file.path, file);
-  }
-
-  // Quick scan to get current file paths (NO metadata parsing yet)
-  let currentFiles = [];
-  const folderList = Array.isArray(folders) ? folders : [folders];
-  for (const folder of folderList) {
-    if (typeof folder === 'string' && folder) {
-      const scannedFiles = await quickScanDirectory(folder);
-      currentFiles = currentFiles.concat(scannedFiles);
-    }
-  }
-
-  // Build set of current paths for O(1) lookup
-  const currentPaths = new Set(currentFiles.map(f => f.path));
-
-  // Separate into: keep (unchanged), remove (missing), add (new)
-  const filesToKeep = [];
-  const filesToAdd = [];
-
-  // Check existing library: keep files that still exist, discard missing ones
-  for (const file of existingLibrary) {
-    if (currentPaths.has(file.path)) {
-      filesToKeep.push(file);
-    }
-    // else: file is missing, don't keep it
-  }
-
-  // Check current files: find new files not in library
-  for (const currentFile of currentFiles) {
-    if (!existingMap.has(currentFile.path)) {
-      filesToAdd.push(currentFile);
-    }
-  }
-
-  // Parse metadata ONLY for new files (minimal/fast - skip covers AND lyrics for refresh speed)
-  const parsedNewFiles = [];
-  for (const newFile of filesToAdd) {
-    try {
-      const mm = await import('music-metadata');
-      // Fast parse: duration, basic tags only - NO covers, NO lyrics
-      const parsed = await mm.parseFile(newFile.path, { duration: true, skipCovers: true, skipPostHeaders: true });
-
-      const metadata = {
-        title: parsed.common.title || newFile.name,
-        artist: parsed.common.artist || 'Unknown Artist',
-        album: parsed.common.album || 'Unknown Album',
-        duration: parsed.format.duration || 0,
-        track: parsed.common.track?.no || 0,
-        bitrate: parsed.format.bitrate || 0,
-        sampleRate: parsed.format.sampleRate || 0,
-        bitsPerSample: parsed.format.bitsPerSample || 0,
-        lyrics: '' // Skip lyrics during refresh for speed
-      };
-
-      parsedNewFiles.push({
-        name: newFile.name,
-        path: newFile.path,
-        ext: newFile.ext,
-        size: newFile.size,
-        mtime: newFile.mtime,
-        metadata,
-        cover: null // Will be fetched in background
-      });
-    } catch (e) {
-      console.error(`Error parsing metadata for new file ${newFile.name}`, e);
-      parsedNewFiles.push({
-        name: newFile.name,
-        path: newFile.path,
-        ext: newFile.ext,
-        size: newFile.size,
-        mtime: newFile.mtime,
-        metadata: { title: newFile.name, artist: 'Unknown Artist', album: 'Unknown Album', duration: 0, lyrics: '' },
-        cover: null
-      });
-    }
-  }
-
-  // Combine: existing files + new files
-  const updatedLibrary = [...filesToKeep, ...parsedNewFiles];
-
-  // Sort by track number
-  updatedLibrary.sort((a, b) => {
-    const trackA = a.metadata?.track || 0;
-    const trackB = b.metadata?.track || 0;
-    if (trackA !== trackB) return trackA - trackB;
-    return a.name.localeCompare(b.name);
-  });
-
-  return updatedLibrary;
 });
 
-// Background metadata fetcher: fetch covers AND lyrics with incremental updates
-ipcMain.handle('fetch-metadata-background', async (event, filePaths) => {
-  const updatedFiles = [];
-
-  for (let i = 0; i < filePaths.length; i++) {
-    const filePath = filePaths[i];
-    try {
-      const mm = await import('music-metadata');
-      const parsed = await mm.parseFile(filePath, { duration: false, skipCovers: false });
-
-      // Cover extraction removed - using media:// protocol for on-demand loading
-
-      // Extract lyrics
-      let lyricsStr = '';
-      if (parsed.common.lyrics && parsed.common.lyrics.length > 0) {
-        lyricsStr = parsed.common.lyrics.map(l => {
-          if (typeof l === 'string') return l;
-          if (l && l.syncText) {
-            return l.syncText.map(t => {
-              const min = Math.floor(t.timestamp / 1000 / 60).toString().padStart(2, '0');
-              const sec = ((t.timestamp / 1000) % 60).toFixed(2).padStart(5, '0');
-              return `[${min}:${sec}]${t.text}`;
-            }).join('\n');
-          }
-          if (l && l.text) return l.text;
-          return JSON.stringify(l);
-        }).join('\n');
-      }
-
-      if (!lyricsStr && parsed.native) {
-        for (const tagType in parsed.native) {
-          const tags = parsed.native[tagType];
-          for (const tag of tags) {
-            if (tag.id && (
-              tag.id.toUpperCase() === 'UNSYNCEDLYRICS' ||
-              tag.id.toUpperCase() === 'UNSYNCED LYRICS' ||
-              tag.id.toUpperCase() === 'USLT' ||
-              tag.id.toUpperCase() === 'LYRICS'
-            )) {
-              if (typeof tag.value === 'string') {
-                lyricsStr = tag.value;
-                break;
-              } else if (tag.value && tag.value.text) {
-                lyricsStr = tag.value.text;
-                break;
-              }
-            }
-          }
-          if (lyricsStr) break;
-        }
-      }
-
-      const metadata = {
-        path: filePath,
-        cover: null,  // Covers loaded via media:// protocol
-        lyrics: lyricsStr
-      };
-
-      updatedFiles.push(metadata);
-
-      // Send incremental update event
-      event.sender.send('metadata-fetch-progress', {
-        file: metadata,
-        current: i + 1,
-        total: filePaths.length
-      });
-    } catch (e) {
-      console.error(`Error fetching metadata for ${filePath}`, e);
-    }
-  }
-
-  return updatedFiles;
+// Stop a running scan; everything read so far is kept
+ipcMain.handle('library:cancel', () => {
+  if (syncInFlight) cancelRequested = true;
+  return { success: true };
 });
 
-// Legacy: Background cover fetcher (kept for compatibility)
-ipcMain.handle('fetch-covers-background', async (event, filePaths) => {
-  // Just call the new metadata fetcher
-  return await ipcMain.handle('fetch-metadata-background', event, filePaths);
-});
-
-ipcMain.handle('select-music-folder', async () => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openDirectory']
-  });
-  if (!result.canceled && result.filePaths.length > 0) {
-    return result.filePaths[0];
-  }
-  return null;
-});
-
-const libraryPath = path.join(app.getPath('userData'), 'library.json');
-
-// 🔄 UNIFIED STORAGE: Load library from database (single source of truth)
 ipcMain.handle('load-library', async () => {
   try {
-    const dbFiles = database.getAllFiles();
-    // Transform database format to frontend format
-    return dbFiles.map(f => ({
-      name: f.name || path.basename(f.path),
-      path: f.path,
-      ext: f.ext || path.extname(f.path),
-      size: f.size,
-      metadata: {
-        title: f.title,
-        artist: f.artist,
-        album: f.album,
-        year: f.year,
-        genre: f.genre,
-        track: f.track_number || 0,
-        duration: f.duration,
-        bitrate: f.bitrate,
-        sampleRate: f.sample_rate,
-        bitsPerSample: f.bit_depth,
-        lyrics: f.lyrics || ''
-      },
-      cover: f.cover,
-      hasCover: f.hasCover,
-      // TeleCloud Sync fields
-      storage_type: f.storage_type || 'local',
-      telegram_message_id: f.telegram_message_id,
-      telegram_channel_id: f.telegram_channel_id,
-      cache_path: f.cache_path,
-      cloud_checksum: f.cloud_checksum,
-      last_synced_at: f.last_synced_at
-    }));
+    return database.getAllFiles().map(toFrontend);
   } catch (err) {
     console.error('Error loading library from database:', err);
     return [];
   }
 });
 
-// 🔄 UNIFIED STORAGE: Save library to database (single source of truth)
-ipcMain.handle('save-library', async (event, libraryData) => {
-  try {
-    // Batch update database with all files
-    const dbData = libraryData.map(f => ({
-      path: f.path,
-      mtime: f.mtime || Date.now(),
-      size: f.size,
-      name: f.name,
-      ext: f.ext,
-      title: f.metadata?.title || f.name,
-      artist: f.metadata?.artist || 'Unknown Artist',
-      album: f.metadata?.album || 'Unknown Album',
-      year: f.metadata?.year || null,
-      genre: f.metadata?.genre || null,
-      trackNumber: f.metadata?.track || null,
-      discNumber: f.metadata?.discNumber || null,
-      duration: f.metadata?.duration || 0,
-      bitrate: f.metadata?.bitrate || 0,
-      sampleRate: f.metadata?.sampleRate || 0,
-      bitDepth: f.metadata?.bitsPerSample || 0,  // FIX: camelCase to match database.js
-      lyrics: f.metadata?.lyrics || '',
-      cover: f.cover || null,
-      hasCover: f.hasCover || false
-    }));
+/** Used by the folder watcher for a single added/changed file. */
+async function upsertSingleFile(filePath) {
+  const stat = await fs.promises.stat(filePath);
+  const data = await parseTrack(filePath, stat);
+  database.insertOrUpdateFile(data);
+  return toFrontend(database.getFileByPath(filePath));
+}
 
-    database.insertOrUpdateFilesBatch(dbData);
-    console.log(`[Database] Saved ${dbData.length} files to database`);
-    return true;
-  } catch (err) {
-    console.error('Error saving library to database:', err);
-    return false;
-  }
+ipcMain.handle('select-music-folder', async () => {
+  const win = BrowserWindow.getFocusedWindow();
+  const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
+  if (!result.canceled && result.filePaths.length > 0) return result.filePaths[0];
+  return null;
 });
 
-// Extra user data stores
+// ---------- JSON stores ----------
+
 const storePaths = {
   favorites: path.join(app.getPath('userData'), 'favorites.json'),
   playlists: path.join(app.getPath('userData'), 'playlists.json'),
   recent: path.join(app.getPath('userData'), 'recent.json'),
-  settings: path.join(app.getPath('userData'), 'settings.json')
+  settings: path.join(app.getPath('userData'), 'settings.json'),
+  eq: path.join(app.getPath('userData'), 'eq.json'),
 };
+const OBJECT_STORES = new Set(['settings', 'eq']);
 
 ipcMain.handle('load-store', async (event, storeName) => {
   try {
     const p = storePaths[storeName];
-    if (p && fs.existsSync(p)) {
-      const data = fs.readFileSync(p, 'utf8');
-      return JSON.parse(data);
-    }
+    if (p && fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
   } catch (err) {
     console.error(`Error loading store ${storeName}:`, err);
   }
-  return [];
+  return OBJECT_STORES.has(storeName) ? {} : [];
 });
 
 ipcMain.handle('save-store', async (event, storeName, data) => {
+  const p = storePaths[storeName];
+  if (!p) return false;
   try {
-    const p = storePaths[storeName];
-    if (p) {
-      fs.writeFileSync(p, JSON.stringify(data), 'utf8');
-      return true;
+    if (storeName === 'settings') {
+      if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+      // Folder lists must be absolute paths; anything else is dropped
+      if (data.musicFolderList !== undefined) {
+        data.musicFolderList = (Array.isArray(data.musicFolderList) ? data.musicFolderList : [])
+          .filter(f => typeof f === 'string' && path.isAbsolute(f));
+      }
+      if (data.downloadFolder !== undefined && !(typeof data.downloadFolder === 'string' && path.isAbsolute(data.downloadFolder))) {
+        delete data.downloadFolder;
+      }
+    } else if (storeName === 'eq') {
+      if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+    } else if (!Array.isArray(data)) {
+      return false;
     }
+    // Write atomically so a crash mid-write can't leave a truncated file
+    const tmp = `${p}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(data), 'utf8');
+    fs.renameSync(tmp, p);
+    return true;
   } catch (err) {
     console.error(`Error saving store ${storeName}:`, err);
     return false;
   }
 });
 
+// ---------- file operations ----------
+
+// Moves the file to the Recycle Bin (recoverable) and removes it from the library
 ipcMain.handle('delete-song', async (event, file) => {
   try {
-    const storageType = file.storage_type || 'local';
+    const row = file && typeof file.path === 'string' ? database.getFileByPath(file.path) : null;
+    if (!row) return { success: false, error: 'Track is not in the library' };
 
-    // If file exists locally, delete it from disk
-    if (storageType === 'local' || storageType === 'both') {
-      if (fs.existsSync(file.path)) {
-        fs.unlinkSync(file.path);
-        console.log(`[Delete] Removed file from disk: ${file.path}`);
-      }
+    if (row.storage_type !== 'cloud' && fs.existsSync(row.path)) {
+      if (!isInLibrary(row.path)) return { success: false, error: 'File is outside your music folders' };
+      await shell.trashItem(row.path);
     }
-
-    // Always remove from database (for cloud-only files, this is the only cleanup needed)
-    database.deleteFile(file.path);
-    console.log(`[Delete] Removed from database: ${file.path}`);
-
-    // TODO: Optionally delete from Telegram channel
-    // if (file.telegram_message_id && file.telegram_channel_id) {
-    //   await deleteFromTelegram(file.telegram_message_id, file.telegram_channel_id);
-    // }
-
-    return true;
+    if (row.cache_path && isInAppStorage(row.cache_path) && fs.existsSync(row.cache_path)) {
+      await fs.promises.unlink(row.cache_path).catch(() => {});
+    }
+    database.deleteFile(row.path);
+    return { success: true };
   } catch (err) {
     console.error('Error deleting song:', err);
-    return false;
-  }
-});
-
-ipcMain.handle('download-song', async (event, file, downloadFolder) => {
-  try {
-    // Simulated download logic since telecloud integration is pending
-    const destPath = path.join(downloadFolder, file.name);
-    if (file.path !== destPath && fs.existsSync(file.path)) {
-      fs.copyFileSync(file.path, destPath);
-    }
-    return true;
-  } catch (err) {
-    console.error('Error downloading song:', err);
-    return false;
-  }
-});
-
-// Extract metadata from downloaded temp file and update database
-ipcMain.handle('extract-and-cache-metadata', async (event, { tempFilePath, originalPath }) => {
-  try {
-    console.log(`[Metadata] Extracting metadata from temp file: ${tempFilePath}`);
-
-    if (!fs.existsSync(tempFilePath)) {
-      throw new Error('Temp file not found');
-    }
-
-    // Parse metadata from the downloaded file
-    const mm = await import('music-metadata');
-    const parsed = await mm.parseFile(tempFilePath, { duration: true, skipCovers: false });
-
-    // Extract lyrics (same logic as local file scanning)
-    let lyricsStr = '';
-    if (parsed.common.lyrics && parsed.common.lyrics.length > 0) {
-      lyricsStr = parsed.common.lyrics.map(l => {
-        if (typeof l === 'string') return l;
-        if (l && l.syncText) {
-          return l.syncText.map(t => {
-            const min = Math.floor(t.timestamp / 1000 / 60).toString().padStart(2, '0');
-            const sec = ((t.timestamp / 1000) % 60).toFixed(2).padStart(5, '0');
-            return `[${min}:${sec}]${t.text}`;
-          }).join('\n');
-        }
-        if (l && l.text) return l.text;
-        return JSON.stringify(l);
-      }).join('\n');
-    }
-
-    // Check native tags for UNSYNCEDLYRICS, UNSYNCED LYRICS, USLT
-    if (!lyricsStr && parsed.native) {
-      for (const tagType in parsed.native) {
-        const tags = parsed.native[tagType];
-        for (const tag of tags) {
-          if (tag.id && (
-            tag.id.toUpperCase() === 'UNSYNCEDLYRICS' ||
-            tag.id.toUpperCase() === 'UNSYNCED LYRICS' ||
-            tag.id.toUpperCase() === 'USLT' ||
-            tag.id.toUpperCase() === 'LYRICS'
-          )) {
-            if (typeof tag.value === 'string') {
-              lyricsStr = tag.value;
-              break;
-            } else if (tag.value && tag.value.text) {
-              lyricsStr = tag.value.text;
-              break;
-            }
-          }
-        }
-        if (lyricsStr) break;
-      }
-    }
-
-    // Extract complete metadata
-    const metadata = {
-      bitrate: parsed.format.bitrate || 0,
-      sampleRate: parsed.format.sampleRate || 0,
-      bitsPerSample: parsed.format.bitsPerSample || 0,
-      duration: parsed.format.duration || 0,
-      title: parsed.common.title || path.basename(originalPath),
-      artist: parsed.common.artist || 'Unknown Artist',
-      album: parsed.common.album || 'Unknown Album',
-      lyrics: lyricsStr
-    };
-
-    console.log(`[Metadata] Extracted: ${metadata.bitsPerSample}-bit / ${metadata.sampleRate}Hz / ${Math.round(metadata.bitrate / 1000)}kbps`);
-    if (lyricsStr) {
-      console.log(`[Metadata] Found lyrics (${lyricsStr.length} characters)`);
-    }
-
-    // Update database with cache_path and complete metadata
-    const dbFile = database.getFileByPath(originalPath);
-    if (dbFile) {
-      // Update existing record with cache path and metadata
-      database.insertOrUpdateFile({
-        path: originalPath,
-        mtime: dbFile.mtime || Date.now(),
-        size: dbFile.size || 0,
-        title: metadata.title,
-        artist: metadata.artist,
-        album: metadata.album,
-        year: dbFile.year,
-        genre: dbFile.genre,
-        trackNumber: dbFile.track_number,
-        discNumber: dbFile.disc_number,
-        duration: metadata.duration,
-        bitrate: metadata.bitrate,
-        sampleRate: metadata.sampleRate,
-        bitDepth: metadata.bitsPerSample,
-        lyrics: metadata.lyrics || '',
-        cover: null,
-        hasCover: !!(parsed.common.picture && parsed.common.picture.length > 0)
-      });
-
-      // Update cloud metadata with cache_path
-      database.updateCloudMetadata(originalPath, {
-        storage_type: dbFile.storage_type,
-        telegram_message_id: dbFile.telegram_message_id,
-        telegram_channel_id: dbFile.telegram_channel_id,
-        cloud_checksum: dbFile.cloud_checksum,
-        last_synced_at: dbFile.last_synced_at,
-        cache_path: tempFilePath
-      });
-
-      console.log(`[Metadata] Updated database for: ${originalPath}`);
-    }
-
-    // Return frontend-formatted metadata
-    return {
-      success: true,
-      metadata: {
-        title: metadata.title,
-        artist: metadata.artist,
-        album: metadata.album,
-        duration: metadata.duration,
-        bitrate: metadata.bitrate,
-        sampleRate: metadata.sampleRate,
-        bitsPerSample: metadata.bitsPerSample,
-        lyrics: metadata.lyrics || ''
-      },
-      cache_path: tempFilePath
-    };
-  } catch (err) {
-    console.error('[Metadata] Error extracting metadata:', err);
     return { success: false, error: err.message };
   }
 });
+
+// Copies a library file into the download folder chosen in Settings
+ipcMain.handle('download-song', async (event, file) => {
+  try {
+    const dest = getDownloadFolder();
+    if (!dest) return { success: false, error: 'No download folder set' };
+    const row = file && typeof file.path === 'string' ? database.getFileByPath(file.path) : null;
+    if (!row) return { success: false, error: 'Track is not in the library' };
+    const source = fs.existsSync(row.path) && isInLibrary(row.path) ? row.path
+      : (row.cache_path && isInAppStorage(row.cache_path) && fs.existsSync(row.cache_path) ? row.cache_path : null);
+    if (!source) return { success: false, error: 'No local copy of this track' };
+
+    const name = safeFileName(row.name || path.basename(row.path));
+    const ext = path.extname(name);
+    const stem = name.slice(0, name.length - ext.length);
+    let target = path.join(dest, name);
+    for (let n = 2; fs.existsSync(target); n++) target = path.join(dest, `${stem} (${n})${ext}`);
+    await fs.promises.copyFile(source, target, fs.constants.COPYFILE_EXCL);
+    // A cloud-only track saved into a music folder becomes a local track that is also in the cloud
+    if (row.path.startsWith('tc://') && isInLibrary(target)) {
+      const data = await parseTrack(target, await fs.promises.stat(target));
+      database.insertOrUpdateFile({ ...data, addedAt: row.created_at });
+      database.updateCloudMetadata(target, {
+        storage_type: 'both', telegram_message_id: row.telegram_message_id, telegram_channel_id: row.telegram_channel_id,
+        cloud_checksum: row.cloud_checksum, last_synced_at: row.last_synced_at, cache_path: row.cache_path,
+      });
+      database.deleteFile(row.path);
+      return { success: true, path: target, replaced: row.path, file: toFrontend(database.getFileByPath(target)) };
+    }
+    return { success: true, path: target };
+  } catch (err) {
+    console.error('Error downloading song:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('check-file-exists', async (event, filePath) => {
+  if (!(isInLibrary(filePath) || isInAppStorage(filePath))) return false;
+  try {
+    await fs.promises.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+module.exports = { syncLibrary, backgroundRefresh, parseTrack, toFrontend, upsertSingleFile, onCloudFilesChanged };

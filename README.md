@@ -1,210 +1,169 @@
-# TeleCloud
+<p align="center">
+  <img src="public/icon.png" width="128" alt="TeleCloud">
+</p>
 
-> **Audiophile-grade music player with cloud storage integration**
+<h1 align="center">TeleCloud</h1>
 
-TeleCloud is a modern desktop music player that combines high-fidelity audio playback with seamless cloud integration. Built for music enthusiasts who demand exceptional sound quality and convenient access to their music library from anywhere.
-
----
-
-## What is TeleCloud?
-
-TeleCloud is an Electron-based music player that brings together:
-- **Hi-Fi Audio Playback** - Bit-perfect output for audiophiles
-- **Cloud Storage via Telegram** - Upload, store, and stream your music library from Telegram channels
-- **Streaming Services** - Native Tidal integration (Still working on this but TIDAL not allow individual users to streaming full songs so you can do some basics there)
-- **Modern Interface** - Beautiful, intuitive design with light/dark themes
-
-Whether you're a casual listener or an audiophile with a collection of high-resolution FLAC files, TeleCloud provides the tools you need for the ultimate listening experience.
+<p align="center">A hi-res music player for Windows that backs up your library to your own Telegram account.</p>
 
 ---
 
-## Key Features
+## What it does
 
-### Audiophile-Grade Playback
-- **Bit-Perfect Audio** - WASAPI exclusive mode for unmodified output
-- **High-Resolution Support** - 24/96, 24/192, 32/384, DSD64/128/256
-- **31-Band Parametric EQ** - Professional equalizer with room correction
-- **Gapless Playback** - Seamless transitions between tracks
-- **ReplayGain** - Automatic volume normalization
+TeleCloud plays the music files on your computer the way they were recorded, and keeps a private copy of them in Telegram. Telegram gives every account unlimited storage, so your whole collection is safe and can be streamed back to any computer where you sign in.
 
-### Extensive Format Support
-- Lossless: FLAC, ALAC, WAV, AIFF, APE, DSD (DSF/DFF)
-- Lossy: MP3, AAC, Opus, Vorbis
-- And more...
+- **Plays your files as they are.** FLAC, ALAC, WAV, AIFF, APE, WavPack, DSD and the common lossy formats. With an exclusive output device, the sound goes to your DAC untouched (bit-perfect).
+- **Backs up to Telegram.** Your music goes into a private channel that only you can see. Files are encrypted before they leave your computer.
+- **Streams from the cloud.** Tracks that are only in TeleCloud play straight from Telegram and are kept in a cache for next time.
+- **Restores on a new computer.** Sign in, restore, and your library comes back with its tags, lyrics and album covers.
 
-### Beautiful Interface
-- **Modern Design** - Clean, intuitive layout
-- **Dark & Light Themes** - Seamless theme switching
-- **Album Art Display** - Large cover art with synchronized lyrics
-- **Smart Navigation** - Browse by songs, albums, artists, or playlists
-- **Advanced Search** - Find tracks instantly across your entire library
+## Download and install
 
-### Music Management
-- **Local Library** - Organize your music files with automatic metadata extraction
-- **TeleCloud Sync** - Upload your library to Telegram for cloud storage and access anywhere
-- **Cloud Playback** - Stream music from Telegram with automatic caching and metadata extraction
-- **Library Restore** - Restore your entire library from Telegram channels
-- **Playlists** - Create and manage unlimited playlists
-- **Favorites** - Quick access to your most-loved tracks
-- **Recent Played** - Never lose track of what you've been listening to
-- **Smart Sorting** - Sort by title, artist, album, duration, or format
+1. Download `TeleCloud-Setup-<version>.exe` from the [Releases](https://github.com/MinhHaiDeveloper/telecloud/releases) page.
+2. Run it and follow the installer. Everything TeleCloud needs is included.
+3. Open TeleCloud from the Start menu or the desktop shortcut.
 
-### Streaming Integration
-- **Tidal** - Browse and stream from Tidal's catalog (HiFi quality)
-- **Tidal Search** - Search across millions of tracks
-- **Tidal Playlists** - Access your Tidal playlists and favorites
+TeleCloud runs on Windows 10 and Windows 11 (64-bit).
 
-### Advanced Audio Tools
-- **Spectrum Analyzer** - Real-time frequency visualization
-- **Signal Path Display** - See exactly how your audio is being processed
-- **Auto-EQ** - Automated room correction with target curve matching
-- **Device Selection** - Switch between multiple audio outputs
-- **Sample Rate Limiting** - Cap quality for device compatibility
+> Windows may show a "Windows protected your PC" screen the first time, because the app is new and not yet widely downloaded. Click **More info** and then **Run anyway**.
 
-### Power User Features
-- **Keyboard Shortcuts** - Fully customizable shortcuts for all functions
-- **Queue Management** - Full control over playback queue
-- **File Watcher** - Automatic library updates when files change
-- **Multiple Folders** - Scan and manage music from multiple locations
-- **Hybrid Storage** - Files can exist locally, in cloud, or both
-- **Smart Caching** - Downloaded cloud files cached for instant subsequent playback
-- **Complete Metadata** - Cover art, lyrics, and technical specs for all files (local and cloud)
+## Getting started
 
----
+### 1. Add your music
 
-## Coming Soon
+Open **Settings > Library**, click **Add folder** and choose where your music lives. You can add several folders. TeleCloud reads your tags and covers and keeps the library up to date when you add, move or delete files.
 
-I'm constantly improving TeleCloud. Here's what's on the roadmap:
+### 2. Choose how it sounds
 
-### Additional Features
-- **Last.fm Scrobbling** - Track your listening history
-- **Cross-Platform Support** - Linux and macOS versions
-- **Mobile Companion App** - Control playback from your phone
-- **Audio Effects** - Additional DSP effects and filters
+In **Settings > Playback**:
 
----
+- **Output device:** pick your DAC or headphones. Devices marked *exclusive* give bit-perfect playback; *System default* shares the sound with other apps.
+- **ReplayGain:** evens out the volume between tracks or albums.
+- **Crossfade:** blends the end of one track into the next (in shared mode).
+- **Limit output format:** caps the sample rate and bit depth if your device cannot handle very high resolutions.
 
-## Installation
+The **Signal path** panel on the right shows exactly what happens to the sound on its way to your device.
 
-### For Users (Recommended)
+### 3. Equalizer (optional)
 
-**Windows Installer** - Coming Soon!
+**Settings > Equalizer** has a 31-band equalizer. Drag the points on the curve or scroll over them, and changes are heard immediately.
 
-Once I complete testing and stabilize the core features, TeleCloud will be available as a simple Windows installer (.exe):
+- **AutoEQ:** choose your headphones and a target sound, and TeleCloud builds a correction for you.
+- **Import and export** presets in the format used by Squiglink.
+- **Undo and redo** with `Ctrl+Z` and `Ctrl+Y`.
 
-1. **Download** the installer from the [Releases](https://github.com/your-username/telecloud/releases) page
-2. **Run** the installer - it will automatically include MPV and all dependencies
-3. **Launch** TeleCloud from your desktop or Start menu
-4. **Login** with your Telegram account
-5. **Add your music library** and start listening!
+### 4. Back up to TeleCloud (optional)
 
-**Note:** Currently in development. For now, please use the developer installation method below.
+Open **Settings > TeleCloud Sync** and follow the steps:
 
-### For Developers (Build from Source)
+1. **Get your Telegram app keys.** Go to [my.telegram.org/apps](https://my.telegram.org/apps), sign in with your phone number and create an app (any name works). Copy the **API ID** and **API hash** into TeleCloud. They stay on your computer, protected by Windows.
+2. **Sign in.** Enter your phone number and the code Telegram sends you, plus your password if you use two-step verification.
+3. **Choose where to store your music.** A private channel is recommended. Saved Messages also works.
+4. **Keep encryption on** (recommended) and **save your recovery key** somewhere outside this computer, for example in a password manager. You need it to open your backup after reinstalling Windows or on another computer.
+5. Click **Back up now**. You can pause at any time and continue later.
 
-If you want to contribute or try the latest features:
+## Using TeleCloud
 
-1. **Prerequisites:**
-   - [Node.js](https://nodejs.org/) v16 or higher
-   - [Git](https://git-scm.com/)
-   - [MPV](https://mpv.io/installation/) - Download and place `mpv.exe` and `mpv.com` in the project root
+### Finding your music
 
-2. **Clone and install:**
-   ```bash
-   git clone https://github.com/your-username/telecloud.git
-   cd telecloud
-   npm install
-   ```
+Browse by **Library**, **Albums**, **Artists**, **Playlists**, **Favourites** and **Recently played**, or press `Ctrl+K` to search. The **Discover** page shows your recently added albums and what you played last.
 
-3. **Run in development mode:**
-   ```bash
-   npm run dev
-   ```
+### Where a track lives
 
-### First-Time Setup
+Each track shows small labels in the **Source** column. The info icon next to "Source" explains them.
 
-1. **Settings** → **Add Music Folder** - Select your music directory
-2. **Wait for scan** - TeleCloud will index your music files
-3. **Configure Audio** - Select your preferred audio device in Settings
-4. **Optional: Login to Tidal** - For streaming integration
+| Label | Meaning |
+|---|---|
+| Local | The file is on this computer. |
+| Local + Cloud | On this computer and backed up to TeleCloud. |
+| Cloud | Only in TeleCloud. It streams from Telegram when you play it. |
+| Cloud + Cached | Only in TeleCloud, but already downloaded, so it plays instantly and offline. |
 
----
+The **Quality** column shows the format: for example **FLAC 24/96** for hi-res, **FLAC 16/44.1** for CD quality, or **MP3 320** for lossy files (the number is the bitrate).
 
-## Keyboard Shortcuts
+### Selecting several tracks
 
-| Action | Default Shortcut |
-|--------|-----------------|
-| Play/Pause | `Space` |
-| Next Track | `→` |
-| Previous Track | `←` |
-| Volume Up | `↑` |
-| Volume Down | `↓` |
-| Seek Forward | `Ctrl + →` |
-| Seek Backward | `Ctrl + ←` |
-| Toggle Mute | `M` |
+- `Ctrl` + click selects or unselects one track.
+- `Shift` + click selects every track between two clicks.
+- `Ctrl+A` selects every track in the list, `Esc` clears the selection.
 
-*All shortcuts are customizable in Settings*
+A bar appears at the bottom, where you can play the selection, add it to a playlist, back it up, or remove it from TeleCloud.
 
----
+### Several storages
 
-## Technology Stack
+You can keep up to five storages, such as "Hi-Res Vault" for your best albums and the default channel for everything else. Add them in **Settings > TeleCloud Sync > Storages**, then use **Back up to...** on a track, an album, a playlist or a selection. Each track is kept in one storage only, so nothing is uploaded twice.
 
-TeleCloud is built with modern, proven technologies:
+### Removing music from TeleCloud
 
-- **Electron** - Cross-platform desktop framework
-- **React** - Modern UI library
-- **Vite** - Lightning-fast build tool
-- **MPV** - Professional audio engine
-- **Telegram API** - Cloud integration
-- **Tidal API** - Streaming integration
+Use **Remove from TeleCloud** in a track's menu, in an album or playlist menu, or on a selection. Only those tracks are deleted from Telegram; the rest of the storage stays.
 
----
+- If the file is still on your computer, it simply becomes a Local track again.
+- If the track only existed in TeleCloud, it leaves your library for good. TeleCloud asks before doing this.
 
-## For Developers
+### Saving a track to your computer
 
-Want to contribute or understand the codebase better?
+Choose **Download** in the menu of a cloud track to keep a copy on your computer. The download folder can be changed in **Settings > Downloads**.
 
-**[Technical Documentation & Developer Guide](src/README.md)**
+### Restoring on another computer
 
-The technical README includes:
-- Detailed project structure
-- Architecture overview
-- API documentation
-- Build instructions
-- Contribution guidelines
+Install TeleCloud, sign in with the same Telegram account, enter your recovery key under **Encryption**, and choose **Restore**. Your tracks appear with their tags, lyrics and covers, ready to stream or download.
 
+## Keeping your backup safe
 
+The **Do's & don'ts** button in **Settings > TeleCloud Sync** has the full list. The most important points:
+
+**Do**
+
+- Leave TeleCloud open until the backup has finished.
+- Press **Pause** before quitting in the middle of a backup.
+- Keep your recovery key outside this computer.
+- Remove or move tracks from inside TeleCloud.
+
+**Don't**
+
+- Delete, edit or forward TeleCloud files in Telegram yourself.
+- Delete the `library.tcm` file in your storage chats. It is the index other computers restore from.
+- Leave or delete a storage channel in Telegram. Remove it in TeleCloud's settings instead.
+- Restart the app when it says it is waiting. That is Telegram's speed limit, and TeleCloud continues by itself.
+
+## Keyboard shortcuts
+
+| Action | Shortcut |
+|---|---|
+| Play / pause | `Space` |
+| Next track | `Right arrow` |
+| Previous track | `Left arrow` |
+| Volume up / down | `Up arrow` / `Down arrow` |
+| Seek forward / back | `Ctrl+Right` / `Ctrl+Left` |
+| Mute | `M` |
+| Search | `Ctrl+K` |
+| Select all tracks | `Ctrl+A` |
+
+You can change the playback shortcuts in **Settings > Keyboard**.
+
+## Questions
+
+**Is my music private?**
+Yes. It is stored in your own Telegram account, in a channel only you can see. With encryption on, the files cannot be played by anyone who does not have your recovery key, Telegram included.
+
+**How much can I store?**
+Telegram does not limit the total size. Single files can be up to 2 GB, which covers almost any album track.
+
+**Does streaming change the sound?**
+No. The exact file you uploaded is streamed back, and TeleCloud checks it against the original before saving it to the cache.
+
+**How much disk space does the cache use?**
+5 GB by default. You can change it or clear it in **Settings > TeleCloud Sync > Cache**. The oldest tracks are removed first when it is full.
+
+**I lost my recovery key.**
+Your backup can still be used on the computer where you made it. You can see the key there under **Settings > TeleCloud Sync > Encryption**. Without the key, encrypted files cannot be opened anywhere else.
+
+## Feedback
+
+TeleCloud is in beta and made by a single developer. If something does not work as expected, or you have an idea, please open an issue on the [Issues](https://github.com/MinhHaiDeveloper/telecloud/issues) page.
+
+TeleCloud is not affiliated with Telegram.
 
 ## License
 
-ISC License - See LICENSE file for details
-
----
-
-## Support
-
-- **Issues & Bug Reports**: [GitHub Issues](#)
-- **Feature Requests**: [GitHub Discussions](#)
-- **Documentation**: [Wiki](#)
-
----
-
-## Acknowledgments
-
-TeleCloud is built on the shoulders of giants:
-- [MPV](https://mpv.io/) - The best media player
-- [Electron](https://www.electronjs.org/) - Desktop framework
-- [React](https://react.dev/) - UI library
-- [Tidal](https://tidal.com/) - Music streaming service
-
----
-
-## Disclaimer
-
-**Solo Developer Project**: TeleCloud is developed and maintained by a single developer. While I'm committed to improving and maintaining this project, updates may come at a slower pace than larger team projects. I appreciate your patience and understanding, and I'll do my best to keep TeleCloud stable, feature-rich, and up-to-date.
-
-If you encounter any bugs or have feature requests, please feel free to open an issue. Contributions from the community are always welcome!
-
----
-
-**Made with care for music lovers and audiophiles**
+TeleCloud is free software under the [GNU General Public License v3.0](LICENSE).

@@ -76,6 +76,11 @@ function createSchema() {
         // Column already exists, ignore
     }
 
+    // Library: file name/extension and codec details
+    for (const col of ['name TEXT', 'ext TEXT', 'codec TEXT', 'lossless INTEGER', 'cloud_cover TEXT']) {
+        try { db.exec(`ALTER TABLE music_files ADD COLUMN ${col}`); } catch (e) { /* exists */ }
+    }
+
     // TeleCloud Sync: Add cloud storage columns
     try {
         db.exec('ALTER TABLE music_files ADD COLUMN storage_type TEXT DEFAULT "local"');
@@ -143,24 +148,24 @@ function getFileByPath(filePath) {
 }
 
 /**
- * Insert or update file metadata in cache
- * @param {Object} fileData - File metadata object
- * @returns {void}
+ * Insert or update file metadata in cache.
+ * Cloud columns (storage_type, telegram_*, cache_path) are never touched here.
  */
-function insertOrUpdateFile(fileData) {
-    if (!db) initDatabase();
-
-    const stmt = db.prepare(`
+const UPSERT_SQL = `
     INSERT INTO music_files (
-      path, mtime, size, title, artist, album, year, genre,
+      path, name, ext, mtime, size, title, artist, album, year, genre,
       track_number, disc_number, duration, bitrate, sample_rate, bit_depth,
-      lyrics, cover, has_cover, cover_hash, last_scanned
+      codec, lossless, lyrics, cover, has_cover, cover_hash, last_scanned, created_at
     ) VALUES (
-      @path, @mtime, @size, @title, @artist, @album, @year, @genre,
+      @path, @name, @ext, @mtime, @size, @title, @artist, @album, @year, @genre,
       @trackNumber, @discNumber, @duration, @bitrate, @sampleRate, @bitDepth,
-      @lyrics, @cover, @hasCover, @coverHash, @lastScanned
+      @codec, @lossless, @lyrics, @cover, @hasCover, @coverHash, @lastScanned, @addedAt
     )
     ON CONFLICT(path) DO UPDATE SET
+      name = @name,
+      ext = @ext,
+      codec = @codec,
+      lossless = @lossless,
       mtime = @mtime,
       size = @size,
       title = @title,
@@ -179,10 +184,14 @@ function insertOrUpdateFile(fileData) {
       has_cover = @hasCover,
       cover_hash = @coverHash,
       last_scanned = @lastScanned
-  `);
+  `;
+let upsertStmt = null;
 
-    stmt.run({
+function upsertParams(fileData) {
+    return {
         path: fileData.path,
+        name: fileData.name || path.basename(fileData.path),
+        ext: (fileData.ext || path.extname(fileData.path)).toLowerCase(),
         mtime: fileData.mtime || 0,
         size: fileData.size || 0,
         title: fileData.title || null,
@@ -196,77 +205,42 @@ function insertOrUpdateFile(fileData) {
         bitrate: fileData.bitrate || null,
         sampleRate: fileData.sampleRate || null,
         bitDepth: fileData.bitDepth || null,
+        codec: fileData.codec || null,
+        lossless: fileData.lossless ?? null,
         lyrics: fileData.lyrics || null,
         cover: fileData.cover || null,
         hasCover: fileData.hasCover ? 1 : 0,
         coverHash: fileData.coverHash || null,
-        lastScanned: Date.now()
-    });
+        lastScanned: Date.now(),
+        // Only used when the row is first inserted; updates keep the original "added" time
+        addedAt: fileData.addedAt || Date.now()
+    };
 }
 
-/**
- * Insert multiple files in a transaction (much faster)
- * @param {Array} filesData - Array of file metadata objects
- * @returns {void}
- */
+function insertOrUpdateFile(fileData) {
+    if (!db) initDatabase();
+    if (!upsertStmt) upsertStmt = db.prepare(UPSERT_SQL);
+    upsertStmt.run(upsertParams(fileData));
+}
+
+/** Many upserts in one transaction (one disk sync instead of one per file). */
 function insertOrUpdateFilesBatch(filesData) {
     if (!db) initDatabase();
     if (!filesData || filesData.length === 0) return;
+    if (!upsertStmt) upsertStmt = db.prepare(UPSERT_SQL);
+    db.transaction((list) => { for (const f of list) upsertStmt.run(upsertParams(f)); })(filesData);
+}
 
-    const stmt = db.prepare(`
-    INSERT INTO music_files (
-      path, mtime, size, title, artist, album, year, genre,
-      track_number, disc_number, duration, bitrate, sample_rate,
-      lyrics, has_cover, cover_hash, last_scanned
-    ) VALUES (
-      @path, @mtime, @size, @title, @artist, @album, @year, @genre,
-      @trackNumber, @discNumber, @duration, @bitrate, @sampleRate,
-      @lyrics, @hasCover, @coverHash, @lastScanned
-    )
-    ON CONFLICT(path) DO UPDATE SET
-      mtime = @mtime,
-      size = @size,
-      title = @title,
-      artist = @artist,
-      album = @album,
-      year = @year,
-      genre = @genre,
-      track_number = @trackNumber,
-      disc_number = @discNumber,
-      duration = @duration,
-      bitrate = @bitrate,
-      sample_rate = @sampleRate,
-      lyrics = @lyrics,
-      has_cover = @hasCover,
-      cover_hash = @coverHash,
-      last_scanned = @lastScanned
-  `);
+function countFiles() {
+    if (!db) initDatabase();
+    return db.prepare('SELECT COUNT(*) AS n FROM music_files').get().n;
+}
 
-    const insertMany = db.transaction((files) => {
-        for (const fileData of files) {
-            stmt.run({
-                path: fileData.path,
-                mtime: fileData.mtime || 0,
-                size: fileData.size || 0,
-                title: fileData.title || null,
-                artist: fileData.artist || null,
-                album: fileData.album || null,
-                year: fileData.year || null,
-                genre: fileData.genre || null,
-                trackNumber: fileData.trackNumber || null,
-                discNumber: fileData.discNumber || null,
-                duration: fileData.duration || null,
-                bitrate: fileData.bitrate || null,
-                sampleRate: fileData.sampleRate || null,
-                lyrics: fileData.lyrics || null,
-                hasCover: fileData.hasCover ? 1 : 0,
-                coverHash: fileData.coverHash || null,
-                lastScanned: Date.now()
-            });
-        }
-    });
-
-    insertMany(filesData);
+/** Rows for the given paths (used to send freshly scanned tracks to the UI). */
+function getFilesByPaths(paths) {
+    if (!db) initDatabase();
+    const stmt = db.prepare('SELECT * FROM music_files WHERE path = ?');
+    return paths.map(p => stmt.get(p)).filter(Boolean);
 }
 
 /**
@@ -308,8 +282,16 @@ function deleteFilesBatch(filePaths) {
 function getAllFiles() {
     if (!db) initDatabase();
 
-    const stmt = db.prepare('SELECT * FROM music_files');
+    // Oldest first, so "recently added" is simply the end of the list. Files added in the
+    // same scan share one timestamp; within a scan the newest file on disk counts as newest.
+    const stmt = db.prepare('SELECT * FROM music_files ORDER BY created_at, mtime, path');
     return stmt.all();
+}
+
+/** Mark a track as living only in the cloud (its local copy is gone). */
+function setStorageType(filePath, storageType) {
+    if (!db) initDatabase();
+    db.prepare('UPDATE music_files SET storage_type = ? WHERE path = ?').run(storageType, filePath);
 }
 
 /**
@@ -534,6 +516,7 @@ function closeDatabase() {
     if (db) {
         db.close();
         db = null;
+        upsertStmt = null;
         console.log('[Database] Connection closed');
     }
 }
@@ -580,9 +563,12 @@ module.exports = {
     getFileByPath,
     insertOrUpdateFile,
     insertOrUpdateFilesBatch,
+    getFilesByPaths,
+    countFiles,
     deleteFile,
     deleteFilesBatch,
     getAllFiles,
+    setStorageType,
     getFilesNeedingUpdate,
     clearDatabase,
     getStats,

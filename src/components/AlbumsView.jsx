@@ -1,302 +1,129 @@
-import React, { useMemo, useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import SongList from './SongList';
+import Cover from './Cover';
+import Icon from './Icon';
+import { Select, MoreMenu, BackButton, useDetailScroll } from './ui';
+import { qualityOf, formatDuration } from '../utils/audio';
 
-const AlbumsView = ({ musicFiles, currentFile, onPlay, onToggleFavorite, onAddPlaylist, favorites, onCheckSpectrum, selectedAlbum, setSelectedAlbum, onDeleteSong, onDeleteAlbum, onDownloadSong }) => {
-  const [sortBy, setSortBy] = useState('name'); // name, name-desc, artist
-  const [sortMenuOpen, setSortMenuOpen] = useState(false);
-  const sortMenuRef = useRef(null);
+const SORTS = [
+  { value: 'name', label: 'Title A → Z' },
+  { value: 'name-desc', label: 'Title Z → A' },
+  { value: 'artist', label: 'Artist' },
+  { value: 'tracks', label: 'Most tracks' },
+];
 
-  // Click outside to close sort menu
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (sortMenuRef.current && !sortMenuRef.current.contains(e.target)) {
-        setSortMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+const noThe = (s) => s.toLowerCase().replace(/^the /, '');
 
-  const sortOptions = [
-    { value: 'name', label: 'Name' },
-    { value: 'name-desc', label: "Name (Ignore 'The')" },
-    { value: 'artist', label: 'Artist' }
-  ];
+const bestQuality = (songs) => songs.map(qualityOf).sort((a, b) => (b.bits * 1e6 + b.rate) - (a.bits * 1e6 + a.rate))[0];
 
-  const currentSortLabel = sortOptions.find(opt => opt.value === sortBy)?.label || 'Sort';
+const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavorite, onAddPlaylist, favorites, onCheckSpectrum, selectedAlbum, setSelectedAlbum, onDeleteSong, onDeleteAlbum, onDownloadSong, onBackupMany, onBackupTo, storageNames, onRemoveFromCloud }) => {
+  const [sortBy, setSortBy] = useState('name');
+  useDetailScroll(selectedAlbum?.name ?? null);
 
-  const albumsData = useMemo(() => {
-    const albumMap = {};
-
+  const albums = useMemo(() => {
+    const map = new Map();
     musicFiles.forEach(file => {
-      let rawAlbum = file.metadata?.album || 'Unknown Album';
-
-      if (!albumMap[rawAlbum]) {
-        albumMap[rawAlbum] = { name: rawAlbum, songs: [], cover: file.path ? `media://${encodeURIComponent(file.path)}` : file.cover };
-      }
-      albumMap[rawAlbum].songs.push(file);
-      // Try to get a cover if we don't have one yet
-      if (!albumMap[rawAlbum].cover && file.path) {
-        albumMap[rawAlbum].cover = `media://${encodeURIComponent(file.path)}`;
-      }
+      const name = file.metadata?.album || 'Unknown Album';
+      if (!map.has(name)) map.set(name, { name, artist: file.metadata?.artist || 'Unknown Artist', file, songs: [], cover: file.path ? `media://${encodeURIComponent(file.path)}` : file.cover });
+      map.get(name).songs.push(file);
     });
-
-    const albums = Object.values(albumMap);
+    const list = [...map.values()];
     switch (sortBy) {
-      case 'name-desc':
-        return albums.sort((a, b) => b.name.localeCompare(a.name));
-      case 'artist':
-        return albums.sort((a, b) => {
-          const artistA = (a.songs[0]?.metadata?.artist || 'Unknown').toLowerCase();
-          const artistB = (b.songs[0]?.metadata?.artist || 'Unknown').toLowerCase();
-          return artistA.localeCompare(artistB);
-        });
-      case 'name':
-      default:
-        return albums.sort((a, b) => a.name.localeCompare(b.name));
+      case 'name-desc': return list.sort((a, b) => noThe(b.name).localeCompare(noThe(a.name)));
+      case 'artist': return list.sort((a, b) => noThe(a.artist).localeCompare(noThe(b.artist)));
+      case 'tracks': return list.sort((a, b) => b.songs.length - a.songs.length);
+      default: return list.sort((a, b) => noThe(a.name).localeCompare(noThe(b.name)));
     }
   }, [musicFiles, sortBy]);
 
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setMenuOpen(false);
-      }
-    };
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, []);
-
   if (selectedAlbum) {
-    // Sort songs by track number for proper album order
-    const currentAlbumSongs = [...selectedAlbum.songs].sort((a, b) => {
-      const trackA = a.metadata?.track || 0;
-      const trackB = b.metadata?.track || 0;
-      if (trackA !== trackB) return trackA - trackB;
-      // Fallback to filename sorting if track numbers are equal
-      return a.name.localeCompare(b.name);
+    // the album as it is in the library now (tracks change while it is open: cached, tagged, removed)
+    const current = albums.find(a => a.name === selectedAlbum.name) || selectedAlbum;
+    const songs = [...current.songs].sort((a, b) => {
+      const da = a.metadata?.disc || 0, db = b.metadata?.disc || 0;
+      if (da !== db) return da - db;
+      const ta = a.metadata?.track || 0, tb = b.metadata?.track || 0;
+      return ta !== tb ? ta - tb : (a.name || '').localeCompare(b.name || '');
     });
+    const q = bestQuality(songs);
+    const total = songs.reduce((s, f) => s + (f.metadata?.duration || 0), 0);
+    const year = songs.find(f => f.metadata?.year)?.metadata?.year;
+    const artist = selectedAlbum.artist || songs[0]?.metadata?.artist || 'Unknown Artist';
+
     return (
-      <div style={{ display: 'flex', flex: 1, flexDirection: 'column', padding: '0 20px', paddingTop: '20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px', gap: '20px' }}>
-          <button
-            onClick={() => setSelectedAlbum(null)}
-            style={{
-              background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.1)',
-              color: 'var(--text-main)',
-              width: '40px',
-              height: '40px',
-              borderRadius: '50%',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all 0.2s',
-              flexShrink: 0
-            }}
-            onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-            onMouseOut={e => e.currentTarget.style.background = 'transparent'}
-            title="Back"
-          >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" /></svg>
-          </button>
-
-          <span style={{ color: 'var(--text-muted)', fontSize: '14px', flexShrink: 0 }}>
-            <span style={{ color: 'var(--text-main)', fontWeight: 'bold' }}>{selectedAlbum.songs.length}</span> songs
-          </span>
-
-          <h2 style={{ margin: 0, fontSize: '28px', color: 'var(--accent-red)', fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{selectedAlbum.name}</h2>
-
-          <div style={{ position: 'relative', marginLeft: 'auto', flexShrink: 0 }} ref={menuRef}>
-            <button
-              onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-main)',
-                width: '40px',
-                height: '40px',
-                borderRadius: '50%',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'background 0.2s'
-              }}
-              onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-              onMouseOut={e => e.currentTarget.style.background = 'transparent'}
-              title="Menu"
-            >
-              <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" /></svg>
-            </button>
-
-            {menuOpen && (
-              <div style={{ position: 'absolute', right: 0, top: '100%', background: 'var(--bg-secondary)', borderRadius: '8px', padding: '10px 0', minWidth: '180px', boxShadow: '0 5px 20px rgba(0,0,0,0.5)', zIndex: 100 }}>
-                <div
-                  onClick={() => {
-                    if (onDownloadSong) selectedAlbum.songs.forEach(song => onDownloadSong(song));
-                    setMenuOpen(false);
-                  }}
-                  style={{ padding: '10px 20px', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-secondary)' }}
-                  onMouseOver={e => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-main)'; }}
-                  onMouseOut={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
-                >
-                  <span style={{ fontSize: '16px' }}>⤓</span> Download Album
-                </div>
-                <div
-                  onClick={() => {
-                    if (onAddPlaylist) onAddPlaylist(selectedAlbum.songs[0], selectedAlbum.songs); // App.jsx handleAddPlaylist may need to handle arrays, but usually handles one file. We'll pass the first file for now, App.jsx might need tweaking to add an album.
-                    setMenuOpen(false);
-                  }}
-                  style={{ padding: '10px 20px', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-secondary)' }}
-                  onMouseOver={e => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-main)'; }}
-                  onMouseOut={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
-                >
-                  <span style={{ fontSize: '16px' }}>☰</span> Add Album to Playlist
-                </div>
-                <div
-                  onClick={() => {
-                    if (onDeleteAlbum) {
-                      onDeleteAlbum(selectedAlbum);
-                    }
-                    setMenuOpen(false);
-                  }}
-                  style={{ padding: '10px 20px', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--accent-red)' }}
-                  onMouseOver={e => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
-                  onMouseOut={e => { e.currentTarget.style.background = 'transparent'; }}
-                >
-                  <span style={{ fontSize: '16px' }}>🗑</span> Delete Album
-                </div>
-              </div>
-            )}
+      <>
+        <div className="page-head" style={{ marginBottom: 6 }}>
+          <BackButton onClick={() => setSelectedAlbum(null)} label="All albums" />
+          <span className="sub">Albums</span>
+        </div>
+        <div className="detail-head">
+          <Cover file={selectedAlbum.file || songs[0]} />
+          <div className="info">
+            <span className="eyebrow">Album</span>
+            <h2 title={selectedAlbum.name}>{selectedAlbum.name}</h2>
+            <div className="meta">
+              <b style={{ color: 'var(--text)' }}>{artist}</b>
+              {year && <span>· {year}</span>}
+              <span>· {songs.length} tracks · {formatDuration(total)}</span>
+              {q && <span className={`badge b-${q.tier} mono`}>{q.label}</span>}
+            </div>
+            <div className="btn-row">
+              <button className="btn-primary" onClick={() => onPlay(songs[0], 0, songs)}><Icon name="play" filled />Play</button>
+              <button className="btn-ghost" onClick={() => { const s = [...songs].sort(() => Math.random() - 0.5); onPlay(s[0], 0, s); }}><Icon name="shuffle" />Shuffle</button>
+              <MoreMenu items={[
+                ...(onDownloadSong ? [{ label: 'Download album', icon: 'download', onClick: () => songs.forEach(s => onDownloadSong(s)) }] : []),
+                ...(onAddPlaylist ? [{ label: 'Add to playlist', icon: 'playlist', onClick: () => onAddPlaylist(songs[0], songs) }] : []),
+                ...(onBackupMany ? [{ label: 'Back up album to…', icon: 'cloud', onClick: () => onBackupMany(songs, `“${selectedAlbum.name}”`) }] : []),
+                ...(onRemoveFromCloud && songs.some(f => f.telegram_message_id) ? [{ label: 'Remove album from TeleCloud', icon: 'cloud', danger: true, onClick: () => onRemoveFromCloud(songs.filter(f => f.telegram_message_id)) }] : []),
+                ...(onDeleteAlbum ? [{ sep: true }, { label: 'Delete album', icon: 'trash', danger: true, onClick: () => onDeleteAlbum({ ...selectedAlbum, songs }) }] : []),
+              ]} />
+            </div>
           </div>
         </div>
-
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          <SongList
-            musicFiles={currentAlbumSongs}
-            currentFile={currentFile}
-            onPlay={(file, idx) => onPlay(file, idx, currentAlbumSongs)}
-            onToggleFavorite={onToggleFavorite}
-            onAddPlaylist={onAddPlaylist}
-            favorites={favorites}
-            onCheckSpectrum={onCheckSpectrum}
-            onDeleteSong={onDeleteSong}
-            onDownloadSong={onDownloadSong}
-            title={null}
-            showSort={false}
-          />
-        </div>
-      </div>
+        <SongList
+          onBackupTo={onBackupTo}
+          onBackupMany={onBackupMany}
+          onRemoveFromCloud={onRemoveFromCloud}
+          storageNames={storageNames}
+          musicFiles={songs}
+          currentFile={currentFile}
+          isPlaying={isPlaying}
+          onPlay={(file, idx) => onPlay(file, idx, songs)}
+          onToggleFavorite={onToggleFavorite}
+          onAddPlaylist={onAddPlaylist}
+          favorites={favorites}
+          onCheckSpectrum={onCheckSpectrum}
+          onDeleteSong={onDeleteSong}
+          onDownloadSong={onDownloadSong}
+        />
+      </>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flex: 1, flexDirection: 'column', padding: '0 20px', paddingTop: '20px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-        <h2 style={{ margin: 0, fontSize: '24px' }}>Albums</h2>
-
-        {/* Custom Sort Dropdown */}
-        <div ref={sortMenuRef} style={{ position: 'relative' }}>
-          <button
-            onClick={() => setSortMenuOpen(!sortMenuOpen)}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '20px',
-              border: 'none',
-              background: 'var(--bg-tertiary)',
-              color: 'var(--text-primary)',
-              fontSize: '13px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              minWidth: '140px',
-              justifyContent: 'space-between'
-            }}
-          >
-            <span>{currentSortLabel}</span>
-            <span style={{ fontSize: '10px' }}>▼</span>
-          </button>
-
-          {sortMenuOpen && (
-            <div style={{
-              position: 'absolute',
-              top: '100%',
-              right: 0,
-              marginTop: '4px',
-              background: 'var(--bg-tertiary)',
-              borderRadius: '8px',
-              overflow: 'hidden',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-              zIndex: 1000,
-              minWidth: '180px'
-            }}>
-              {sortOptions.map(option => (
-                <div
-                  key={option.value}
-                  onClick={() => {
-                    setSortBy(option.value);
-                    setSortMenuOpen(false);
-                  }}
-                  style={{
-                    padding: '12px 16px',
-                    cursor: 'pointer',
-                    background: sortBy === option.value ? 'var(--accent-red)' : 'transparent',
-                    color: 'var(--text-primary)',
-                    fontSize: '13px',
-                    transition: 'background 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (sortBy !== option.value) {
-                      e.currentTarget.style.background = 'var(--bg-hover)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (sortBy !== option.value) {
-                      e.currentTarget.style.background = 'transparent';
-                    }
-                  }}
-                >
-                  {option.label}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+    <>
+      <div className="page-head">
+        <h2>Albums</h2>
+        <span className="sub">{albums.length.toLocaleString()} albums</span>
+        <div className="end"><Select variant="ghost" icon="sort" align="right" value={sortBy} options={SORTS} onChange={setSortBy} /></div>
       </div>
-
-      <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '20px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '20px' }}>
-          {albumsData.map((album, idx) => (
-            <div
-              key={idx}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', padding: '15px', background: 'var(--bg-secondary)', borderRadius: '12px', transition: 'background 0.2s' }}
-              onClick={() => setSelectedAlbum(album)}
-              onMouseOver={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-              onMouseOut={e => e.currentTarget.style.background = 'var(--bg-secondary)'}
-            >
-              <div style={{ width: '100px', height: '100px', borderRadius: '8px', backgroundColor: 'var(--bg-tertiary)', marginBottom: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', boxShadow: '0 5px 15px rgba(0,0,0,0.3)' }}>
-                {album.cover ? (
-                  <img src={album.cover} alt="album cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <svg viewBox="0 0 24 24" width="50" height="50" fill="#777"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z" /></svg>
-                )}
+      {albums.length === 0 ? (
+        <div className="empty">No albums in your library yet.</div>
+      ) : (
+        <div className="tile-grid">
+          {albums.map(album => (
+            <div key={album.name} className="tile pressable" role="button" tabIndex={0} onClick={() => setSelectedAlbum(album)} onKeyDown={(e) => e.key === 'Enter' && setSelectedAlbum(album)}>
+              <div className="cover-wrap">
+                <Cover file={album.file} />
+                <button className="play-fab" title="Play album" onClick={(e) => { e.stopPropagation(); onPlay(album.songs[0], 0, album.songs); }}><Icon name="play" /></button>
               </div>
-              <div style={{ fontWeight: 'bold', textAlign: 'center', width: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{album.name}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '5px' }}>{album.songs.length} songs</div>
+              <b>{album.name}</b>
+              <span>{album.artist} · {album.songs.length} tracks</span>
             </div>
           ))}
-          {albumsData.length === 0 && (
-            <div style={{ color: 'var(--text-muted)' }}>No albums found in your library.</div>
-          )}
         </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 };
 

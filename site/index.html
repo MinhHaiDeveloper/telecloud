@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TeleCloud — Hi-res music player with unlimited Telegram backup</title>
+  <meta name="description" content="TeleCloud plays your music files bit-perfect and backs them up, encrypted, to your own Telegram account. Unlimited storage, stream anywhere, restore on any PC.">
+  <meta name="theme-color" content="#0b0b0d">
+  <meta property="og:title" content="TeleCloud">
+  <meta property="og:description" content="Bit-perfect hi-res player for Windows, with unlimited encrypted backup to your own Telegram.">
+  <meta property="og:image" content="assets/discover.webp">
+  <link rel="icon" href="assets/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="scroll-bar" aria-hidden="true"></div>
+
+  <header class="nav">
+    <a class="brand" href="#top" aria-label="TeleCloud home">
+      <img src="assets/icon.svg" alt="" width="30" height="30">
+      <span>TeleCloud</span>
+    </a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#sound">Sound</a>
+      <a href="#cloud">Cloud</a>
+      <a href="#eq">EQ</a>
+      <a href="#compare">Compare</a>
+    </nav>
+    <a class="btn-primary sm" href="#download">Download</a>
+  </header>
+
+  <main id="top">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-glow" aria-hidden="true"></div>
+      <p class="eyebrow reveal">Hi-res player · Telegram cloud · Windows</p>
+      <h1 class="reveal">Your music, <span class="grad">bit-perfect.</span><br>Your cloud, <span class="grad">unlimited.</span></h1>
+      <p class="lead reveal">TeleCloud plays the files on your computer exactly as they were recorded, and keeps an encrypted copy of your whole library in your own Telegram account. No subscription, no storage cap.</p>
+      <div class="hero-badges reveal">
+        <span class="badge b-hires">FLAC 24/192</span>
+        <span class="badge b-hires">DSD256</span>
+        <span class="badge b-local">Local</span><span class="badge b-cloud">Cloud</span>
+        <span class="badge b-cached">Cached</span>
+      </div>
+      <div class="hero-shot" data-scroll="hero">
+        <div class="window">
+          <div class="window-bar"><span class="wt">TeleCloud</span><i></i><i></i><i></i></div>
+          <img src="assets/discover.webp" alt="TeleCloud's Discover page with a track playing and the signal path panel" width="1920" height="1200">
+        </div>
+      </div>
+      <a class="scroll-cue" href="#why" aria-label="Scroll to learn more"><span></span></a>
+    </section>
+
+    <!-- Three pillars -->
+    <section class="pillars" id="why">
+      <article class="pillar reveal">
+        <div class="p-ico"><svg viewBox="0 0 24 24"><path d="M3 12h3l3-7 4 14 3-7h5"/></svg></div>
+        <h3>Hears what was recorded</h3>
+        <p>WASAPI exclusive output sends every bit to your DAC untouched. When something does change the sound, the signal path tells you what and why.</p>
+      </article>
+      <article class="pillar reveal">
+        <div class="p-ico"><svg viewBox="0 0 24 24"><path d="M18 10a6 6 0 0 0-12 0 4 4 0 0 0 0 8h12a4 4 0 0 0 0-8z"/></svg></div>
+        <h3>Backs up to your Telegram</h3>
+        <p>Telegram gives every account unlimited storage. TeleCloud encrypts your library on your PC and keeps it in a private channel only you can see.</p>
+      </article>
+      <article class="pillar reveal">
+        <div class="p-ico"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3M20 4v5h-5M20 12a8 8 0 0 1-14 5.3M4 20v-5h5"/></svg></div>
+        <h3>Comes back on any PC</h3>
+        <p>Sign in on a new computer and your library returns with its tags, lyrics and covers. Stream it, or download what you want offline.</p>
+      </article>
+    </section>
+
+    <!-- Signal path -->
+    <section class="story" id="sound" data-scroll="signal" data-steps="5">
+      <div class="story-sticky">
+        <div class="story-copy">
+          <p class="eyebrow">Bit-perfect, and it shows you</p>
+          <h2>Every step between the file and your ears, in plain sight.</h2>
+          <p>Most players quietly resample, normalise or mix your music. TeleCloud lists each stage as it plays, so you always know whether you hear the original.</p>
+          <ul class="ticks">
+            <li>FLAC, ALAC, WAV, AIFF, APE, WavPack and DSD up to DSD256</li>
+            <li>Gapless playback, crossfade, ReplayGain</li>
+            <li>Output capped only when your DAC needs it</li>
+          </ul>
+        </div>
+        <div class="story-visual">
+          <div class="card sp-card">
+            <div class="sp-head"><b>Signal path</b><span class="badge b-ok sp-badge">Bit-perfect</span></div>
+            <ol class="sp-steps">
+              <li data-i="0"><i></i><span>FLAC · 9,216 kbps</span><code>24/192</code></li>
+              <li data-i="1"><i></i><span>Parametric EQ</span><code>Bypassed</code></li>
+              <li data-i="2"><i></i><span>ReplayGain</span><code>Off</code></li>
+              <li data-i="3"><i></i><span>Volume</span><code>100%</code></li>
+              <li data-i="4"><i></i><span>USB DAC · Exclusive</span><code>24/192</code></li>
+            </ol>
+            <div class="sp-wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TeleCloud story -->
+    <section class="story tall" id="cloud" data-scroll="cloud" data-steps="4">
+      <div class="story-sticky">
+        <div class="story-copy">
+          <p class="eyebrow">TeleCloud</p>
+          <div class="steps-copy">
+            <div class="sc" data-s="0">
+              <h2>Back up your whole library, in the background.</h2>
+              <p>Pick everything, one album, or a few tracks. Uploads keep going while you listen, and pausing saves exactly where you are.</p>
+            </div>
+            <div class="sc" data-s="1">
+              <h2>Encrypted before it leaves your PC.</h2>
+              <p>Files and their tags are sealed on your computer. Only your recovery key opens them, so not even Telegram can listen in.</p>
+            </div>
+            <div class="sc" data-s="2">
+              <h2>Stream it back, bit for bit.</h2>
+              <p>Tracks that live only in TeleCloud start in a second or two. The file you hear is checked against the one you uploaded.</p>
+            </div>
+            <div class="sc" data-s="3">
+              <h2>Played once, ready offline.</h2>
+              <p>A smart cache keeps what you play, up to the size you choose. Your favourites stay instant, even on a plane.</p>
+            </div>
+          </div>
+          <div class="dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="story-visual">
+          <div class="card tl-card">
+            <div class="tl-head"><b>TeleCloud</b><span class="tl-status"></span></div>
+            <div class="tl-rows">
+              <div class="tl-row" style="--c1:#ff7a59;--c2:#b0306e"><div class="cv"></div><div class="tt"><b>Winter Satellites</b><small>Aurora Club</small></div><span class="badge b-hires">FLAC 24/96</span><div class="src"><span class="badge b-local">Local</span><span class="badge b-cloud">Cloud</span><span class="badge b-cached">Cached</span><span class="lock"></span></div><div class="up"><span></span></div></div>
+              <div class="tl-row" style="--c1:#6aa8ff;--c2:#7b3fe4"><div class="cv"></div><div class="tt"><b>Midnight Echoes</b><small>Atlas Sound</small></div><span class="badge b-hires">FLAC 24/192</span><div class="src"><span class="badge b-local">Local</span><span class="badge b-cloud">Cloud</span><span class="badge b-cached">Cached</span><span class="lock"></span></div><div class="up"><span></span></div></div>
+              <div class="tl-row stream" style="--c1:#3fcf8e;--c2:#1b6b6e"><div class="cv"></div><div class="tt"><b>Shining Stations</b><small>Atlas Theory</small></div><span class="badge b-lossless">FLAC 16/44.1</span><div class="src"><span class="badge b-local">Local</span><span class="badge b-cloud">Cloud</span><span class="badge b-cached">Cached</span><span class="lock"></span></div><div class="up"><span></span></div></div>
+              <div class="tl-row" style="--c1:#f5b942;--c2:#d9541e"><div class="cv"></div><div class="tt"><b>Scarlet Avenues</b><small>Aurora Choir</small></div><span class="badge b-hires">DSD128</span><div class="src"><span class="badge b-local">Local</span><span class="badge b-cloud">Cloud</span><span class="badge b-cached">Cached</span><span class="lock"></span></div><div class="up"><span></span></div></div>
+            </div>
+            <div class="tl-foot"><code class="cap">tc1:e.ZHpVCGXCnQ_.41Tfv50XzG5V…</code></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Storages -->
+    <section class="split" id="storages">
+      <div class="split-copy reveal">
+        <p class="eyebrow">Up to five storages</p>
+        <h2>A vault for your best albums. A channel for everything else.</h2>
+        <p>Keep storages in private channels, groups or Saved Messages, and send any track, album, playlist or selection where it belongs. Every track lives in one place, so nothing is ever uploaded twice.</p>
+        <ul class="ticks">
+          <li><kbd>Ctrl</kbd> + click and <kbd>Shift</kbd> + click to pick tracks</li>
+          <li>Move or remove single tracks, the rest of the storage stays</li>
+          <li>Filter the TeleCloud page by storage</li>
+        </ul>
+      </div>
+      <div class="split-shot reveal">
+        <img src="assets/storages.webp" alt="TeleCloud settings listing two storages and the backup controls" loading="lazy" width="1920" height="1200">
+        <div class="chips float" aria-hidden="true">
+          <span class="chip on">All <b>84</b></span>
+          <span class="chip"><i></i>TeleCloud Music Library <b>24</b></span>
+          <span class="chip"><i></i>Hi-Res Vault <b>60</b></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- EQ -->
+    <section class="split rev" id="eq">
+      <div class="split-copy reveal">
+        <p class="eyebrow">31-band parametric EQ</p>
+        <h2>Shape the sound. Hear it as you drag.</h2>
+        <p>Drag a point and the change is live in the music. Pick your headphones and a target, and AutoEQ builds the correction for you. Presets import and export in the Squiglink format.</p>
+        <ul class="ticks">
+          <li>AutoEQ for 6,800+ headphones and IEMs</li>
+          <li>Undo, redo and a full history</li>
+          <li>Preamp warns you before anything can clip</li>
+        </ul>
+        <p class="hint">Try it: drag the points on the curve.</p>
+      </div>
+      <div class="split-shot reveal">
+        <div class="card eq-card">
+          <div class="eq-top"><b>Parametric EQ</b><span class="mono muted" id="eq-pre">preamp −3.6 dB</span><span class="toggle on"><i></i></span></div>
+          <svg id="eq-svg" viewBox="0 0 640 300" role="img" aria-label="Interactive equalizer curve">
+            <g class="eq-grid"></g>
+            <path class="eq-fill" d=""/>
+            <path class="eq-line" d=""/>
+            <g class="eq-dots"></g>
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <!-- Gallery -->
+    <section class="gallery" data-scroll="gallery">
+      <div class="gallery-sticky">
+        <div class="gallery-head">
+          <p class="eyebrow">A closer look</p>
+          <h2>Built to feel calm, even with 10,000 albums.</h2>
+        </div>
+        <div class="gallery-track">
+          <figure><img src="assets/album.webp" alt="Album page with quality and source tags" loading="lazy" width="1920" height="1200"><figcaption>Albums show quality and where every track lives.</figcaption></figure>
+          <figure><img src="assets/nowplaying.webp" alt="Full-screen now playing view" loading="lazy" width="1920" height="1200"><figcaption>Full-screen now playing, with lyrics and the queue.</figcaption></figure>
+          <figure><img src="assets/sources.webp" alt="Source tag explanations" loading="lazy" width="1920" height="1200"><figcaption>Every tag explains itself.</figcaption></figure>
+          <figure><img src="assets/select.webp" alt="Several tracks selected" loading="lazy" width="1920" height="1200"><figcaption>Select many, act once.</figcaption></figure>
+          <figure><img src="assets/telecloud.webp" alt="TeleCloud page filtered by storage" loading="lazy" width="1920" height="1200"><figcaption>Everything in the cloud, per storage.</figcaption></figure>
+          <figure><img src="assets/light.webp" alt="Light theme" loading="lazy" width="1920" height="1200"><figcaption>A warm light theme for daytime.</figcaption></figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- Compare -->
+    <section class="compare" id="compare">
+      <div class="center reveal">
+        <p class="eyebrow">What makes it different</p>
+        <h2>The player and the cloud, finally in one place.</h2>
+      </div>
+      <div class="card table-card reveal">
+        <table>
+          <thead><tr><th></th><th class="us"><img src="assets/icon.svg" alt="" width="22" height="22">TeleCloud</th><th>Typical desktop player</th><th>Streaming service</th></tr></thead>
+          <tbody>
+            <tr><td>Plays your own files, bit-perfect</td><td class="us y">Yes</td><td class="y">Often</td><td class="n">No</td></tr>
+            <tr><td>Shows the full signal path</td><td class="us y">Yes</td><td class="m">Rarely</td><td class="n">No</td></tr>
+            <tr><td>Unlimited cloud backup of your library</td><td class="us y">Yes, free</td><td class="n">No</td><td class="n">No</td></tr>
+            <tr><td>Stream your own files on another PC</td><td class="us y">Yes</td><td class="n">No</td><td class="m">Only their catalogue</td></tr>
+            <tr><td>Encrypted, only you hold the key</td><td class="us y">Yes</td><td class="n">—</td><td class="n">No</td></tr>
+            <tr><td>Restore with tags, lyrics and covers</td><td class="us y">Yes</td><td class="n">No</td><td class="n">—</td></tr>
+            <tr><td>Monthly subscription</td><td class="us y">None</td><td class="y">None</td><td class="n">Required</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Download -->
+    <section class="download" id="download">
+      <div class="dl-glow" aria-hidden="true"></div>
+      <img class="dl-icon reveal" src="assets/icon.svg" alt="" width="96" height="96">
+      <h2 class="reveal">Get TeleCloud</h2>
+      <p class="lead reveal">Free and open source (GPL-3.0) for Windows 10 and 11, 64-bit. Everything it needs is included.</p>
+      <div class="dl-cards">
+        <div class="card dl-card reveal" data-channel="beta">
+          <span class="badge b-cached">Beta</span>
+          <h3>Try what's next</h3>
+          <p>New features first. Expect the odd rough edge, and tell us about it.</p>
+          <a class="btn-primary dl-btn" aria-disabled="true">Coming soon</a>
+          <small class="dl-meta"></small>
+        </div>
+        <div class="card dl-card reveal" data-channel="release">
+          <span class="badge b-ok">Release</span>
+          <h3>Stable</h3>
+          <p>The tested version for everyday listening and backups.</p>
+          <a class="btn-outline dl-btn" aria-disabled="true">Coming soon</a>
+          <small class="dl-meta"></small>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="brand"><img src="assets/icon.svg" alt="" width="24" height="24"><span>TeleCloud</span></div>
+    <p>Made by a solo developer for people who care about their music.</p>
+    <p class="muted">TeleCloud is not affiliated with Telegram. <a href="https://github.com/MinhHaiDeveloper/telecloud">GitHub</a></p>
+  </footer>
+
+  <script src="main.js" defer></script>
+</body>
+</html>

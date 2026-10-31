@@ -1,112 +1,79 @@
 import React, { useMemo, useEffect, useRef } from 'react';
 
-const LyricsView = ({ lyrics, currentTime }) => {
-  const containerRef = useRef(null);
-  
-  const parsed = useMemo(() => {
-    if (!lyrics) return { isSynced: false, lines: [] };
-    
-    const lines = lyrics.split('\n');
-    const result = [];
-    const timeRegex = /\[(\d{2}):(\d{2}(?:\.\d{1,3})?)\]/g;
-    
-    let hasTime = false;
-    
-    lines.forEach((line, index) => {
-      let match;
-      const times = [];
-      timeRegex.lastIndex = 0;
-      while ((match = timeRegex.exec(line)) !== null) {
-        hasTime = true;
-        const min = parseInt(match[1], 10);
-        const sec = parseFloat(match[2]);
-        times.push(min * 60 + sec);
-      }
-      const text = line.replace(/\[\d{2}:\d{2}(?:\.\d{1,3})?\]/g, '').trim();
-      
-      if (times.length > 0) {
-        times.forEach(t => result.push({ time: t, text: text || ' ' }));
-      } else if (!hasTime && text) {
-        result.push({ time: index, text }); 
-      }
-    });
-    
-    if (!hasTime) {
-      return { isSynced: false, lines: result };
+const TIME_TAG = /\[(\d{1,2}):(\d{2}(?:\.\d{1,3})?)\]/g;
+
+// Parse LRC-style synced lyrics, falling back to plain lines
+export const parseLyrics = (lyrics) => {
+  if (!lyrics) return { isSynced: false, lines: [] };
+  const result = [];
+  let hasTime = false;
+  lyrics.split(/\r?\n/).forEach((line, index) => {
+    const times = [];
+    let match;
+    TIME_TAG.lastIndex = 0;
+    while ((match = TIME_TAG.exec(line)) !== null) {
+      hasTime = true;
+      times.push(parseInt(match[1], 10) * 60 + parseFloat(match[2]));
     }
-    
-    return { isSynced: true, lines: result.sort((a, b) => a.time - b.time) };
-  }, [lyrics]);
+    const text = line.replace(TIME_TAG, '').trim();
+    if (times.length) times.forEach(t => result.push({ time: t, text: text || '♪' }));
+    else if (!hasTime && text) result.push({ time: index, text });
+  });
+  return hasTime
+    ? { isSynced: true, lines: result.sort((a, b) => a.time - b.time) }
+    : { isSynced: false, lines: result };
+};
+
+/**
+ * Lyrics list that keeps the active line centred inside its own scroll container
+ * (never scrolls the page around it). Clicking a synced line seeks to it.
+ */
+const LyricsView = ({ lyrics, currentTime, onSeek, className = 'lyrics-scroll' }) => {
+  const scrollRef = useRef(null);
+  const userScrollUntil = useRef(0);
+  const parsed = useMemo(() => parseLyrics(lyrics), [lyrics]);
 
   const activeIndex = useMemo(() => {
-    if (!parsed.isSynced || parsed.lines.length === 0) return -1;
+    if (!parsed.isSynced) return -1;
     let idx = -1;
     for (let i = 0; i < parsed.lines.length; i++) {
-      if (currentTime >= parsed.lines[i].time - 0.3) {
-        idx = i;
-      } else {
-        break;
-      }
+      if (currentTime >= parsed.lines[i].time - 0.3) idx = i;
+      else break;
     }
     return idx;
   }, [parsed, currentTime]);
 
   useEffect(() => {
-    if (parsed.isSynced && activeIndex !== -1 && containerRef.current) {
-      const activeEl = containerRef.current.querySelector(`[data-index="${activeIndex}"]`);
-      if (activeEl) {
-        activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }
-  }, [activeIndex, parsed.isSynced]);
+    const box = scrollRef.current;
+    if (!box || activeIndex < 0 || Date.now() < userScrollUntil.current) return;
+    const el = box.querySelector(`[data-index="${activeIndex}"]`);
+    if (el) box.scrollTo({ top: el.offsetTop - box.clientHeight / 2 + el.offsetHeight / 2, behavior: 'smooth' });
+  }, [activeIndex]);
 
-  if (!lyrics) {
-    return (
-      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-        No lyrics found in file metadata.
-      </div>
-    );
+  if (!parsed.lines.length) {
+    return <div className="lyrics-empty">No lyrics in this file's metadata.</div>;
   }
 
   return (
-    <div 
-      ref={containerRef}
-      style={{ 
-        width: '100%', 
-        height: '100%', 
-        overflowY: 'auto', 
-        padding: '80px 40px', 
-        display: 'flex', 
-        flexDirection: 'column', 
-        alignItems: 'center',
-        scrollBehavior: 'smooth'
-      }}
-      className="hide-scrollbar"
+    <div
+      ref={scrollRef}
+      className={className}
+      // Let the user read ahead for a few seconds before auto-follow resumes
+      onWheel={() => { userScrollUntil.current = Date.now() + 4000; }}
     >
-      {parsed.lines.map((line, idx) => {
-        const isActive = parsed.isSynced && idx === activeIndex;
-        const isPast = parsed.isSynced && idx < activeIndex;
-        
-        return (
-          <div 
+      <div className={`lyrics-lines ${parsed.isSynced ? '' : 'plain'}`}>
+        {parsed.lines.map((line, idx) => (
+          <div
             key={idx}
             data-index={idx}
-            style={{
-              fontSize: isActive ? '28px' : '18px',
-              fontWeight: isActive ? 'bold' : 'normal',
-              color: isActive ? 'var(--text-main)' : (isPast ? '#666' : 'var(--text-muted)'),
-              opacity: isActive ? 1 : 0.6,
-              textShadow: isActive ? '0 0 20px rgba(255,255,255,0.4)' : 'none',
-              textAlign: 'center',
-              margin: '10px 0',
-              transition: 'all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-              minHeight: '24px'
-            }}
+            className={`lyric ${idx === activeIndex ? 'active' : ''} ${parsed.isSynced && idx < activeIndex ? 'past' : ''}`}
+            style={parsed.isSynced && onSeek ? { cursor: 'pointer' } : undefined}
+            onClick={parsed.isSynced && onSeek ? () => { userScrollUntil.current = 0; onSeek(Math.floor(line.time)); } : undefined}
           >
             {line.text}
           </div>
-        );
-      })}
+        ))}
+      </div>
     </div>
   );
 };

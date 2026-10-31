@@ -8,10 +8,6 @@ export default defineConfig({
     outDir: 'dist',
     target: 'chrome120',
   },
-  optimizeDeps: {
-    // Exclude ESM-only packages from pre-bundling; Vite will import them directly
-    exclude: ['@tidal-music/player', '@tidal-music/player-web-components', '@tidal-music/auth', '@tidal-music/common'],
-  },
   server: {
     port: 3000,
   }

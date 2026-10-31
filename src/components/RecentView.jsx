@@ -1,26 +1,31 @@
 import React from 'react';
 import SongList from './SongList';
+import Icon from './Icon';
 
-const RecentView = ({ recentPlayed, currentFile, onPlay, onToggleFavorite, onAddPlaylist, favorites }) => {
-  return (
-    <div style={{ display: 'flex', flex: 1, flexDirection: 'column', padding: '0 20px', paddingTop: '20px', height: '100%', overflow: 'hidden' }}>
-      <h2 style={{ margin: '0 0 20px 0', fontSize: '24px' }}>Recently Played</h2>
-      {recentPlayed.length === 0 ? (
-        <p style={{ color: 'var(--text-muted)' }}>You haven't played any songs recently.</p>
-      ) : (
-        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-          <SongList
-            musicFiles={recentPlayed}
-            currentFile={currentFile}
-            onPlay={onPlay}
-            onToggleFavorite={onToggleFavorite}
-            onAddPlaylist={onAddPlaylist}
-            favorites={favorites}
-          />
-        </div>
-      )}
-    </div>
-  );
-};
+const RecentView = ({ recentPlayed, currentFile, isPlaying, onPlay, onToggleFavorite, onAddPlaylist, favorites, onDeleteSong, onDownloadSong, onCheckSpectrum }) => (
+  recentPlayed.length === 0 ? (
+    <>
+      <div className="page-head"><h2>Recently played</h2></div>
+      <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>
+        <Icon name="clock" style={{ width: 36, height: 36, marginBottom: 10 }} />
+        <div>Tracks you play will show up here.</div>
+      </div>
+    </>
+  ) : (
+    <SongList
+      title="Recently played"
+      musicFiles={recentPlayed}
+      currentFile={currentFile}
+      isPlaying={isPlaying}
+      onPlay={onPlay}
+      onToggleFavorite={onToggleFavorite}
+      onAddPlaylist={onAddPlaylist}
+      onDeleteSong={onDeleteSong}
+      onDownloadSong={onDownloadSong}
+      onCheckSpectrum={onCheckSpectrum}
+      favorites={favorites}
+    />
+  )
+);
 
 export default RecentView;

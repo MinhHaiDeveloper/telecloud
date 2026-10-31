@@ -1,86 +1,77 @@
+// Watches the music folders with one native recursive watcher per folder (ReadDirectoryChangesW
+// on Windows): no per-file handles, so starting it costs nothing even for 10k+ tracks.
+// Events are only a hint: after things settle we run a normal refresh, which works out what was
+// added, changed, moved or deleted (including whole folders) from the database diff.
+
+const fs = require('fs');
 const path = require('path');
-const chokidar = require('chokidar');
+const { AUDIO_EXTENSIONS } = require('./paths');
+
+const QUIET_MS = 1500;   // wait for copies to settle before refreshing
+const MAX_WAIT_MS = 6000; // but refresh at least this often during a long copy
+const FALLBACK_POLL_MS = 60000;
 
 class MusicFolderWatcher {
     constructor(folders, onChange) {
-        // Keep absolute Windows paths using backslashes
         this.folders = folders.map(f => path.resolve(f));
         this.onChange = onChange;
-        this.watcher = null;
+        this.watchers = [];
+        this.timer = null;
+        this.firstEventAt = 0;
+        this.pollTimer = null;
     }
 
     start() {
-        if (this.watcher) return;
-
-        console.log(`\n==================================================`);
-        console.log(`🎧 [Watcher] Active on: ${this.folders.join(', ')}`);
-        console.log(`==================================================\n`);
-
-        this.watcher = chokidar.watch(this.folders, {
-            ignored: /(^|[\/\\])\../,  // Ignore hidden dotfiles
-            persistent: true,
-            ignoreInitial: true,       // CRITICAL: Silent boot (doesn't log your 10,000 existing files)
-            depth: 99,                 // Watch nested subfolders
-
-            // Polling is required for reliable events on secondary Windows partitions (D:)
-            usePolling: true,
-            interval: 1000,            // Poll once a second to keep CPU near 0%
-
-            // Ensures we don't trigger while a file is still copying/downloading
-            awaitWriteFinish: {
-                stabilityThreshold: 1000,
-                pollInterval: 100
+        if (this.watchers.length || this.pollTimer) return;
+        let needsPolling = false;
+        for (const folder of this.folders) {
+            try {
+                const w = fs.watch(folder, { recursive: true, persistent: false }, (eventType, filename) => this.handle(filename));
+                w.on('error', (err) => {
+                    console.error(`[Watcher] ${folder}: ${err.message}; falling back to periodic refresh`);
+                    this.startPolling();
+                });
+                this.watchers.push(w);
+            } catch (err) {
+                // e.g. a network share that doesn't support change notifications
+                console.error(`[Watcher] Cannot watch ${folder}: ${err.message}`);
+                needsPolling = true;
             }
-        });
+        }
+        if (needsPolling) this.startPolling();
+    }
 
-        // 1. Silent Boot Confirmation
-        this.watcher.on('ready', () => {
-            console.log('⚡ [Watcher State] Standing by... Go ahead and change a music file!');
-        });
+    handle(filename) {
+        if (filename) {
+            const name = String(filename);
+            const base = path.basename(name);
+            if (base.startsWith('.')) return;
+            const ext = path.extname(name).toLowerCase();
+            // Audio files matter; extension-less names may be folders being moved in or out
+            if (ext && !AUDIO_EXTENSIONS.has(ext)) return;
+        }
+        const now = Date.now();
+        if (!this.timer) this.firstEventAt = now;
+        clearTimeout(this.timer);
+        const wait = Math.max(0, Math.min(QUIET_MS, this.firstEventAt + MAX_WAIT_MS - now));
+        this.timer = setTimeout(() => {
+            this.timer = null;
+            this.onChange();
+        }, wait);
+    }
 
-        // 2. High-Visibility File Addition
-        this.watcher.on('add', (filePath) => {
-            if (this.isMusicFile(filePath)) {
-                const fileName = path.basename(filePath);
-                console.log(`🟢 [ADDED] ${fileName}`);
-                this.onChange('add', filePath);
-            }
-        });
-
-        // 3. High-Visibility File Modification
-        this.watcher.on('change', (filePath) => {
-            if (this.isMusicFile(filePath)) {
-                const fileName = path.basename(filePath);
-                console.log(`🟡 [CHANGED] ${fileName}`);
-                this.onChange('change', filePath);
-            }
-        });
-
-        // 4. High-Visibility File Deletion
-        this.watcher.on('unlink', (filePath) => {
-            if (this.isMusicFile(filePath)) {
-                const fileName = path.basename(filePath);
-                console.log(`🔴 [DELETED] ${fileName}`);
-                this.onChange('delete', filePath);
-            }
-        });
-
-        this.watcher.on('error', (error) => {
-            console.error('❌ [Watcher Error]:', error.message);
-        });
+    startPolling() {
+        if (this.pollTimer) return;
+        this.pollTimer = setInterval(() => this.onChange(), FALLBACK_POLL_MS);
     }
 
     stop() {
-        if (this.watcher) {
-            this.watcher.close();
-            this.watcher = null;
-            console.log('🛑 [Watcher] Stopped and sleeping.');
-        }
-    }
-
-    isMusicFile(filePath) {
-        const ext = path.extname(filePath).toLowerCase();
-        return ['.flac', '.mp3', '.m4a', '.wav', '.ogg', '.opus', '.aac'].includes(ext);
+        this.watchers.forEach(w => { try { w.close(); } catch { /* already closed */ } });
+        this.watchers = [];
+        clearTimeout(this.timer);
+        this.timer = null;
+        clearInterval(this.pollTimer);
+        this.pollTimer = null;
     }
 }
 

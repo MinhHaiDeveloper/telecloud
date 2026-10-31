@@ -1,28 +1,24 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 
 <head>
   <meta charset="utf-8">
   <meta content="width=device-width, initial-scale=1.0" name="viewport">
-  <title>TeleCloud Music Player</title>
-  <!--Start Style -->
-  <link rel="stylesheet" type="text/css" href="./assets/css/fonts.css">
-  <link rel="stylesheet" type="text/css" href="./assets/css/bootstrap.min.css">
-  <link rel="stylesheet" type="text/css" href="./assets/css/font-awesome.min.css">
-  <link rel="stylesheet" type="text/css" href="./assets/js/plugins/swiper/css/swiper.min.css">
-  <link rel="stylesheet" type="text/css" href="./assets/js/plugins/nice_select/nice-select.css">
-  <link rel="stylesheet" type="text/css" href="./assets/js/plugins/player/volume.css">
-  <link rel="stylesheet" type="text/css" href="./assets/js/plugins/scroll/jquery.mCustomScrollbar.css">
-  <link rel="stylesheet" type="text/css" href="./assets/css/style.css">
-  <!-- Favicon Link -->
-  <link rel="shortcut icon" type="image/png" href="./assets/images/favicon.png">
+  <title>TeleCloud</title>
+  <link rel="icon" type="image/png" href="./assets/images/favicon.png">
+  <script>
+    // Apply the saved theme before first paint so there is no flash
+    try {
+      var t = localStorage.getItem('tc-theme');
+      if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.dataset.theme = t;
+    } catch (e) { }
+  </script>
 </head>
 
 <body>
   <div id="root"></div>
   <script type="module" src="/src/main.jsx"></script>
-
-  <!-- Legacy scripts removed because we use React and Native Audio -->
 </body>
 
 </html>

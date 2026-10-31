@@ -1,1101 +1,659 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import Icon from './Icon';
+import { Field, Callout, Progress, Select, SettingRow, BackButton, Toggle, MoreMenu, Dialog, confirmDialog, alertDialog } from './ui';
+import { formatBytes } from '../utils/audio';
+
+const SETUP_STEPS = [
+    { id: 'credentials', label: 'API keys' },
+    { id: 'phone', label: 'Phone' },
+    { id: 'otp', label: 'Code' },
+    { id: 'config', label: 'Storage' },
+];
+const RATE_OPTIONS = [0, 512, 1024, 2048, 5120, 10240].map(v => ({ value: v, label: v ? `${v >= 1024 ? `${v / 1024} MB/s` : `${v} KB/s`}` : 'Unlimited' }));
+const ipc = () => window.ipcRenderer;
+
+const Stepper = ({ step }) => {
+    const idx = SETUP_STEPS.findIndex(s => s.id === (step === 'password' ? 'otp' : step));
+    return (
+        <div className="steps">
+            {SETUP_STEPS.map((s, i) => (
+                <React.Fragment key={s.id}>
+                    {i > 0 && <span className={`bar ${i <= idx ? 'done' : ''}`} />}
+                    <span className={`step ${i === idx ? 'on' : ''} ${i < idx ? 'done' : ''}`}>
+                        <i>{i < idx ? '✓' : i + 1}</i>{s.label}
+                    </span>
+                </React.Fragment>
+            ))}
+        </div>
+    );
+};
+
+const eta = (bytesLeft, speed) => {
+    if (!speed || speed < 1) return '';
+    const s = Math.round(bytesLeft / speed);
+    return s < 60 ? `${s}s left` : s < 3600 ? `${Math.round(s / 60)} min left` : `${(s / 3600).toFixed(1)} h left`;
+};
+
+/** What to do (and not do) so a backup always completes and stays restorable */
+const TIPS = {
+    do: [
+        ['Leave TeleCloud open until the queue says everything is backed up.', 'Quitting mid-upload is safe, but the file in progress starts over next time.'],
+        ['Press Pause before quitting in the middle of a backup.', 'Pausing saves the library index (tags, lyrics, covers) for what is already up.'],
+        ['Keep your recovery key outside this computer.', 'Without it, encrypted tracks cannot be opened after a reinstall or on another computer.'],
+        ['Keep the computer awake during long backups.', 'Sleep drops the connection; the current file restarts when it wakes.'],
+        ['Remove, move or back up tracks from inside the app.', 'Use the track menu, Ctrl/Shift+click to pick several, or the album and playlist menus.'],
+    ],
+    dont: [
+        ['Delete, edit or forward TeleCloud files in Telegram yourself.', 'The app cannot see those changes and the tracks stop playing.'],
+        ['Delete library.tcm from a storage chat.', 'It is the index another computer restores from. Save now writes a new one.'],
+        ['Leave or delete a storage channel or group in Telegram.', 'Remove the storage in Settings instead, so the library stays consistent.'],
+        ['Disconnect or Delete all while a backup is running.', 'Pause first, then wait for the queue to stop.'],
+        ['Move or rename your music folders during a backup.', 'Those files are skipped and retried; finish the backup first.'],
+        ['Restart the app when Telegram says “waiting”.', 'That is Telegram’s rate limit. TeleCloud waits and continues by itself.'],
+    ],
+};
+const showTips = () => alertDialog({
+    title: 'Using TeleCloud safely',
+    tone: 'info',
+    message: (
+        <div className="tc-tips">
+            {[['do', 'Do', 'check'], ['dont', 'Don’t', 'close']].map(([k, label, icon]) => (
+                <div key={k} className={`tc-tips-col ${k}`}>
+                    <b>{label}</b>
+                    <ul>{TIPS[k].map(([t, d]) => <li key={t}><Icon name={icon} /><div><span>{t}</span><small>{d}</small></div></li>)}</ul>
+                </div>
+            ))}
+        </div>
+    ),
+});
+
+/** Live backup queue: current file, speed, counts, pause/resume */
+const BackupCard = ({ queue, onSync, onPause, onResume, rate, onRate }) => {
+    const total = queue.queued + queue.done + queue.error + (queue.active ? 1 : 0);
+    const a = queue.active;
+    const busy = queue.running;
+    const waiting = queue.queued > 0 && !busy;
+    return (
+        <>
+            <SettingRow icon="refresh" title="Back up your library" desc="Uploads local tracks that are not in TeleCloud yet. Runs in the background and continues after a restart.">
+                {busy
+                    ? <button className="btn-outline" onClick={onPause}><Icon name="pause" />Pause</button>
+                    : waiting
+                        ? <button className="btn-primary" onClick={onResume}><Icon name="play" />Resume</button>
+                        : <button className="btn-primary" onClick={onSync}>Back up now</button>}
+            </SettingRow>
+            {(busy || waiting || queue.error > 0) && (
+                <div className="set-sub">
+                    <div className="sync-live">
+                        <div className="row">
+                            {busy ? <span className="ring" /> : <Icon name={waiting ? 'pause' : 'alert'} />}
+                            <b>
+                                {busy ? (a?.stage === 'checking' ? 'Checking for duplicates…' : a?.stage === 'waiting' ? 'Telegram asked us to slow down, waiting…' : a?.stage === 'manifest' ? 'Saving tags, lyrics and covers…' : `Uploading ${queue.done + queue.error + 1} of ${total}`)
+                                    : waiting ? `Paused · ${queue.queued.toLocaleString()} waiting` : `${queue.error} failed`}
+                            </b>
+                            <span className="mono" style={{ marginLeft: 'auto', color: 'var(--text-3)', fontSize: 12 }}>
+                                {queue.done.toLocaleString()} done{queue.error ? ` · ${queue.error} failed` : ''}
+                            </span>
+                        </div>
+                        <Progress value={total ? ((queue.done + queue.error) / total) * 100 : 0} />
+                        {busy && a && a.size > 0 && (
+                            <>
+                                <div className="row">
+                                    <span className="file">{a.name}</span>
+                                    <span className="mono" style={{ color: 'var(--text-3)', fontSize: 12 }}>
+                                        {formatBytes(a.done || 0)} / {formatBytes(a.size)}{a.speed ? ` · ${formatBytes(a.speed)}/s · ${eta(a.size - (a.done || 0), a.speed)}` : ''}
+                                    </span>
+                                </div>
+                                <Progress value={((a.done || 0) / a.size) * 100} tone="ok" />
+                            </>
+                        )}
+                        {queue.errors?.length > 0 && !busy && (
+                            <details className="tc-errors">
+                                <summary>Why did {queue.error === 1 ? 'one file' : 'some files'} fail?</summary>
+                                {queue.errors.map(e => <div key={e.path} className="row"><span className="file">{e.path.split(/[\\/]/).pop()}</span><span className="err">{e.error}</span></div>)}
+                                <button className="btn-ghost sm" onClick={onResume}>Retry failed</button>
+                            </details>
+                        )}
+                    </div>
+                </div>
+            )}
+            <SettingRow icon="sort" title="Upload speed limit" desc="Leave room for the rest of your connection while a big backup runs.">
+                <Select value={rate} onChange={onRate} options={RATE_OPTIONS} align="right" />
+            </SettingRow>
+        </>
+    );
+};
+
+/** The chats TeleCloud stores music in (up to 5) */
+const StoragesSection = ({ onChanged }) => {
+    const [list, setList] = useState([]);
+    const [max, setMax] = useState(5);
+    const [adding, setAdding] = useState(null); // null | { mode, name, chats, chatId, busy, error }
+    const [renaming, setRenaming] = useState(null);
+    const load = useCallback(async () => {
+        const r = await ipc().invoke('telecloud-sync:storages');
+        if (r.success) { setList(r.storages); setMax(r.max); }
+    }, []);
+    useEffect(() => { load(); }, [load]);
+    const after = async (r, msg) => {
+        if (!r.success) { alertDialog({ title: 'Storage', message: r.error, tone: 'danger' }); return; }
+        await load();
+        onChanged?.();
+        if (msg) alertDialog({ title: 'Storage', message: msg, tone: 'ok' });
+    };
+    const openAdd = async () => {
+        setAdding({ mode: 'new', name: '', chats: null, chatId: '', busy: false });
+        const r = await ipc().invoke('telecloud-sync:storage-candidates');
+        setAdding(a => a && { ...a, chats: r.success ? r.chats : [], error: r.success ? '' : r.error });
+    };
+    const add = async () => {
+        setAdding(a => ({ ...a, busy: true, error: '' }));
+        const r = await ipc().invoke('telecloud-sync:storage-add', adding.mode === 'new' ? { title: adding.name } : { chatId: adding.chatId });
+        if (!r.success) { setAdding(a => ({ ...a, busy: false, error: r.error })); return; }
+        setAdding(null);
+        const found = r.existingFiles ? ` It already holds ${r.existingFiles} TeleCloud tracks: use Restore to add them to this library.` : '';
+        const locked = r.needKey ? ` ${r.needKey} of its tracks need the recovery key from the computer that uploaded them.` : '';
+        await after({ success: true }, `“${r.storage.title}” is ready.${found}${locked}`);
+    };
+    const remove = async (st) => {
+        const ok = await confirmDialog({ title: `Stop using “${st.title}”?`, message: `TeleCloud forgets this chat on this computer. Its ${st.tracks} tracks stay in Telegram; cloud-only ones leave this library and the rest become plain local tracks. You can add the chat again later.`, confirmLabel: 'Stop using it', danger: true });
+        if (ok) after(await ipc().invoke('telecloud-sync:storage-remove', { id: st.id }));
+    };
+    const saveName = async () => {
+        const r = await ipc().invoke('telecloud-sync:storage-rename', { id: renaming.id, title: renaming.title });
+        setRenaming(null);
+        after(r);
+    };
+    const kindLabel = (k) => (k === 'self' ? 'Saved Messages' : k === 'group' ? 'Private group' : 'Private channel');
+    return (
+        <section className="set-section">
+            <h3>Storages</h3>
+            <div className="card set-card">
+                {list.map(st => (
+                    <SettingRow key={st.id} icon={st.kind === 'self' ? 'heart' : 'cloud'}
+                        title={<>{st.title}{st.isDefault && <span className="badge b-local" style={{ marginLeft: 8 }}>Default</span>}</>}
+                        desc={`${kindLabel(st.kind)} · ${st.tracks.toLocaleString()} tracks · ${formatBytes(st.bytes)}`}>
+                        <MoreMenu items={[
+                            ...(!st.isDefault ? [{ label: 'Use as default', icon: 'check', onClick: async () => after(await ipc().invoke('telecloud-sync:storage-default', { id: st.id })) }] : []),
+                            ...(st.kind !== 'self' ? [{ label: 'Rename', icon: 'lyrics', onClick: () => setRenaming({ id: st.id, title: st.title }) }] : []),
+                            ...(list.length > 1 ? [{ sep: true }, { label: 'Stop using', icon: 'trash', danger: true, onClick: () => remove(st) }] : []),
+                        ]} />
+                    </SettingRow>
+                ))}
+                <SettingRow icon="plus" title="Add a storage" desc={`Keep albums or playlists in separate chats, up to ${max}. “Back up now” fills the default one; use “Back up to…” on an album, playlist or track to pick another.`}>
+                    <button className="btn-ghost" onClick={openAdd} disabled={list.length >= max}>{list.length >= max ? `${max} of ${max}` : 'Add'}</button>
+                </SettingRow>
+            </div>
+
+            {adding && (
+                <Dialog open title="Add a storage" icon="cloud" width={500} onClose={() => setAdding(null)}
+                    actions={<>
+                        <button className="btn-ghost" onClick={() => setAdding(null)}>Cancel</button>
+                        <button className="btn-primary" onClick={add} disabled={adding.busy || (adding.mode === 'new' ? !adding.name.trim() : !adding.chatId)}>{adding.busy ? 'Adding…' : 'Add storage'}</button>
+                    </>}>
+                    <label className={`radio-card ${adding.mode === 'new' ? 'on' : ''}`}>
+                        <input type="radio" checked={adding.mode === 'new'} onChange={() => setAdding(a => ({ ...a, mode: 'new' }))} />
+                        <span className="radio-dot" />
+                        <div><b>New private channel</b><span>Created in your Telegram account, visible only to you.</span></div>
+                    </label>
+                    {adding.mode === 'new' && <input className="input" style={{ margin: '8px 0 12px' }} autoFocus placeholder="e.g. Hi-Res Vault" value={adding.name} onChange={e => setAdding(a => ({ ...a, name: e.target.value }))} onKeyDown={e => e.key === 'Enter' && add()} />}
+                    <label className={`radio-card ${adding.mode === 'existing' ? 'on' : ''}`} style={{ marginTop: 8 }}>
+                        <input type="radio" checked={adding.mode === 'existing'} onChange={() => setAdding(a => ({ ...a, mode: 'existing' }))} />
+                        <span className="radio-dot" />
+                        <div><b>A chat you already have</b><span>Saved Messages, or a channel / private group you own. TeleCloud files already in it are found.</span></div>
+                    </label>
+                    {adding.mode === 'existing' && (
+                        <div className="storage-pick" style={{ marginTop: 8 }}>
+                            {adding.chats === null ? <div className="empty">Loading your chats…</div>
+                                : adding.chats.length === 0 ? <div className="empty">No other chats you own.</div>
+                                    : adding.chats.map(c => (
+                                        <label key={c.id} className={`radio-card ${adding.chatId === c.id ? 'on' : ''}`}>
+                                            <input type="radio" checked={adding.chatId === c.id} onChange={() => setAdding(a => ({ ...a, chatId: c.id }))} />
+                                            <span className="radio-dot" />
+                                            <div><b>{c.title}</b><span>{kindLabel(c.kind)}</span></div>
+                                        </label>
+                                    ))}
+                        </div>
+                    )}
+                    {adding.error && <Callout tone="danger">{adding.error}</Callout>}
+                </Dialog>
+            )}
+            {renaming && (
+                <Dialog open title="Rename storage" icon="cloud" onClose={() => setRenaming(null)}
+                    actions={<><button className="btn-ghost" onClick={() => setRenaming(null)}>Cancel</button><button className="btn-primary" onClick={saveName} disabled={!renaming.title.trim()}>Rename</button></>}>
+                    <input className="input" autoFocus value={renaming.title} onChange={e => setRenaming(r => ({ ...r, title: e.target.value }))} onKeyDown={e => e.key === 'Enter' && saveName()} />
+                    <span className="field-hint">The Telegram channel is renamed too.</span>
+                </Dialog>
+            )}
+        </section>
+    );
+};
+
+/** The pinned library index: what lets another computer show tags, lyrics and covers */
+const IndexRow = ({ index, onSaved }) => {
+    const [busy, setBusy] = useState(false);
+    const save = async () => {
+        setBusy(true);
+        const r = await ipc().invoke('telecloud-sync:save-index');
+        setBusy(false);
+        if (!r.success) alertDialog({ title: 'Could not save the library index', message: r.error, tone: 'danger' });
+        onSaved?.();
+    };
+    const desc = !index ? 'Tags, lyrics and album covers for your other computers.'
+        : index.savedAt ? `Saved ${new Date(index.savedAt).toLocaleString()} · ${index.tracks.toLocaleString()} tracks · ${index.covers.toLocaleString()} covers${index.pending ? ' · changes waiting' : ''}`
+            : index.tracks ? 'Not saved yet: other computers would only get basic track info.' : 'Saved automatically after each backup.';
+    return (
+        <SettingRow icon="disc" title="Library index" desc={desc}>
+            <button className="btn-ghost" onClick={save} disabled={busy || !index?.tracks}>{busy ? 'Saving…' : 'Save now'}</button>
+        </SettingRow>
+    );
+};
+
+// Average bit rates of common lossless formats (bytes/s) and the margin a stream needs on top
+const FORMATS = [['CD 16/44.1', 0.12], ['24/96', 0.55], ['24/192', 1.1], ['DSD128', 1.45]].map(([label, mb]) => ({ label, need: mb * 1048576 * 1.5 }));
+
+/** Downloads part of a cloud track and says which formats will stream without waiting */
+const SpeedTest = () => {
+    const [state, setState] = useState(null);
+    const run = async () => {
+        setState({ running: true });
+        const r = await ipc().invoke('telecloud-sync:speed-test');
+        setState(r.success ? r : { error: r.error });
+    };
+    return (
+        <>
+            <SettingRow icon="spectrum" title="Streaming speed" desc="Downloads a few MB from your TeleCloud to see which formats play without waiting.">
+                <button className="btn-ghost" onClick={run} disabled={state?.running}>{state?.running ? 'Testing…' : 'Test'}</button>
+            </SettingRow>
+            {state && !state.running && (
+                <div className="set-sub">
+                    {state.error ? <Callout tone="danger">{state.error}</Callout> : (
+                        <>
+                            <div className="speed-result"><b className="mono">{(state.bytesPerSec / 1048576).toFixed(1)} MB/s</b><span>first data after {state.firstByteMs} ms</span></div>
+                            <div className="speed-formats">
+                                {FORMATS.map(f => (
+                                    <span key={f.label} className={`badge ${state.bytesPerSec >= f.need ? 'b-lossless' : 'b-lossy'}`}>{state.bytesPerSec >= f.need ? '✓' : '✕'} {f.label}</span>
+                                ))}
+                            </div>
+                            {FORMATS.some(f => state.bytesPerSec < f.need) && <span className="field-hint">Formats marked ✕ still play: they buffer first, and the next track is downloaded ahead.</span>}
+                        </>
+                    )}
+                </div>
+            )}
+        </>
+    );
+};
+
+const RecoveryKey = ({ status, onChanged }) => {
+    const [key, setKey] = useState(null);
+    const [shown, setShown] = useState(false);
+    const [entering, setEntering] = useState(false);
+    const [draft, setDraft] = useState('');
+    const [error, setError] = useState('');
+    const load = async () => { const r = await ipc().invoke('telecloud-sync:get-recovery-key'); setKey(r.key); };
+    useEffect(() => { load(); }, []);
+    const copy = async () => { await navigator.clipboard.writeText(key); alertDialog({ title: 'Copied', message: 'Store it somewhere safe outside this computer (a password manager is ideal).', tone: 'ok' }); };
+    const save = async () => {
+        setError('');
+        const r = await ipc().invoke('telecloud-sync:set-recovery-key', { key: draft });
+        if (!r.success) { setError(r.error); return; }
+        setEntering(false); setDraft(''); await load(); onChanged?.();
+        const ok = await confirmDialog({ title: 'Recovery key saved', message: 'Add the tracks from your TeleCloud channel to this library now?', confirmLabel: 'Restore library' });
+        if (ok) onChanged?.('restore');
+    };
+    return (
+        <>
+            <SettingRow icon="info" title="Recovery key" desc="Needed to open your encrypted files on another computer or after reinstalling. Without it they can't be decrypted, by anyone.">
+                <button className="btn-ghost" onClick={() => setShown(s => !s)} disabled={!key}>{shown ? 'Hide' : 'Show'}</button>
+            </SettingRow>
+            {shown && key && (
+                <div className="set-sub">
+                    <div className="recovery-key mono">{key}</div>
+                    <div className="btn-row">
+                        <button className="btn-primary" onClick={copy}><Icon name="check" />Copy</button>
+                        <span className="field-hint" style={{ alignSelf: 'center' }}>Key id {status.encryption?.fingerprint}</span>
+                    </div>
+                </div>
+            )}
+            <SettingRow icon="folder" title="Use the key from another computer" desc="If this library was backed up from somewhere else, enter that recovery key here.">
+                <button className="btn-ghost" onClick={() => setEntering(e => !e)}>{entering ? 'Cancel' : 'Enter key'}</button>
+            </SettingRow>
+            {entering && (
+                <div className="set-sub">
+                    {error && <Callout tone="danger">{error}</Callout>}
+                    <input className="input mono" value={draft} onChange={e => setDraft(e.target.value)} placeholder="XXXX-XXXX-XXXX-…" autoFocus />
+                    <div className="btn-row" style={{ justifyContent: 'flex-end' }}>
+                        <button className="btn-primary" onClick={save} disabled={draft.replace(/[^a-z0-9]/gi, '').length < 52}>Use this key</button>
+                    </div>
+                </div>
+            )}
+        </>
+    );
+};
 
 const TeleCloudSyncSettings = () => {
-    // Authentication & Setup State
-    const [step, setStep] = useState('info'); // 'info', 'credentials', 'phone', 'otp', 'config', 'connected'
-    const [isConnected, setIsConnected] = useState(false);
+    const [step, setStep] = useState('loading');
     const [isLoading, setIsLoading] = useState(false);
-
-    // Credential Form State
     const [apiId, setApiId] = useState('');
     const [apiHash, setApiHash] = useState('');
     const [phoneNumber, setPhoneNumber] = useState('');
     const [otpCode, setOtpCode] = useState('');
-
-    // Sync Configuration State
-    const [syncMode, setSyncMode] = useState('auto'); // 'manual' or 'auto'
-    const [syncMetadata, setSyncMetadata] = useState(true);
-    const [syncPlaylists, setSyncPlaylists] = useState(true);
-    const [syncAudioFiles, setSyncAudioFiles] = useState(true);
-    const [storageLocation, setStorageLocation] = useState('private_channel'); // 'saved_messages', 'private_channel', 'existing_channel'
-    const [customChannelId, setCustomChannelId] = useState('');
-    const [playbackMode, setPlaybackMode] = useState('stream'); // 'stream', 'download', 'hybrid'
-    const [cacheLimit, setCacheLimit] = useState(50);
-
-    // Connection Status
-    const [connectedPhone, setConnectedPhone] = useState('');
-    const [lastSync, setLastSync] = useState(null);
-    const [syncedItems, setSyncedItems] = useState(0);
-    const [storageUsed, setStorageUsed] = useState(0);
-    const [storageLimit, setStorageLimit] = useState(2048); // MB
-
-    // Sync Progress State
-    const [isSyncing, setIsSyncing] = useState(false);
-    const [showProgress, setShowProgress] = useState(false);
-    const [currentFile, setCurrentFile] = useState('');
-    const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0 });
-    const [uploadProgress, setUploadProgress] = useState(0);
-
-    // Error State
+    const [password, setPassword] = useState('');
+    const [storageLocation, setStorageLocation] = useState('private_channel');
+    const [encrypt, setEncrypt] = useState(true);
+    const [cacheLimit, setCacheLimit] = useState(5);
+    const [status, setStatus] = useState(null);
+    const [queue, setQueue] = useState({ queued: 0, done: 0, error: 0, running: false, active: null, errors: [] });
     const [error, setError] = useState('');
 
-    // Custom dropdown state
-    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-
-    // Check if already connected on mount
-    useEffect(() => {
-        checkConnection();
-
-        // Listen for sync progress events
-        const handleProgress = (event, data) => {
-            setCurrentFile(data.currentFile);
-            setSyncProgress({ current: data.current, total: data.total });
-            setUploadProgress(data.uploadProgress || 0);
-        };
-
-        const handleStopped = () => {
-            setIsLoading(false);
-            setShowProgress(false);
-            alert('Sync stopped by user');
-        };
-
-        window.ipcRenderer.on('telecloud-sync:progress', handleProgress);
-        window.ipcRenderer.on('telecloud-sync:stopped', handleStopped);
-
-        // Cleanup listeners on unmount
-        return () => {
-            window.ipcRenderer.off('telecloud-sync:progress', handleProgress);
-            window.ipcRenderer.off('telecloud-sync:stopped', handleStopped);
-        };
+    const refresh = useCallback(async () => {
+        const r = await ipc().invoke('telecloud-sync:check-auth');
+        if (r?.success && r.isAuthenticated) {
+            setStatus(r);
+            if (r.queue) setQueue(r.queue);
+            setStep('connected');
+        } else {
+            setStep(s => (s === 'loading' || s === 'connected' ? 'info' : s));
+        }
     }, []);
 
-    const checkConnection = async () => {
-        try {
-            const result = await window.ipcRenderer.invoke('telecloud-sync:check-auth');
-            if (result.success && result.isAuthenticated) {
-                setIsConnected(true);
-                setStep('connected');
-                setConnectedPhone(result.phoneNumber || '');
-                setLastSync(result.lastSync);
-                setSyncedItems(result.syncedItems || 0);
-                setStorageUsed(result.storageUsed || 0);
-                // Restore storage limit based on storage location
-                setStorageLimit(result.storageLocation === 'private_channel' ? Infinity : 2048);
+    useEffect(() => {
+        refresh();
+        const onQueue = (e, q) => setQueue(q);
+        const onStopped = () => refresh();
+        const onQueueError = (e, { error: msg }) => alertDialog({ title: 'Backup stopped', message: msg, tone: 'danger' });
+        ipc().on('telecloud-sync:queue', onQueue);
+        ipc().on('telecloud-sync:stopped', onStopped);
+        ipc().on('telecloud-sync:queue-error', onQueueError);
+        return () => {
+            ipc().off('telecloud-sync:queue', onQueue);
+            ipc().off('telecloud-sync:stopped', onStopped);
+            ipc().off('telecloud-sync:queue-error', onQueueError);
+        };
+    }, [refresh]);
 
-                // Check if sync is in progress
-                const syncStatus = await window.ipcRenderer.invoke('telecloud-sync:check-sync-status');
-                if (syncStatus && syncStatus.isSyncing) {
-                    setIsLoading(true);
-                }
-            }
-        } catch (err) {
-            console.error('Error checking connection:', err);
-        }
-    };
+    // counts in the Account card follow the backup as it goes
+    useEffect(() => { if (step === 'connected' && queue.done) refresh(); }, [queue.done]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const handleContinueSetup = () => {
-        setStep('credentials');
-        setError('');
-    };
-
-    const handleSubmitCredentials = async () => {
-        if (!apiId || !apiHash) {
-            setError('Please enter both API ID and API Hash');
-            return;
-        }
-
+    const goTo = (s) => { setStep(s); setError(''); };
+    const run = async (fn) => {
         setIsLoading(true);
         setError('');
-
-        try {
-            // Save credentials temporarily
-            await window.ipcRenderer.invoke('telecloud-sync:save-temp-credentials', {
-                apiId,
-                apiHash
-            });
-            setStep('phone');
-        } catch (err) {
-            setError(err.message || 'Failed to save credentials');
-        } finally {
-            setIsLoading(false);
-        }
+        try { await fn(); } catch (err) { setError(err.message); } finally { setIsLoading(false); }
     };
 
-    const handleSendCode = async () => {
-        if (!phoneNumber) {
-            setError('Please enter your phone number');
-            return;
+    const submitCredentials = () => run(async () => {
+        const r = await ipc().invoke('telecloud-sync:save-temp-credentials', { apiId: apiId.trim(), apiHash: apiHash.trim() });
+        if (!r.success) throw new Error(r.error);
+        setStep('phone');
+    });
+    const sendCode = () => run(async () => {
+        if (!phoneNumber) throw new Error('Enter your phone number with the country code.');
+        const r = await ipc().invoke('telecloud-sync:send-code', { phoneNumber: phoneNumber.replace(/\s+/g, '') });
+        if (!r.success) throw new Error(r.error || 'Failed to send code');
+        setStep('otp');
+    });
+    const verifyCode = () => run(async () => {
+        const r = await ipc().invoke('telecloud-sync:verify-code', { code: otpCode, phoneNumber: phoneNumber.replace(/\s+/g, '') });
+        if (!r.success) throw new Error(/PHONE_CODE_INVALID/.test(r.error || '') ? 'That code is not right. Check Telegram and try again.' : r.error);
+        setStep(r.passwordNeeded ? 'password' : 'config');
+    });
+    const checkPassword = () => run(async () => {
+        const r = await ipc().invoke('telecloud-sync:check-password', { password });
+        if (!r.success) throw new Error(/PASSWORD_HASH_INVALID/.test(r.error || '') ? 'Wrong password.' : r.error);
+        setPassword('');
+        setStep('config');
+    });
+    const finishSetup = () => run(async () => {
+        const r = await ipc().invoke('telecloud-sync:complete-setup', { storageLocation, encrypt, cacheLimitGB: cacheLimit });
+        if (!r.success) throw new Error(r.error || 'Setup failed');
+        await refresh();
+        if (r.needKey > 0) {
+            alertDialog({ title: 'Encrypted files found', message: `Your ${r.storage.title} already holds ${r.needKey} encrypted tracks from another computer. Enter that recovery key under Encryption to use them.`, tone: 'info' });
+        } else if (r.existingFiles > 0) {
+            const ok = await confirmDialog({ title: 'Existing TeleCloud library found', message: `${r.existingFiles} tracks are already in ${r.storage.title}. Add them to this library?`, confirmLabel: 'Restore' });
+            if (ok) restore(true);
         }
+    });
 
-        setIsLoading(true);
-        setError('');
-
-        try {
-            const result = await window.ipcRenderer.invoke('telecloud-sync:send-code', {
-                phoneNumber,
-                apiId,
-                apiHash
-            });
-
-            if (result.success) {
-                setStep('otp');
-            } else {
-                setError(result.error || 'Failed to send code');
-            }
-        } catch (err) {
-            setError(err.message || 'Failed to send verification code');
-        } finally {
-            setIsLoading(false);
-        }
+    const disconnect = async () => {
+        const ok = await confirmDialog({ title: 'Disconnect TeleCloud?', message: 'This signs this app out of Telegram and forgets the encryption key on this computer. Your files stay in Telegram; keep your recovery key to read them later.', confirmLabel: 'Disconnect' });
+        if (!ok) return;
+        await run(async () => { await ipc().invoke('telecloud-sync:disconnect'); setStatus(null); setStep('info'); });
     };
 
-    const handleVerifyCode = async () => {
-        if (!otpCode) {
-            setError('Please enter the verification code');
-            return;
+    const sync = async () => { const r = await ipc().invoke('telecloud-sync:sync-now'); if (!r.success) alertDialog({ title: 'Backup failed', message: r.error, tone: 'danger' }); else if (!r.queued) alertDialog({ title: 'All backed up', message: 'Every local track is already in TeleCloud.', tone: 'ok' }); };
+    const pause = () => ipc().invoke('telecloud-sync:stop-sync');
+    const resume = () => ipc().invoke('telecloud-sync:resume');
+    const setOption = async (patch) => { const r = await ipc().invoke('telecloud-sync:set-options', patch); if (r.success) setStatus(s => ({ ...s, options: r.options, cacheBytes: r.cacheBytes })); };
+
+    const restore = async (skipConfirm) => {
+        if (!skipConfirm) {
+            const ok = await confirmDialog({ title: 'Restore library from TeleCloud?', message: 'Every track in TeleCloud is added to this library as a cloud track. Audio is downloaded when you play it.', confirmLabel: 'Restore' });
+            if (!ok) return;
         }
-
-        setIsLoading(true);
-        setError('');
-
-        try {
-            const result = await window.ipcRenderer.invoke('telecloud-sync:verify-code', {
-                code: otpCode,
-                phoneNumber
-            });
-
-            if (result.success) {
-                setStep('config');
-            } else {
-                setError(result.error || 'Invalid verification code');
-            }
-        } catch (err) {
-            setError(err.message || 'Failed to verify code');
-        } finally {
-            setIsLoading(false);
-        }
+        await run(async () => {
+            const r = await ipc().invoke('telecloud-sync:restore-from-cloud');
+            if (!r.success) throw new Error(r.error);
+            const extra = r.needKey ? `\n${r.needKey} encrypted tracks need the recovery key from the computer that uploaded them.` : '';
+            const parts = [`Added ${r.restoredCount} tracks with their tags, lyrics and covers.`];
+            if (r.updatedCount) parts.push(`Filled in the info of ${r.updatedCount} cloud tracks.`);
+            if (r.skippedCount) parts.push(`${r.skippedCount} were already here.`);
+            alertDialog({ title: 'Library restored', message: parts.join(' ') + extra, tone: r.needKey ? 'info' : 'ok' });
+            refresh();
+        });
+    };
+    const clearCache = async () => { await ipc().invoke('telecloud-sync:clear-cache'); refresh(); };
+    const deleteAll = async () => {
+        const ok = await confirmDialog({ title: 'Delete your TeleCloud backup?', message: 'Every file TeleCloud uploaded is deleted from Telegram. Other messages in the chat, and your local music files, are not touched. This cannot be undone.', confirmLabel: 'Delete backup', danger: true });
+        if (!ok) return;
+        await run(async () => {
+            const r = await ipc().invoke('telecloud-sync:delete-all');
+            if (!r.success) throw new Error(r.error);
+            alertDialog({ title: 'Backup deleted', message: `Deleted ${r.deletedCount} files from Telegram.`, tone: 'ok' });
+            refresh();
+        });
     };
 
-    const handleStartSync = async () => {
-        setIsLoading(true);
-        setError('');
+    const openPortal = () => ipc().invoke('open-external', 'https://my.telegram.org/apps');
+    const onEnter = (fn) => (e) => { if (e.key === 'Enter') fn(); };
+    const errorBox = error && <Callout tone="danger">{error}</Callout>;
 
-        try {
-            const result = await window.ipcRenderer.invoke('telecloud-sync:complete-setup', {
-                syncMode,
-                syncMetadata,
-                syncPlaylists,
-                syncAudioFiles,
-                storageLocation,
-                customChannelId: storageLocation === 'existing_channel' ? customChannelId : null,
-                playbackMode,
-                cacheLimit,
-                musicFolders: [] // FIX: Pass music folders from settings
-            });
+    if (step === 'loading') return <div className="empty">Loading…</div>;
 
-            if (result.success) {
-                setIsConnected(true);
-                setConnectedPhone(phoneNumber);
-                // Set storage limit based on storage location
-                setStorageLimit(storageLocation === 'private_channel' ? Infinity : 2048);
-                setStep('connected');
-            } else {
-                setError(result.error || 'Failed to complete setup');
-            }
-        } catch (err) {
-            setError(err.message || 'Failed to start sync');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleDisconnect = async () => {
-        if (!window.confirm('Are you sure you want to disconnect TeleCloud Sync? Your cloud files will remain in Telegram.')) {
-            return;
-        }
-
-        setIsLoading(true);
-        try {
-            await window.ipcRenderer.invoke('telecloud-sync:disconnect');
-            setIsConnected(false);
-            setStep('info');
-            setApiId('');
-            setApiHash('');
-            setPhoneNumber('');
-            setOtpCode('');
-            setConnectedPhone('');
-        } catch (err) {
-            setError('Failed to disconnect');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleSyncNow = async () => {
-        setIsLoading(true);
-        setShowProgress(true);
-        try {
-            const result = await window.ipcRenderer.invoke('telecloud-sync:sync-now');
-            if (result.success) {
-                setLastSync(new Date().toISOString());
-                alert('Sync completed successfully!');
-                // Refresh stats
-                checkConnection();
-            } else {
-                alert('Sync failed: ' + (result.error || 'Unknown error'));
-            }
-        } catch (err) {
-            alert('Sync failed: ' + err.message);
-        } finally {
-            setIsLoading(false);
-            setShowProgress(false);
-        }
-    };
-
-    const handleStopSync = async () => {
-        if (!window.confirm('Stop sync operation?\n\nThis will:\n- Stop uploading current and remaining files\n- Keep already synced files in cloud\n- You can resume later\n\nAre you sure?')) {
-            return;
-        }
-
-        try {
-            const result = await window.ipcRenderer.invoke('telecloud-sync:stop-sync');
-            if (result.success) {
-                console.log('Sync stop requested');
-            } else {
-                alert('Failed to stop sync: ' + (result.error || 'Unknown error'));
-            }
-        } catch (err) {
-            alert('Failed to stop sync: ' + err.message);
-        }
-    };
-
-    const handleDeleteAll = async () => {
-        if (!window.confirm('Delete ALL files from Telegram channel?\n\nThis will:\n- Delete all messages in the channel\n- Clear sync state from database\n- Cannot be undone\n\nAre you sure?')) {
-            return;
-        }
-
-        setIsLoading(true);
-        try {
-            const result = await window.ipcRenderer.invoke('telecloud-sync:delete-all');
-            if (result.success) {
-                alert(`✓ Deleted ${result.deletedCount} files from Telegram and cleared sync state`);
-                // Refresh stats
-                checkConnection();
-            } else {
-                alert('Delete failed: ' + (result.error || 'Unknown error'));
-            }
-        } catch (err) {
-            alert('Delete failed: ' + err.message);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleRestoreFromCloud = async () => {
-        if (!window.confirm('Restore library from TeleCloud?\n\nThis will add all cloud tracks to your local library. It will not download audio files.')) {
-            return;
-        }
-
-        setIsLoading(true);
-        try {
-            const result = await window.ipcRenderer.invoke('telecloud-sync:restore-from-cloud');
-            if (result.success) {
-                alert(`✓ Restored ${result.restoredCount} tracks from the cloud. Skipped ${result.skippedCount} duplicates.`);
-                checkConnection(); // Refresh stats
-            } else {
-                alert('Restore failed: ' + (result.error || 'Unknown error'));
-            }
-        } catch (err) {
-            alert('Restore failed: ' + err.message);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const openTelegramDevPortal = () => {
-        window.ipcRenderer.invoke('open-external', 'https://my.telegram.org/apps');
-    };
-
-    // Render Info Screen (Step 1)
     if (step === 'info') {
         return (
-            <div style={{ padding: '40px', maxWidth: '800px', margin: '0 auto' }}>
-                <h2 style={{ fontSize: '28px', fontWeight: 'bold', marginBottom: '20px', color: 'var(--text-main)' }}>
-                    📱 TeleCloud Sync
-                </h2>
-
-                <div style={{
-                    background: 'var(--bg-secondary)',
-                    borderRadius: '16px',
-                    padding: '40px',
-                    border: '1px solid var(--bg-tertiary)'
-                }}>
-                    <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-                        <div style={{ fontSize: '48px', marginBottom: '20px' }}>☁️</div>
-                        <h3 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px' }}>
-                            Use Your Telegram as Cloud Storage
-                        </h3>
-                        <p style={{ fontSize: '15px', color: 'var(--text-secondary)', lineHeight: '1.6', maxWidth: '600px', margin: '0 auto' }}>
-                            Sync your music library across devices using your personal Telegram account.
-                            Your data stays private and under your control.
-                        </p>
+            <div className="tc-wrap">
+                <div className="card tc-hero">
+                    <div className="set-icon" style={{ background: 'var(--accent-soft)', color: 'var(--accent)', width: 46, height: 46 }}><Icon name="cloud" /></div>
+                    <div>
+                        <h2>Use your Telegram as cloud storage</h2>
+                        <p style={{ marginTop: 6 }}>Back up your library to a private Telegram channel and play it on any computer. Files stay in your own account, encrypted with a key only you have.</p>
                     </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '40px' }}>
-                        <div style={{ textAlign: 'center', padding: '20px' }}>
-                            <div style={{ fontSize: '32px', marginBottom: '12px' }}>💰</div>
-                            <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '8px' }}>No Subscription Fees</div>
-                            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>You provide your own storage</div>
-                        </div>
-                        <div style={{ textAlign: 'center', padding: '20px' }}>
-                            <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔒</div>
-                            <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '8px' }}>Complete Privacy</div>
-                            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Your data stays in your account</div>
-                        </div>
-                        <div style={{ textAlign: 'center', padding: '20px' }}>
-                            <div style={{ fontSize: '32px', marginBottom: '12px' }}>📴</div>
-                            <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '8px' }}>Works Offline</div>
-                            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Local playback always available</div>
-                        </div>
-                        <div style={{ textAlign: 'center', padding: '20px' }}>
-                            <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔓</div>
-                            <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '8px' }}>Open Source</div>
-                            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Fully auditable and secure</div>
-                        </div>
+                    <div className="feature-grid">
+                        <div className="feature"><div className="set-icon"><Icon name="check" /></div><div><b>No subscription</b><span>No total size limit</span></div></div>
+                        <div className="feature"><div className="set-icon"><Icon name="user" /></div><div><b>Encrypted</b><span>Telegram can't read your files</span></div></div>
+                        <div className="feature"><div className="set-icon"><Icon name="monitor" /></div><div><b>Any computer</b><span>Restore the library anywhere</span></div></div>
+                        <div className="feature"><div className="set-icon"><Icon name="disc" /></div><div><b>Lossless</b><span>Bit-for-bit, checked on download</span></div></div>
                     </div>
-
-                    <div style={{
-                        background: 'var(--bg-main)',
-                        borderRadius: '12px',
-                        padding: '24px',
-                        marginBottom: '32px',
-                        border: '1px solid var(--bg-tertiary)'
-                    }}>
-                        <div style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '16px', color: 'var(--text-main)' }}>
-                            To get started, you'll need:
-                        </div>
-                        <ul style={{ margin: 0, paddingLeft: '24px', color: 'var(--text-secondary)' }}>
-                            <li style={{ marginBottom: '8px' }}>Telegram API ID and Hash (from my.telegram.org)</li>
-                            <li>Your phone number</li>
-                        </ul>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
-                        <button
-                            onClick={openTelegramDevPortal}
-                            style={{
-                                background: 'var(--bg-hover)',
-                                color: 'var(--text-main)',
-                                border: '1px solid var(--bg-tertiary)',
-                                padding: '14px 28px',
-                                borderRadius: '12px',
-                                fontSize: '15px',
-                                fontWeight: 'bold',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s'
-                            }}
-                        >
-                            Get API Credentials
-                        </button>
-                        <button
-                            onClick={handleContinueSetup}
-                            style={{
-                                background: 'var(--accent-red)',
-                                color: 'white',
-                                border: 'none',
-                                padding: '14px 32px',
-                                borderRadius: '12px',
-                                fontSize: '15px',
-                                fontWeight: 'bold',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s'
-                            }}
-                        >
-                            Continue Setup →
-                        </button>
+                    <Callout tone="info">You'll need a Telegram <b>API ID and hash</b> from my.telegram.org, and your phone number.</Callout>
+                    <div className="btn-row">
+                        <button className="btn-primary" onClick={() => goTo('credentials')}>Start setup<Icon name="chevron" style={{ transform: 'rotate(-90deg)' }} /></button>
+                        <button className="btn-ghost" onClick={openPortal}>Get API credentials</button>
                     </div>
                 </div>
             </div>
         );
     }
 
-    // Render Credentials Input Screen (Step 2)
-    if (step === 'credentials') {
+    if (['credentials', 'phone', 'otp', 'password', 'config'].includes(step)) {
+        const back = { credentials: 'info', phone: 'credentials', otp: 'phone', password: 'otp' }[step];
         return (
-            <div style={{ padding: '40px', maxWidth: '600px', margin: '0 auto' }}>
-                <button
-                    onClick={() => setStep('info')}
-                    style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--text-muted)',
-                        cursor: 'pointer',
-                        fontSize: '14px',
-                        marginBottom: '20px'
-                    }}
-                >
-                    ← Back
-                </button>
-
-                <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '30px' }}>
-                    Enter Your API Credentials
-                </h2>
-
-                <div style={{ background: 'var(--bg-secondary)', borderRadius: '16px', padding: '32px', border: '1px solid var(--bg-tertiary)' }}>
-                    {error && (
-                        <div style={{
-                            background: 'rgba(230, 57, 70, 0.1)',
-                            border: '1px solid var(--accent-red)',
-                            borderRadius: '8px',
-                            padding: '12px 16px',
-                            marginBottom: '24px',
-                            color: 'var(--accent-red)',
-                            fontSize: '14px'
-                        }}>
-                            {error}
-                        </div>
-                    )}
-
-                    <div style={{ marginBottom: '24px' }}>
-                        <label style={{ display: 'block', fontSize: '14px', fontWeight: 'bold', marginBottom: '8px', color: 'var(--text-main)' }}>
-                            API ID *
-                        </label>
-                        <input
-                            type="text"
-                            value={apiId}
-                            onChange={(e) => setApiId(e.target.value)}
-                            placeholder="12345678"
-                            style={{
-                                width: '100%',
-                                padding: '14px 16px',
-                                borderRadius: '10px',
-                                border: '2px solid var(--bg-tertiary)',
-                                background: 'var(--bg-main)',
-                                color: 'var(--text-main)',
-                                fontSize: '15px',
-                                outline: 'none'
-                            }}
-                        />
-                    </div>
-
-                    <div style={{ marginBottom: '24px' }}>
-                        <label style={{ display: 'block', fontSize: '14px', fontWeight: 'bold', marginBottom: '8px', color: 'var(--text-main)' }}>
-                            API Hash *
-                        </label>
-                        <input
-                            type="text"
-                            value={apiHash}
-                            onChange={(e) => setApiHash(e.target.value)}
-                            placeholder="abc123def456..."
-                            style={{
-                                width: '100%',
-                                padding: '14px 16px',
-                                borderRadius: '10px',
-                                border: '2px solid var(--bg-tertiary)',
-                                background: 'var(--bg-main)',
-                                color: 'var(--text-main)',
-                                fontSize: '15px',
-                                outline: 'none'
-                            }}
-                        />
-                    </div>
-
-                    <div style={{ background: 'var(--bg-main)', borderRadius: '10px', padding: '16px', marginBottom: '24px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                        <div style={{ marginBottom: '8px' }}>ℹ️ Get these from: <a href="#" onClick={(e) => { e.preventDefault(); openTelegramDevPortal(); }} style={{ color: 'var(--accent-red)' }}>https://my.telegram.org/apps</a></div>
-                        <div>🔒 Your credentials are stored locally and encrypted</div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '12px' }}>
-                        <button
-                            onClick={() => setStep('info')}
-                            style={{
-                                flex: 1,
-                                background: 'var(--bg-hover)',
-                                color: 'var(--text-main)',
-                                border: '1px solid var(--bg-tertiary)',
-                                padding: '14px',
-                                borderRadius: '10px',
-                                fontSize: '15px',
-                                fontWeight: 'bold',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            onClick={handleSubmitCredentials}
-                            disabled={isLoading}
-                            style={{
-                                flex: 1,
-                                background: isLoading ? 'var(--bg-hover)' : 'var(--accent-red)',
-                                color: 'white',
-                                border: 'none',
-                                padding: '14px',
-                                borderRadius: '10px',
-                                fontSize: '15px',
-                                fontWeight: 'bold',
-                                cursor: isLoading ? 'not-allowed' : 'pointer'
-                            }}
-                        >
-                            {isLoading ? 'Saving...' : 'Continue'}
-                        </button>
-                    </div>
+            <div className="tc-wrap">
+                <div className="page-head" style={{ margin: 0 }}>
+                    {back && <BackButton onClick={() => goTo(back)} />}
+                    <h2 style={{ fontSize: 20 }}>Set up TeleCloud</h2>
                 </div>
-            </div>
-        );
-    }
+                <Stepper step={step} />
 
-    // Render Phone Number Screen (Step 3)
-    if (step === 'phone') {
-        return (
-            <div style={{ padding: '40px', maxWidth: '600px', margin: '0 auto' }}>
-                <button
-                    onClick={() => setStep('credentials')}
-                    style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--text-muted)',
-                        cursor: 'pointer',
-                        fontSize: '14px',
-                        marginBottom: '20px'
-                    }}
-                >
-                    ← Back
-                </button>
-
-                <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '30px' }}>
-                    Sign In to Telegram
-                </h2>
-
-                <div style={{ background: 'var(--bg-secondary)', borderRadius: '16px', padding: '32px', border: '1px solid var(--bg-tertiary)' }}>
-                    {error && (
-                        <div style={{
-                            background: 'rgba(230, 57, 70, 0.1)',
-                            border: '1px solid var(--accent-red)',
-                            borderRadius: '8px',
-                            padding: '12px 16px',
-                            marginBottom: '24px',
-                            color: 'var(--accent-red)',
-                            fontSize: '14px'
-                        }}>
-                            {error}
-                        </div>
-                    )}
-
-                    <div style={{ marginBottom: '24px' }}>
-                        <label style={{ display: 'block', fontSize: '14px', fontWeight: 'bold', marginBottom: '8px', color: 'var(--text-main)' }}>
-                            Phone Number *
-                        </label>
-                        <input
-                            type="tel"
-                            value={phoneNumber}
-                            onChange={(e) => setPhoneNumber(e.target.value)}
-                            placeholder="+1 234 567 8900"
-                            style={{
-                                width: '100%',
-                                padding: '14px 16px',
-                                borderRadius: '10px',
-                                border: '2px solid var(--bg-tertiary)',
-                                background: 'var(--bg-main)',
-                                color: 'var(--text-main)',
-                                fontSize: '15px',
-                                outline: 'none'
-                            }}
-                        />
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>
-                            Include country code (e.g., +1 for US)
+                {step === 'credentials' && (
+                    <div className="card form-card">
+                        {errorBox}
+                        <Field label="API ID"><input className="input mono" value={apiId} onChange={e => setApiId(e.target.value)} placeholder="12345678" onKeyDown={onEnter(submitCredentials)} autoFocus /></Field>
+                        <Field label="API hash"><input className="input mono" value={apiHash} onChange={e => setApiHash(e.target.value)} placeholder="0123456789abcdef…" onKeyDown={onEnter(submitCredentials)} /></Field>
+                        <Callout tone="info">Create an app at <button className="btn-link" onClick={openPortal}>my.telegram.org/apps</button> to get these. They are stored on this computer only, protected by Windows.</Callout>
+                        <div className="btn-row" style={{ justifyContent: 'flex-end' }}>
+                            <button className="btn-ghost" onClick={() => goTo('info')}>Cancel</button>
+                            <button className="btn-primary" onClick={submitCredentials} disabled={isLoading}>{isLoading ? 'Saving…' : 'Continue'}</button>
                         </div>
                     </div>
+                )}
 
-                    <button
-                        onClick={handleSendCode}
-                        disabled={isLoading}
-                        style={{
-                            width: '100%',
-                            background: isLoading ? 'var(--bg-hover)' : 'var(--accent-red)',
-                            color: 'white',
-                            border: 'none',
-                            padding: '14px',
-                            borderRadius: '10px',
-                            fontSize: '15px',
-                            fontWeight: 'bold',
-                            cursor: isLoading ? 'not-allowed' : 'pointer'
-                        }}
-                    >
-                        {isLoading ? 'Sending...' : 'Send Code'}
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    // Render OTP Verification Screen (Step 4)
-    if (step === 'otp') {
-        return (
-            <div style={{ padding: '40px', maxWidth: '600px', margin: '0 auto' }}>
-                <button
-                    onClick={() => setStep('phone')}
-                    style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--text-muted)',
-                        cursor: 'pointer',
-                        fontSize: '14px',
-                        marginBottom: '20px'
-                    }}
-                >
-                    ← Back
-                </button>
-
-                <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '30px' }}>
-                    Enter Verification Code
-                </h2>
-
-                <div style={{ background: 'var(--bg-secondary)', borderRadius: '16px', padding: '32px', border: '1px solid var(--bg-tertiary)' }}>
-                    {error && (
-                        <div style={{
-                            background: 'rgba(230, 57, 70, 0.1)',
-                            border: '1px solid var(--accent-red)',
-                            borderRadius: '8px',
-                            padding: '12px 16px',
-                            marginBottom: '24px',
-                            color: 'var(--accent-red)',
-                            fontSize: '14px'
-                        }}>
-                            {error}
+                {step === 'phone' && (
+                    <div className="card form-card">
+                        {errorBox}
+                        <Field label="Phone number" hint="Include the country code, e.g. +84 for Vietnam.">
+                            <input className="input mono" type="tel" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} placeholder="+84 912 345 678" onKeyDown={onEnter(sendCode)} autoFocus />
+                        </Field>
+                        <div className="btn-row" style={{ justifyContent: 'flex-end' }}>
+                            <button className="btn-primary" onClick={sendCode} disabled={isLoading}>{isLoading ? 'Sending…' : 'Send code'}</button>
                         </div>
-                    )}
-
-                    <div style={{ textAlign: 'center', marginBottom: '24px', color: 'var(--text-secondary)', fontSize: '14px' }}>
-                        We sent a code to your Telegram app
                     </div>
+                )}
 
-                    <div style={{ marginBottom: '24px' }}>
-                        <input
-                            type="text"
-                            value={otpCode}
-                            onChange={(e) => setOtpCode(e.target.value)}
-                            placeholder="Enter 5-digit code"
-                            maxLength={5}
-                            style={{
-                                width: '100%',
-                                padding: '14px 16px',
-                                borderRadius: '10px',
-                                border: '2px solid var(--bg-tertiary)',
-                                background: 'var(--bg-main)',
-                                color: 'var(--text-main)',
-                                fontSize: '24px',
-                                textAlign: 'center',
-                                letterSpacing: '8px',
-                                outline: 'none',
-                                fontWeight: 'bold'
-                            }}
-                        />
-                    </div>
-
-                    <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                        <button
-                            onClick={handleSendCode}
-                            style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: 'var(--accent-red)',
-                                cursor: 'pointer',
-                                fontSize: '14px',
-                                textDecoration: 'underline'
-                            }}
-                        >
-                            Didn't receive it? Resend Code
-                        </button>
-                    </div>
-
-                    <button
-                        onClick={handleVerifyCode}
-                        disabled={isLoading}
-                        style={{
-                            width: '100%',
-                            background: isLoading ? 'var(--bg-hover)' : 'var(--accent-red)',
-                            color: 'white',
-                            border: 'none',
-                            padding: '14px',
-                            borderRadius: '10px',
-                            fontSize: '15px',
-                            fontWeight: 'bold',
-                            cursor: isLoading ? 'not-allowed' : 'pointer'
-                        }}
-                    >
-                        {isLoading ? 'Verifying...' : 'Verify & Continue'}
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    // Render Sync Configuration Screen (Step 5)
-    if (step === 'config') {
-        return (
-            <div style={{ padding: '40px', maxWidth: '700px', margin: '0 auto' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '30px' }}>
-                    Configure Sync Settings
-                </h2>
-
-                <div style={{ background: 'var(--bg-secondary)', borderRadius: '16px', padding: '32px', border: '1px solid var(--bg-tertiary)' }}>
-                    <div style={{ fontSize: '15px', color: 'var(--accent-red)', marginBottom: '24px', fontWeight: 'bold' }}>
-                        ✓ Connected as: {phoneNumber}
-                    </div>
-
-                    {/* Storage Location */}
-                    <div style={{ marginBottom: '32px' }}>
-                        <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Audio File Storage</h3>
-
-                        <label style={{ display: 'block', padding: '16px', background: storageLocation === 'private_channel' ? 'rgba(230, 57, 70, 0.1)' : 'var(--bg-main)', border: `2px solid ${storageLocation === 'private_channel' ? 'var(--accent-red)' : 'var(--bg-tertiary)'}`, borderRadius: '10px', marginBottom: '12px', cursor: 'pointer' }}>
-                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                                <input type="radio" checked={storageLocation === 'private_channel'} onChange={() => setStorageLocation('private_channel')} />
-                                <div style={{ flex: 1 }}>
-                                    <div style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '4px' }}>
-                                        Private Channel - Auto-create (RECOMMENDED)
-                                    </div>
-                                    <div style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                                        ✓ Unlimited total storage (FREE)<br />
-                                        ✓ Perfect for large FLAC libraries (100GB-1TB+)<br />
-                                        ✓ Channel created automatically, completely private
-                                    </div>
-                                </div>
-                            </div>
-                        </label>
-
-                        <label style={{ display: 'block', padding: '16px', background: storageLocation === 'saved_messages' ? 'rgba(230, 57, 70, 0.1)' : 'var(--bg-main)', border: `2px solid ${storageLocation === 'saved_messages' ? 'var(--accent-red)' : 'var(--bg-tertiary)'}`, borderRadius: '10px', cursor: 'pointer' }}>
-                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                                <input type="radio" checked={storageLocation === 'saved_messages'} onChange={() => setStorageLocation('saved_messages')} />
-                                <div style={{ flex: 1 }}>
-                                    <div style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '4px' }}>
-                                        Saved Messages Only (2GB total limit)
-                                    </div>
-                                    <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                                        Only suitable for small libraries or metadata-only
-                                    </div>
-                                </div>
-                            </div>
-                        </label>
-                    </div>
-
-                    {/* Playback Mode */}
-                    <div style={{ marginBottom: '32px' }}>
-                        <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Playback Mode</h3>
-
-                        <div style={{ position: 'relative' }}>
-                            {/* Custom Dropdown */}
-                            <div
-                                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                                style={{
-                                    width: '100%',
-                                    padding: '14px 16px',
-                                    paddingRight: '40px',
-                                    borderRadius: '10px',
-                                    border: '2px solid var(--bg-tertiary)',
-                                    background: 'var(--bg-main)',
-                                    color: 'var(--text-main)',
-                                    fontSize: '15px',
-                                    cursor: 'pointer',
-                                    userSelect: 'none'
-                                }}
-                            >
-                                {playbackMode === 'stream' && 'Stream from cloud (save device storage)'}
-                                {playbackMode === 'download' && 'Download and cache (offline playback)'}
-                                {playbackMode === 'hybrid' && 'Hybrid (stream + smart caching)'}
-                            </div>
-                            <div style={{
-                                position: 'absolute',
-                                right: '16px',
-                                top: '50%',
-                                transform: 'translateY(-50%)',
-                                pointerEvents: 'none',
-                                color: 'var(--text-muted)'
-                            }}>▼</div>
-
-                            {/* Dropdown Options */}
-                            {isDropdownOpen && (
-                                <div style={{
-                                    position: 'absolute',
-                                    top: 'calc(100% + 4px)',
-                                    left: 0,
-                                    right: 0,
-                                    background: 'var(--bg-main)',
-                                    border: '2px solid var(--bg-tertiary)',
-                                    borderRadius: '10px',
-                                    overflow: 'hidden',
-                                    zIndex: 1000,
-                                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
-                                }}>
-                                    {[
-                                        { value: 'stream', label: 'Stream from cloud (save device storage)' },
-                                        { value: 'download', label: 'Download and cache (offline playback)' },
-                                        { value: 'hybrid', label: 'Hybrid (stream + smart caching)' }
-                                    ].map((option) => (
-                                        <div
-                                            key={option.value}
-                                            onClick={() => {
-                                                setPlaybackMode(option.value);
-                                                setIsDropdownOpen(false);
-                                            }}
-                                            style={{
-                                                padding: '12px 16px',
-                                                fontSize: '15px',
-                                                cursor: 'pointer',
-                                                background: playbackMode === option.value ? 'rgba(230, 57, 70, 0.15)' : 'transparent',
-                                                color: 'var(--text-main)',
-                                                transition: 'background 0.15s'
-                                            }}
-                                            onMouseEnter={(e) => {
-                                                if (playbackMode !== option.value) {
-                                                    e.currentTarget.style.background = 'rgba(230, 57, 70, 0.1)';
-                                                }
-                                            }}
-                                            onMouseLeave={(e) => {
-                                                if (playbackMode !== option.value) {
-                                                    e.currentTarget.style.background = 'transparent';
-                                                }
-                                            }}
-                                        >
-                                            {option.label}
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                {step === 'otp' && (
+                    <div className="card form-card">
+                        {errorBox}
+                        <div style={{ color: 'var(--text-2)', fontSize: 13.5 }}>Telegram sent a login code to your Telegram app (not SMS).</div>
+                        <input className="input code" value={otpCode} onChange={e => setOtpCode(e.target.value.replace(/\D/g, ''))} placeholder="•••••" maxLength={6} inputMode="numeric" onKeyDown={onEnter(verifyCode)} autoFocus />
+                        <div className="btn-row" style={{ justifyContent: 'space-between' }}>
+                            <button className="btn-link" onClick={sendCode} disabled={isLoading}>Resend code</button>
+                            <button className="btn-primary" onClick={verifyCode} disabled={isLoading || otpCode.length < 5}>{isLoading ? 'Verifying…' : 'Verify'}</button>
                         </div>
+                    </div>
+                )}
 
-                        {playbackMode !== 'stream' && (
-                            <div style={{ marginTop: '16px' }}>
-                                <label style={{ display: 'block', fontSize: '14px', marginBottom: '8px' }}>
-                                    Cache Limit: {cacheLimit} GB
+                {step === 'password' && (
+                    <div className="card form-card">
+                        {errorBox}
+                        <Field label="Two-step verification password" hint="Your account has a cloud password. It is sent to Telegram only as a proof, never stored.">
+                            <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={onEnter(checkPassword)} autoFocus />
+                        </Field>
+                        <div className="btn-row" style={{ justifyContent: 'flex-end' }}>
+                            <button className="btn-primary" onClick={checkPassword} disabled={isLoading || !password}>{isLoading ? 'Checking…' : 'Sign in'}</button>
+                        </div>
+                    </div>
+                )}
+
+                {step === 'config' && (
+                    <div className="card form-card">
+                        {errorBox}
+                        <Callout tone="ok">Signed in as <b>{phoneNumber}</b></Callout>
+                        <div className="field">
+                            <span className="field-label">Where should the library go?</span>
+                            {[
+                                { id: 'private_channel', title: 'Private channel (recommended)', desc: 'A channel only you can see, created for you (or reused if you set TeleCloud up before). No total size limit; files up to 2 GB.' },
+                                { id: 'saved_messages', title: 'Saved Messages', desc: 'Also unlimited, but your music sits between your own saved notes.' },
+                            ].map(o => (
+                                <label key={o.id} className={`radio-card ${storageLocation === o.id ? 'on' : ''}`}>
+                                    <input type="radio" name="storage" checked={storageLocation === o.id} onChange={() => setStorageLocation(o.id)} />
+                                    <span className="radio-dot" />
+                                    <div><b>{o.title}</b><span>{o.desc}</span></div>
                                 </label>
-                                <input
-                                    type="range"
-                                    min="10"
-                                    max="500"
-                                    step="10"
-                                    value={cacheLimit}
-                                    onChange={(e) => setCacheLimit(Number(e.target.value))}
-                                    style={{ width: '100%' }}
-                                />
-                            </div>
-                        )}
+                            ))}
+                        </div>
+                        <SettingRow icon="user" title="Encrypt files (recommended)" desc="Files are encrypted on this computer before upload. You'll get a recovery key to open them elsewhere.">
+                            <Toggle checked={encrypt} onChange={setEncrypt} />
+                        </SettingRow>
+                        <Field label="Cache for cloud tracks" hint="Played cloud tracks are kept here so replays don't download again. The oldest are removed when it is full.">
+                            <div className="row-gap"><input className="input mono" type="number" min="0.5" max="2000" step="0.5" value={cacheLimit} onChange={e => setCacheLimit(Number(e.target.value))} style={{ width: 110 }} /><span className="muted">GB</span></div>
+                        </Field>
+                        <div className="btn-row" style={{ justifyContent: 'flex-end' }}>
+                            <button className="btn-primary" onClick={finishSetup} disabled={isLoading}>{isLoading ? 'Setting up…' : 'Finish setup'}</button>
+                        </div>
                     </div>
-
-                    <button
-                        onClick={handleStartSync}
-                        disabled={isLoading}
-                        style={{
-                            width: '100%',
-                            background: isLoading ? 'var(--bg-hover)' : 'var(--accent-red)',
-                            color: 'white',
-                            border: 'none',
-                            padding: '16px',
-                            borderRadius: '10px',
-                            fontSize: '16px',
-                            fontWeight: 'bold',
-                            cursor: isLoading ? 'not-allowed' : 'pointer'
-                        }}
-                    >
-                        {isLoading ? 'Setting up...' : 'Complete Setup'}
-                    </button>
-                </div>
+                )}
             </div>
         );
     }
 
-    // Render Connected/Status Screen
-    if (step === 'connected') {
-        const storagePercent = Math.round((storageUsed / storageLimit) * 100);
-        const lastSyncText = lastSync ? new Date(lastSync).toLocaleString() : 'Never';
-
-        return (
-            <div style={{ padding: '40px', maxWidth: '800px', margin: '0 auto' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '30px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    TeleCloud Sync
-                    <span style={{ fontSize: '14px', background: '#10b981', color: 'white', padding: '4px 12px', borderRadius: '20px', fontWeight: 'bold' }}>
-                        ✓ Connected
-                    </span>
-                </h2>
-
-                <div style={{ background: 'var(--bg-secondary)', borderRadius: '16px', padding: '32px', border: '1px solid var(--bg-tertiary)', marginBottom: '24px' }}>
-                    <div style={{ marginBottom: '24px' }}>
-                        <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '4px' }}>Account</div>
-                        <div style={{ fontSize: '18px', fontWeight: 'bold' }}>{connectedPhone}</div>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '32px' }}>
-                        <div>
-                            <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '4px' }}>Last Sync</div>
-                            <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{lastSyncText}</div>
-                        </div>
-                        <div>
-                            <div style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '4px' }}>Synced Items</div>
-                            <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{syncedItems} tracks</div>
+    const opts = status?.options || {};
+    const cacheLimitBytes = (opts.cacheLimitGB || 5) * 1024 ** 3;
+    return (
+        <div className="tc-wrap">
+            {error && <Callout tone="danger">{error}</Callout>}
+            <section className="set-section">
+                <h3 className="h3-row">Account
+                    <button className="btn-ghost sm" onClick={showTips} title="What to do and avoid so backups complete"><Icon name="info" />Do's &amp; don'ts</button>
+                </h3>
+                <div className="card set-card">
+                    <SettingRow icon="cloud" title={<>Connected <span className="badge b-lossless" style={{ marginLeft: 6 }}>Online</span></>} desc={`${status?.phoneNumber || 'Telegram account'} · ${status?.storage?.title || 'no storage chat'}`}>
+                        <button className="btn-outline danger" onClick={disconnect} disabled={isLoading}>Disconnect</button>
+                    </SettingRow>
+                    <div className="set-sub" style={{ background: 'transparent' }}>
+                        <div className="stat-grid">
+                            <div className="stat-box"><small>Tracks in cloud</small><b>{(status?.syncedItems || 0).toLocaleString()}</b></div>
+                            <div className="stat-box"><small>Stored</small><b>{formatBytes(status?.storageUsed || 0)}</b></div>
+                            <div className="stat-box"><small>Last backup</small><b style={{ fontSize: 14 }}>{status?.lastSync ? new Date(status.lastSync).toLocaleString() : 'Never'}</b></div>
                         </div>
                     </div>
-
-                    <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
-                        <button
-                            onClick={handleSyncNow}
-                            disabled={isLoading}
-                            style={{
-                                flex: 1,
-                                background: isLoading ? 'var(--bg-hover)' : 'var(--accent-red)',
-                                color: 'white',
-                                border: 'none',
-                                padding: '14px',
-                                borderRadius: '10px',
-                                fontSize: '15px',
-                                fontWeight: 'bold',
-                                cursor: isLoading ? 'not-allowed' : 'pointer'
-                            }}
-                        >
-                            {isLoading ? 'Syncing...' : 'Sync Now'}
-                        </button>
-                        <button
-                            onClick={handleDisconnect}
-                            disabled={isLoading}
-                            style={{
-                                flex: 1,
-                                background: 'transparent',
-                                color: 'var(--accent-red)',
-                                border: '2px solid var(--accent-red)',
-                                padding: '14px',
-                                borderRadius: '10px',
-                                fontSize: '15px',
-                                fontWeight: 'bold',
-                                cursor: isLoading ? 'not-allowed' : 'pointer'
-                            }}
-                        >
-                            Disconnect
-                        </button>
-                    </div>
-
-                    {/* Sync Progress Section (Expandable) */}
-                    {isLoading && (
-                        <div style={{ marginTop: '16px', background: 'var(--bg-main)', borderRadius: '10px', padding: '16px', border: '1px solid var(--bg-tertiary)' }}>
-                            <div
-                                onClick={() => setShowProgress(!showProgress)}
-                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', marginBottom: showProgress ? '16px' : '0' }}
-                            >
-                                <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--text-main)' }}>
-                                    Sync in Progress
-                                </div>
-                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                                    {showProgress ? '▼' : '▶'} {showProgress ? 'Hide' : 'Show'} Details
-                                </div>
-                            </div>
-
-                            {showProgress && (
-                                <>
-                                    <div style={{ marginBottom: '16px' }}>
-                                        <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                                            Current File:
-                                        </div>
-                                        <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                            {currentFile || 'Preparing...'}
-                                        </div>
-                                    </div>
-
-                                    <div style={{ marginBottom: '16px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Progress</span>
-                                            <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>
-                                                {syncProgress.current} / {syncProgress.total} tracks
-                                            </span>
-                                        </div>
-                                        <div style={{ width: '100%', height: '8px', background: 'var(--bg-tertiary)', borderRadius: '4px', overflow: 'hidden' }}>
-                                            <div style={{
-                                                height: '100%',
-                                                width: `${uploadProgress > 0 ? uploadProgress : (syncProgress.total > 0 ? (syncProgress.current / syncProgress.total) * 100 : 0)}%`,
-                                                background: 'linear-gradient(90deg, #10b981 0%, #34d399 100%)',
-                                                transition: 'width 0.3s ease'
-                                            }}></div>
-                                        </div>
-                                    </div>
-
-                                    <button
-                                        onClick={handleStopSync}
-                                        style={{
-                                            width: '100%',
-                                            background: 'transparent',
-                                            color: '#ef4444',
-                                            border: '2px solid #ef4444',
-                                            padding: '10px',
-                                            borderRadius: '8px',
-                                            fontSize: '14px',
-                                            fontWeight: 'bold',
-                                            cursor: 'pointer'
-                                        }}
-                                    >
-                                        ⏹ Stop Sync
-                                    </button>
-                                </>
-                            )}
-                        </div>
-                    )}
-
-                    <button
-                        onClick={handleDeleteAll}
-                        disabled={isLoading}
-                        style={{
-                            width: '100%',
-                            background: 'transparent',
-                            color: '#f59e0b',
-                            border: '2px solid #f59e0b',
-                            padding: '12px',
-                            borderRadius: '10px',
-                            fontSize: '14px',
-                            fontWeight: 'bold',
-                            cursor: isLoading ? 'not-allowed' : 'pointer'
-                        }}
-                    >
-                        Delete All from Channel (Testing)
-                    </button>
                 </div>
+            </section>
 
-                <div style={{ background: 'var(--bg-secondary)', borderRadius: '16px', padding: '32px', border: '1px solid var(--bg-tertiary)', marginBottom: '24px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Cloud Recovery</h3>
-                    <button
-                        onClick={handleRestoreFromCloud}
-                        disabled={isLoading}
-                        style={{
-                            width: '100%',
-                            background: 'transparent',
-                            color: '#34d399',
-                            border: '2px solid #34d399',
-                            padding: '12px',
-                            borderRadius: '10px',
-                            fontSize: '14px',
-                            fontWeight: 'bold',
-                            cursor: isLoading ? 'not-allowed' : 'pointer'
-                        }}
-                    >
-                        Restore Library from Cloud
-                    </button>
-                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '12px', textAlign: 'center' }}>
-                        Use this on a new PC to repopulate your library from the cloud.
-                    </p>
+            <StoragesSection onChanged={refresh} />
+
+            <section className="set-section">
+                <h3>Backup</h3>
+                <div className="card set-card">
+                    <BackupCard queue={queue} onSync={sync} onPause={pause} onResume={resume} rate={opts.rateKBps || 0} onRate={(v) => setOption({ rateKBps: v })} />
+                    <IndexRow index={status?.index} onSaved={refresh} />
+                    <SpeedTest />
+                    <SettingRow icon="download" title="Restore library from cloud" desc="On a new computer, add every cloud track to this library. Audio downloads when you play it.">
+                        <button className="btn-ghost" onClick={() => restore(false)} disabled={isLoading}>Restore</button>
+                    </SettingRow>
                 </div>
+            </section>
 
-                <div style={{ background: 'var(--bg-secondary)', borderRadius: '16px', padding: '32px', border: '1px solid var(--bg-tertiary)' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Storage Usage</h3>
-                    <div style={{ fontSize: '14px', marginBottom: '12px', color: 'var(--text-secondary)' }}>
-                        Used: {storageUsed} MB {storageLimit === Infinity ? '(Unlimited)' : `/ ${storageLimit} MB (${storagePercent}%)`}
-                    </div>
-                    {storageLimit !== Infinity && (
-                        <div style={{ width: '100%', height: '8px', background: 'var(--bg-tertiary)', borderRadius: '4px', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${storagePercent}%`, background: storagePercent > 90 ? '#ef4444' : 'var(--accent-red)', transition: 'width 0.3s' }}></div>
+            <section className="set-section">
+                <h3>Encryption</h3>
+                <div className="card set-card">
+                    <SettingRow icon="user" title="Encrypt new uploads" desc="Turning this off only affects files uploaded from now on.">
+                        <Toggle checked={!!opts.encrypt} onChange={(v) => setOption({ encrypt: v })} />
+                    </SettingRow>
+                    {status && <RecoveryKey status={status} onChanged={(what) => (what === 'restore' ? restore(true) : refresh())} />}
+                </div>
+            </section>
+
+            <section className="set-section">
+                <h3>Cache</h3>
+                <div className="card set-card">
+                    <SettingRow icon="disc" title="Cache size" desc={`${formatBytes(status?.cacheBytes || 0)} used of ${formatBytes(cacheLimitBytes)}. The least recently played tracks are removed first.`}>
+                        <div className="row-gap">
+                            <input className="input mono" type="number" min="0.5" max="2000" step="0.5" defaultValue={opts.cacheLimitGB || 5} key={opts.cacheLimitGB}
+                                onBlur={e => { const v = Number(e.target.value); if (v > 0 && v !== opts.cacheLimitGB) setOption({ cacheLimitGB: v }); }}
+                                onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} style={{ width: 90 }} />
+                            <span className="muted">GB</span>
                         </div>
-                    )}
+                    </SettingRow>
+                    <div className="set-sub" style={{ background: 'transparent', paddingTop: 0 }}>
+                        <Progress value={Math.min(100, ((status?.cacheBytes || 0) / cacheLimitBytes) * 100)} />
+                    </div>
+                    <SettingRow icon="trash" title="Clear cache" desc="Cloud tracks download again the next time you play them.">
+                        <button className="btn-ghost" onClick={clearCache} disabled={!status?.cacheBytes}>Clear</button>
+                    </SettingRow>
                 </div>
-            </div>
-        );
-    }
+            </section>
 
-    // Fallback
-    return <div>Loading...</div>;
+            <section className="set-section">
+                <h3>Danger zone</h3>
+                <div className="card set-card">
+                    <SettingRow icon="trash" title="Delete the TeleCloud backup" desc="Deletes the files TeleCloud uploaded. Your other Telegram messages and local music are not touched.">
+                        <button className="btn-outline danger" onClick={deleteAll} disabled={isLoading}>Delete backup…</button>
+                    </SettingRow>
+                </div>
+            </section>
+        </div>
+    );
 };
 
 export default TeleCloudSyncSettings;

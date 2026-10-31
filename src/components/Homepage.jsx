@@ -1,213 +1,206 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useState, useLayoutEffect, useEffect } from 'react';
+import Icon from './Icon';
+import Cover from './Cover';
+import SongList from './SongList';
+import { qualityOf, storageOf, formatDuration, formatBytes } from '../utils/audio';
 
-const Homepage = ({ musicFiles, recentPlayed = [], onPlay, onNavClick, setSelectedAlbum, theme }) => {
+const FORMAT_COLORS = ['var(--accent)', 'var(--ok)', '#9b7bff', 'var(--info)', 'var(--text-3)'];
 
-  // Calculate Stats
+const groupAlbums = (musicFiles, limit) => {
+  const seen = new Map();
+  for (let i = musicFiles.length - 1; i >= 0 && seen.size < limit; i--) {
+    const file = musicFiles[i];
+    const name = file.metadata?.album || 'Unknown Album';
+    if (!seen.has(name)) seen.set(name, { name, artist: file.metadata?.artist || 'Unknown Artist', file, firstTrackIndex: i });
+  }
+  return [...seen.values()].map(a => {
+    const songs = musicFiles.filter(f => (f.metadata?.album || 'Unknown Album') === a.name);
+    return { ...a, cover: a.file.path ? `media://${encodeURIComponent(a.file.path)}` : a.file.cover, songs };
+  });
+};
+
+// While a scan streams in thousands of tracks, recompute the page at most every `ms`
+// (otherwise the album row would churn and request hundreds of covers)
+function useThrottled(value, ms) {
+  const [v, setV] = useState(value);
+  const last = useRef(0);
+  useEffect(() => {
+    const wait = Math.max(0, last.current + ms - Date.now());
+    const t = setTimeout(() => { last.current = Date.now(); setV(value); }, wait);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
+
+const Homepage = ({ musicFiles, recentPlayed = [], onPlay, onNavClick, setSelectedAlbum, syncStatus, syncProgress, songListProps }) => {
+  const settled = useThrottled(musicFiles, 2500);
+  const albums = useMemo(() => groupAlbums(settled, 25), [settled]);
+
+  // How many 140px+ tiles fit in one row at the current width
+  const gridRef = useRef(null);
+  const [cols, setCols] = useState(6);
+  useLayoutEffect(() => {
+    const el = gridRef.current;
+    if (!el) return undefined;
+    const measure = () => setCols(Math.max(2, Math.floor((el.clientWidth + 18) / (140 + 18))));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [albums.length > 1]);
+  const latest = albums[0];
+
   const stats = useMemo(() => {
-    const artists = new Set();
-    const albums = new Set();
-    musicFiles.forEach(file => {
-      if (file.metadata?.artist) artists.add(file.metadata.artist);
-      if (file.metadata?.album) albums.add(file.metadata.album);
+    const formats = new Map();
+    let hires = 0;
+    settled.forEach(f => {
+      const q = qualityOf(f);
+      if (q.tier === 'hires') hires++;
+      const key = q.ext.startsWith('DSD') ? 'DSD' : q.ext;
+      formats.set(key, (formats.get(key) || 0) + 1);
     });
+    const total = settled.length || 1;
+    const top = [...formats.entries()].sort((a, b) => b[1] - a[1]);
+    const shown = top.slice(0, 4);
+    const rest = top.slice(4).reduce((s, [, n]) => s + n, 0);
+    if (rest) shown.push(['Other', rest]);
     return {
-      artists: artists.size,
-      albums: albums.size,
-      tracks: musicFiles.length,
-      composers: Math.floor(artists.size * 0.4)
+      tracks: settled.length,
+      hires,
+      hiresPct: Math.round((hires / total) * 100),
+      formats: shown.map(([name, n]) => ({ name, pct: Math.round((n / total) * 100) })),
+      artists: new Set(settled.map(f => f.metadata?.artist).filter(Boolean)).size,
     };
-  }, [musicFiles]);
+  }, [settled]);
 
-  // Group by albums to show in "Recently Added"
-  const recentAlbums = useMemo(() => {
-    const uniqueAlbums = [];
-    const albumNames = new Set();
-    for (let i = musicFiles.length - 1; i >= 0; i--) {
-      const file = musicFiles[i];
-      const album = file.metadata?.album || 'Unknown Album';
-      if (!albumNames.has(album)) {
-        albumNames.add(album);
-        uniqueAlbums.push({
-          name: album,
-          artist: file.metadata?.artist || 'Unknown Artist',
-          cover: file.path ? `media://${encodeURIComponent(file.path)}` : file.cover,
-          firstTrackIndex: i,
-          file: file,
-          songs: musicFiles.filter(f => (f.metadata?.album || 'Unknown Album') === album)
-        });
-      }
-      if (uniqueAlbums.length >= 10) break;
-    }
-    return uniqueAlbums;
-  }, [musicFiles]);
-
-  // Shared button style to guarantee visibility across different screen sizes
-  const viewMoreButtonStyle = theme === 'light' ? {
-    background: 'rgba(0, 0, 0, 0.08)',
-    color: '#333333',
-    padding: '6px 16px',
-    borderRadius: '20px',
-    fontSize: '11px',
-    fontWeight: 'bold',
-    border: '1px solid rgba(0, 0, 0, 0.15)',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    letterSpacing: '1px',
-    flexShrink: 0,
-    whiteSpace: 'nowrap'
-  } : {
-    background: 'rgba(255, 255, 255, 0.1)',
-    color: '#ffffff',
-    padding: '6px 16px',
-    borderRadius: '20px',
-    fontSize: '11px',
-    fontWeight: 'bold',
-    border: 'none',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    letterSpacing: '1px',
-    flexShrink: 0,
-    whiteSpace: 'nowrap'
-  };
+  // navigating to Albums clears the selection, so select the album after it
+  const openAlbum = (album) => { onNavClick('albums'); setSelectedAlbum(album); };
+  const recentDuration = recentPlayed.reduce((s, f) => s + (f.metadata?.duration || 0), 0);
+  const latestQuality = latest ? qualityOf(latest.songs[0]) : null;
+  const latestStorage = latest ? [...new Set(latest.songs.flatMap(storageOf))] : [];
 
   return (
-    <div style={{ boxSizing: 'border-box', padding: '30px', color: 'var(--text-main)', height: '100%', overflowY: 'auto', overflowX: 'hidden', paddingBottom: '100px', minWidth: 0 }} className="homepage-container">
-
-      {/* Top Bar Stats */}
-      <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '25px' }}>
-        <div style={{ background: 'var(--bg-card)', borderRadius: '8px', padding: '20px', display: 'flex', alignItems: 'center', gap: '15px', minWidth: 0 }}>
-          <svg viewBox="0 0 24 24" width="40" height="40" fill="var(--text-muted)" style={{ flexShrink: 0 }}><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" /></svg>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: '24px', fontWeight: 'bold' }}>{stats.artists}</div>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Artists</div>
+    <>
+      <section className="hero">
+        <div className="card hero-a" onClick={() => recentPlayed.length ? onPlay(recentPlayed[0], 0, recentPlayed) : onNavClick('library')} role="button">
+          <div className="eyebrow">
+            {recentPlayed.length ? `${recentPlayed.length} tracks · ${formatDuration(recentDuration)}` : `${stats.tracks.toLocaleString()} tracks in your library`}
           </div>
+          <div className="hero-title">{recentPlayed.length ? 'Continue listening' : 'Start listening'}</div>
+          <Cover file={recentPlayed[0] || settled[settled.length - 1]} />
         </div>
 
-        <div style={{ background: 'var(--bg-card)', borderRadius: '8px', padding: '20px', display: 'flex', alignItems: 'center', gap: '15px', minWidth: 0 }}>
-          <svg viewBox="0 0 24 24" width="40" height="40" fill="var(--text-muted)" style={{ flexShrink: 0 }}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z" /></svg>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: '24px', fontWeight: 'bold' }}>{stats.albums}</div>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Albums</div>
-          </div>
-        </div>
-
-        <div style={{ background: 'var(--bg-card)', borderRadius: '8px', padding: '20px', display: 'flex', alignItems: 'center', gap: '15px', minWidth: 0 }}>
-          <svg viewBox="0 0 24 24" width="40" height="40" fill="var(--text-muted)" style={{ flexShrink: 0 }}><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" /></svg>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: '24px', fontWeight: 'bold' }}>{stats.tracks}</div>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Tracks</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Recently Added Section */}
-      <div style={{ background: 'var(--bg-tertiary)', borderRadius: '12px', padding: '30px', maxWidth: '100%', width: '100%', boxSizing: 'border-box' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', width: '100%', flexWrap: 'nowrap', gap: '15px' }}>
-          <h2 style={{ fontSize: '20px', margin: 0, fontWeight: 'bold', minWidth: 0, flex: '1' }}>Recently Added</h2>
-          {recentAlbums.length > 0 && (
-            <button
-              onClick={() => onNavClick('albums')}
-              style={viewMoreButtonStyle}
-              onMouseOver={e => { e.currentTarget.style.background = theme === 'light' ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.2)'; }}
-              onMouseOut={e => { e.currentTarget.style.background = theme === 'light' ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)'; }}
-            >
-              VIEW MORE
-            </button>
-          )}
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '20px', paddingBottom: '10px' }}>
-          {recentAlbums.slice(0, 8).map((album, idx) => (
-            <div
-              key={idx}
-              style={{ cursor: 'pointer', minWidth: 0 }}
-              onClick={() => {
-                setSelectedAlbum(album);
-                onNavClick('albums');
-              }}
-            >
-              <div style={{ width: '100%', paddingBottom: '100%', position: 'relative', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', overflow: 'hidden', marginBottom: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
-                <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}>
-                  {album.cover ? (
-                    <img src={album.cover} alt="cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>No Cover</div>
-                  )}
+        <div className="card hero-b">
+          {latest ? (
+            <>
+              <Cover file={latest.file} className="hero-bg" />
+              <div className="content">
+                <div className="eyebrow">Recently added</div>
+                <div className="hero-title" title={latest.name}>{latest.name}</div>
+                <div className="hero-specs">
+                  {latestQuality && <span className={`badge b-${latestQuality.tier} mono`}>{latestQuality.label}</span>}
+                  {latestStorage.includes('local') && <span className="badge b-local"><Icon name="monitor" />Local</span>}
+                  {latestStorage.includes('cloud') && <span className="badge b-cloud"><Icon name="cloud" />Synced</span>}
+                </div>
+                <div className="hero-sub">{latest.artist} · {latest.songs.length} tracks</div>
+                <div className="hero-actions">
+                  <button className="btn-primary" onClick={() => onPlay(latest.songs[0], 0, latest.songs)}><Icon name="play" filled />Play album</button>
+                  <button className="icon-btn" title="Shuffle album" onClick={() => {
+                    const shuffled = [...latest.songs].sort(() => Math.random() - 0.5);
+                    onPlay(shuffled[0], 0, shuffled);
+                  }}><Icon name="shuffle" /></button>
+                  <button className="icon-btn" title="Open album" onClick={() => openAlbum(latest)}><Icon name="disc" /></button>
                 </div>
               </div>
-              <div style={{ fontWeight: 'bold', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{album.name}</div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{album.artist}</div>
-            </div>
-          ))}
-          {recentAlbums.length === 0 && (
-            <div style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>No recently added music found.</div>
-          )}
-        </div>
-      </div>
-
-      {/* Recently Played Section */}
-      <div style={{ background: 'var(--bg-tertiary)', borderRadius: '12px', padding: '30px', marginTop: '30px', maxWidth: '100%', width: '100%', boxSizing: 'border-box' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', width: '100%', flexWrap: 'nowrap', gap: '15px' }}>
-          <h2 style={{ fontSize: '20px', margin: 0, fontWeight: 'bold', minWidth: 0, flex: '1' }}>Recently Played</h2>
-          {recentPlayed.length > 0 && (
-            <button
-              onClick={() => onNavClick('recent')}
-              style={viewMoreButtonStyle}
-              onMouseOver={e => { e.currentTarget.style.background = theme === 'light' ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.2)'; }}
-              onMouseOut={e => { e.currentTarget.style.background = theme === 'light' ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)'; }}
-            >
-              VIEW MORE
-            </button>
-          )}
-        </div>
-
-        {/* CHANGED TO RESPONSIVE GRID MATCHING THE RECENTLY ADDED SECTION */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '20px', paddingBottom: '10px' }}>
-          {recentPlayed.slice(0, 8).map((file, idx) => (
-            <div
-              key={idx}
-              style={{ cursor: 'pointer', minWidth: 0 }}
-              onClick={() => onPlay(file, musicFiles.findIndex(f => f.path === file.path) !== -1 ? musicFiles.findIndex(f => f.path === file.path) : 0)}
-            >
-              <div style={{ width: '100%', paddingBottom: '100%', position: 'relative', backgroundColor: 'var(--bg-tertiary)', borderRadius: '8px', overflow: 'hidden', marginBottom: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
-                <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}>
-                  {(file.path || file.cover) ? (
-                    <img src={file.path ? `media://${encodeURIComponent(file.path)}` : file.cover} alt="cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
-                  ) : (
-                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>No Cover</div>
-                  )}
-                </div>
+              <Cover file={latest.file} />
+            </>
+          ) : (
+            <div className="content">
+              <div className="eyebrow">Your library is empty</div>
+              <div className="hero-title">Add a music folder</div>
+              <div className="hero-sub">Point TeleCloud at the folders holding your FLAC, DSD and other files.</div>
+              <div className="hero-actions">
+                <button className="btn-primary" onClick={() => onNavClick('settings')}><Icon name="folder" />Open settings</button>
               </div>
-              <div style={{ fontSize: '14px', fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.metadata?.title || file.name}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.metadata?.artist || 'Unknown'}</div>
             </div>
-          ))}
-          {recentPlayed.length === 0 && (
-            <div style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>No recently played music found.</div>
           )}
         </div>
-      </div>
+      </section>
 
-      <style>
-        {`
-          @media (max-width: 1200px) {
-            .homepage-container {
-              padding: 25px !important;
-            }
-          }
-          @media (max-width: 900px) {
-            .homepage-container {
-              padding: 20px !important;
-            }
-          }
-          @media (max-width: 600px) {
-            .homepage-container {
-              padding: 15px !important;
-            }
-          }
-        `}
-      </style>
-    </div>
+      {albums.length > 1 && (
+        <>
+          <div className="section-head"><span>Recently added albums</span><button onClick={() => onNavClick('albums')}>See all</button></div>
+          <div className="album-grid" ref={gridRef} style={{ '--cols': cols }}>
+            {/* Newest first; one row of whatever fits, the rest is on the Albums page */}
+            {albums.slice(0, cols).map(a => (
+              <button key={a.name} className="album-tile" onClick={() => openAlbum(a)}>
+                <Cover file={a.file} />
+                <b>{a.name}</b><span>{a.artist}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {recentPlayed.length > 0 && (
+        <>
+          <div className="section-head"><span>Recently played</span><button onClick={() => onNavClick('recent')}>See all</button></div>
+          <div style={{ marginBottom: 28 }}>
+            <SongList {...songListProps} musicFiles={recentPlayed.slice(0, 6)} />
+          </div>
+        </>
+      )}
+
+      <section className="bottom-row">
+        <div className="card sync-card">
+          <div className="sync-head">
+            <span className={`live ${syncStatus?.isAuthenticated ? '' : 'off'}`} />
+            <h3>TeleCloud Sync</h3>
+          </div>
+          {syncProgress ? (
+            <>
+              <div className="sync-sub">Uploading {syncProgress.current} of {syncProgress.total} tracks</div>
+              <div className="progress"><span style={{ width: `${Math.round(((syncProgress.current - 1 + (syncProgress.uploadProgress || 0) / 100) / Math.max(1, syncProgress.total)) * 100)}%` }} /></div>
+              <div className="sync-sub" style={{ margin: '8px 0 0', fontSize: 12 }}>{syncProgress.currentFile}</div>
+            </>
+          ) : (
+            <div className="sync-sub">
+              {syncStatus?.isAuthenticated
+                ? `Connected${syncStatus.lastSync ? ` · last sync ${new Date(syncStatus.lastSync).toLocaleString()}` : ''}`
+                : 'Back up your library to a private Telegram channel and stream it anywhere.'}
+            </div>
+          )}
+          <div className="sync-stats">
+            {syncStatus?.isAuthenticated ? (
+              <>
+                <div><b>{(syncStatus.syncedItems || 0).toLocaleString()}</b><span>tracks in cloud</span></div>
+                <div><b>{formatBytes(syncStatus.storageUsed)}</b><span>stored</span></div>
+                <div style={{ marginLeft: 'auto', alignSelf: 'center' }}><button className="btn-ghost" onClick={() => onNavClick('telecloud')}>Open</button></div>
+              </>
+            ) : (
+              <button className="btn-primary" onClick={() => onNavClick('settings')}><Icon name="cloud" />Set up TeleCloud</button>
+            )}
+          </div>
+        </div>
+
+        <div className="stats">
+          <div className="section-head" style={{ margin: 0 }}><span>Library</span></div>
+          <div className="card stat"><div><small>Tracks</small><b>{stats.tracks.toLocaleString()}</b></div><Icon name="music" /></div>
+          <div className="card stat"><div><small>Hi-Res (&gt; 16-bit / 48 kHz)</small><b>{stats.hires.toLocaleString()}</b></div><span className="badge b-hires">{stats.hiresPct}%</span></div>
+          <div className="card stat">
+            <div>
+              <small>Formats</small>
+              <div className="fmt-bar">
+                {stats.formats.map((f, i) => <i key={f.name} style={{ flex: Math.max(f.pct, 1), background: FORMAT_COLORS[i % FORMAT_COLORS.length] }} />)}
+              </div>
+            </div>
+            <div className="fmt-legend">
+              {stats.formats.length ? stats.formats.map(f => `${f.name} ${f.pct}%`).reduce((rows, s, i) => { rows[Math.floor(i / 2)] = rows[Math.floor(i / 2)] ? `${rows[Math.floor(i / 2)]} · ${s}` : s; return rows; }, []).map(r => <div key={r}>{r}</div>) : '—'}
+            </div>
+          </div>
+        </div>
+      </section>
+    </>
   );
 };
 

@@ -1,401 +1,346 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useContext } from 'react';
+import Icon from './Icon';
+import Cover from './Cover';
+import SongActions from './songActions';
+import { formatTime, qualityOf, storageOf } from '../utils/audio';
+import { SOURCE_HELP, QUALITY_HELP } from '../utils/badges';
 
-const SongList = ({ musicFiles, currentFile, onPlay, onToggleFavorite, onAddPlaylist, onCheckSpectrum, onDeleteSong, onDownloadSong, favorites = [], title, showSort = false, onInfoClick }) => {
-  const [menuOpenIdx, setMenuOpenIdx] = useState(null);
-  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+const SORTS = [
+  { id: 'latest', label: 'Recently added' },
+  { id: 'name', label: 'Title' },
+  { id: 'name_ignore_the', label: "Title (ignore 'The')" },
+  { id: 'artist', label: 'Artist' },
+  { id: 'album', label: 'Album' },
+  { id: 'quality', label: 'Quality' },
+];
+
+const SRC_BADGE = {
+  local: <span className="badge b-local" key="l">Local</span>,
+  cloud: <span className="badge b-cloud" key="c">Cloud</span>,
+  cached: <span className="badge b-cached" key="h">Cached</span>,
+};
+
+// Rows have a fixed height, so only the ones near the viewport are rendered (libraries can hold 10k+ tracks)
+const ROW_H = 56;
+const OVERSCAN = 10;
+
+const scrollParentOf = (el) => {
+  for (let p = el?.parentElement; p; p = p.parentElement) {
+    if (/(auto|scroll)/.test(getComputedStyle(p).overflowY)) return p;
+  }
+  return null;
+};
+
+const useRowWindow = (rowsRef, count) => {
+  const [range, setRange] = useState({ start: 0, end: 40 });
+  useEffect(() => {
+    const rows = rowsRef.current;
+    const scroller = scrollParentOf(rows);
+    if (!rows || !scroller) { setRange({ start: 0, end: count }); return undefined; }
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const top = rows.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      const start = Math.max(0, Math.floor(-top / ROW_H) - OVERSCAN);
+      const end = Math.min(count, Math.ceil((scroller.clientHeight - top) / ROW_H) + OVERSCAN);
+      setRange(r => (r.start === start && r.end === end ? r : { start, end }));
+    };
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(update); };
+    update();
+    scroller.addEventListener('scroll', schedule, { passive: true });
+    const ro = new ResizeObserver(schedule);
+    ro.observe(scroller);
+    return () => { scroller.removeEventListener('scroll', schedule); ro.disconnect(); cancelAnimationFrame(raf); };
+  }, [rowsRef, count]);
+  return range;
+};
+
+const HelpRows = ({ rows }) => rows.map((r, i) => (
+  <div className="src-help-row" key={i}>
+    <span className="tags">{r.tags.map(([cls, label]) => <span key={label} className={`badge ${cls} mono`}>{label}</span>)}</span>
+    <span className="txt">{r.text}</span>
+  </div>
+));
+
+/** Small (i) next to the Source column: what Local / Cloud / Cached mean */
+const SourceInfo = () => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  return (
+    <span className="src-info" ref={ref}>
+      <button className={`src-info-btn ${open ? 'on' : ''}`} onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }} aria-label="What do the source tags mean?" aria-expanded={open}>
+        <Icon name="info" />
+      </button>
+      {open && (
+        <div className="src-help menu" role="dialog" aria-label="Tags">
+          <b>Source</b>
+          <HelpRows rows={SOURCE_HELP} />
+          <b>Quality</b>
+          <HelpRows rows={QUALITY_HELP} />
+        </div>
+      )}
+    </span>
+  );
+};
+
+const titleOf = (f) => f.metadata?.title || f.name || '';
+const qualityRank = (f) => {
+  const q = qualityOf(f);
+  return (q.tier === 'hires' ? 2e9 : q.tier === 'lossless' ? 1e9 : 0) + (q.bits || 0) * 1e6 + (q.rate || 0);
+};
+
+const SongList = ({
+  musicFiles, currentFile, isPlaying = true, onPlay, onToggleFavorite, onAddPlaylist: addPlaylistProp, onCheckSpectrum,
+  onDeleteSong, onDownloadSong, favorites = [], title, subtitle, showSort = false, onInfoClick, deleteLabel = 'Delete from library',
+  onBackupTo: backupToProp, storageNames: storageNamesProp, headerActions, toolbar, onBackupMany: backupManyProp, onRemoveFromCloud: removeFromCloudProp,
+  onQueueMany: queueManyProp, onFavoriteMany: favoriteManyProp, onDeleteMany: deleteManyProp,
+}) => {
+  const ctx = useContext(SongActions);
+  const onAddPlaylist = addPlaylistProp || ctx.onAddPlaylist;
+  const onBackupTo = backupToProp || ctx.onBackupTo;
+  const onBackupMany = backupManyProp || ctx.onBackupMany;
+  const onRemoveFromCloud = removeFromCloudProp || ctx.onRemoveFromCloud;
+  const storageNames = storageNamesProp || ctx.storageNames;
+  const onQueueMany = queueManyProp || ctx.onQueueMany;
+  const onFavoriteMany = favoriteManyProp || ctx.onFavoriteMany;
+  // library delete only where the list deletes from the library (a playlist passes its own)
+  const onDeleteMany = deleteManyProp || (onDeleteSong && deleteLabel === 'Delete from library' ? ctx.onDeleteMany : undefined);
+  const [menu, setMenu] = useState(null); // { idx, x, y }
   const [sortOption, setSortOption] = useState(showSort ? 'latest' : 'default');
-  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const [popKey, setPopKey] = useState(null);
+  const menuRef = useRef(null);
+  const sortRef = useRef(null);
+  const rowsRef = useRef(null);
+  const favSet = useMemo(() => new Set(favorites.map(f => f.path)), [favorites]);
+  // Multi-select: Ctrl/Cmd+click toggles a row, Shift+click selects a run, Ctrl+A all, Esc clears
+  const [selected, setSelected] = useState(() => new Set());
+  const anchorRef = useRef(null);
+  const listRef = useRef(null);
 
-  const toggleMenu = (e, idx) => {
-    e.stopPropagation();
-    if (menuOpenIdx === idx) {
-      setMenuOpenIdx(null);
-    } else {
-      const rect = e.currentTarget.getBoundingClientRect();
-      let x = rect.left - 180;
-      let y = rect.bottom + 5;
-      if (window.innerHeight - rect.bottom < 250) {
-        y = rect.top - 250;
-      }
-      setMenuPos({ x, y });
-      setMenuOpenIdx(idx);
-    }
-  };
+  useEffect(() => {
+    if (!menu && !sortOpen) return undefined;
+    const close = (e) => {
+      if (menu && !menuRef.current?.contains(e.target)) setMenu(null);
+      if (sortOpen && !sortRef.current?.contains(e.target)) setSortOpen(false);
+    };
+    // The menu is placed against its row, so only a scroll that moves the list closes it
+    // (synced lyrics and the queue scroll by themselves while a track plays)
+    const closeOnScroll = (e) => {
+      const t = e.target === document ? document.documentElement : e.target;
+      if (t.contains?.(rowsRef.current)) setMenu(null);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('scroll', closeOnScroll, true);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('scroll', closeOnScroll, true); };
+  }, [menu, sortOpen]);
 
-  const sortedMusicFiles = useMemo(() => {
-    let sorted = [...musicFiles];
-    if (sortOption === 'name') {
-      sorted.sort((a, b) => (a.metadata?.title || a.name).localeCompare(b.metadata?.title || b.name));
-    } else if (sortOption === 'name_ignore_the') {
-      const getComparableName = (file) => {
-        let name = (file.metadata?.title || file.name || '').toLowerCase();
-        if (name.startsWith('the ')) {
-          name = name.substring(4);
-        }
-        return name;
-      };
-      sorted.sort((a, b) => getComparableName(a).localeCompare(getComparableName(b)));
-    } else if (sortOption === 'artist') {
-      sorted.sort((a, b) => (a.metadata?.artist || 'Unknown').localeCompare(b.metadata?.artist || 'Unknown'));
-    } else if (sortOption === 'album') {
-      sorted.sort((a, b) => (a.metadata?.album || 'Unknown').localeCompare(b.metadata?.album || 'Unknown'));
-    } else if (sortOption === 'latest') {
-      sorted = sorted.reverse();
+  const sorted = useMemo(() => {
+    const list = [...musicFiles];
+    const noThe = (f) => titleOf(f).toLowerCase().replace(/^the /, '');
+    switch (sortOption) {
+      case 'name': return list.sort((a, b) => titleOf(a).localeCompare(titleOf(b)));
+      case 'name_ignore_the': return list.sort((a, b) => noThe(a).localeCompare(noThe(b)));
+      case 'artist': return list.sort((a, b) => (a.metadata?.artist || 'Unknown').localeCompare(b.metadata?.artist || 'Unknown'));
+      case 'album': return list.sort((a, b) => (a.metadata?.album || 'Unknown').localeCompare(b.metadata?.album || 'Unknown'));
+      case 'quality': return list.sort((a, b) => qualityRank(b) - qualityRank(a));
+      case 'latest': return list.reverse();
+      default: return list;
     }
-    // if sortOption is 'default', do nothing and keep original array
-    return sorted;
   }, [musicFiles, sortOption]);
 
-  return (
-    <div className="song-list-wrapper" style={{ position: 'relative', height: '100%', paddingRight: '10px' }} onClick={() => { setIsSortMenuOpen(false); setMenuOpenIdx(null); }}>
-      <style>
-        {`
-          .song-list-wrapper:hover .list-bottom-blur {
-            opacity: 0;
-          }
-          .song-list-container::-webkit-scrollbar {
-            width: 8px;
-          }
-          .song-list-container::-webkit-scrollbar-track {
-            background: var(--bg-tertiary);
-          }
-          .song-list-container::-webkit-scrollbar-thumb {
-            background: var(--accent-red);
-            border-radius: 4px;
-          }
-          .song-item {
-            display: flex;
-            align-items: center;
-            padding: 10px 20px;
-            margin-bottom: 10px;
-            margin-right: 15px;
-            background: var(--bg-secondary);
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background 0.2s;
-            color: var(--text-main);
-            position: relative;
-          }
-          .song-item:hover {
-            background: var(--bg-hover);
-          }
-          .song-item.active {
-            background: linear-gradient(to right, #ff4157, var(--accent-red));
-            color: white;
-          }
-          .cover-art {
-            width: 50px;
-            height: 50px;
-            border-radius: 8px;
-            margin-right: 20px;
-            object-fit: cover;
-            background: var(--text-main);
-          }
-          .song-info {
-            flex: 1;
-            min-width: 0;
-          }
-          .song-title {
-            font-weight: bold;
-            font-size: 16px;
-            margin: 0 0 5px 0;
-            line-height: 1.3;
-          }
-          .song-artist {
-            font-size: 12px;
-            color: var(--text-muted);
-            margin: 0;
-            line-height: 1.3;
-          }
-          .song-item.active .song-artist {
-            color: #ffcccc;
-          }
-          .song-number {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 30px;
-            margin-right: 15px;
-            color: var(--text-muted);
-            font-weight: bold;
-          }
-          .song-item.active .song-number {
-            color: var(--text-main);
-          }
-          .song-play-btn {
-            display: none;
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.2);
-            align-items: center;
-            justify-content: center;
-            margin-right: 15px;
-          }
-          .song-item:hover .song-number {
-            display: none;
-          }
-          .song-item:hover .song-play-btn {
-            display: flex;
-          }
-          
-          .song-actions {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-          }
-          
-          .song-actions svg {
-            cursor: pointer;
-            fill: var(--text-muted);
-            transition: fill 0.2s;
-          }
-          .song-item.active .song-actions svg {
-            fill: var(--text-main);
-          }
-          .song-actions svg:hover {
-            fill: var(--text-main);
-          }
-          .context-menu {
-            position: fixed;
-            background: var(--bg-secondary);
-            border: 1px solid var(--bg-tertiary);
-            border-radius: 8px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-            padding: 10px 0;
-            z-index: 100000;
-            width: 200px;
-          }
-          .context-menu-item {
-            padding: 10px 20px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            color: var(--text-main);
-            cursor: pointer;
-          }
-          .context-menu-item:hover {
-            background: var(--bg-hover);
-            color: var(--text-main)!important;
-          }
-        `}
-      </style>
+  const { start, end } = useRowWindow(rowsRef, sorted.length);
 
-      <div className="song-list-container" style={{ height: '100%', overflowY: 'auto', paddingBottom: '80px' }}>
-        {title && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingRight: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <h2 style={{ color: 'var(--text-main)', margin: 0, fontSize: '24px' }}>{title}</h2>
-              {onInfoClick && (
-                <svg onClick={onInfoClick} style={{ cursor: 'pointer' }} viewBox="0 0 24 24" width="20" height="20" fill="var(--text-muted)"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 15c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1s1 .45 1 1v4c0 .55-.45 1-1 1zm1-8h-2V7h2v2z" /></svg>
+  // tracks that left the list (deleted, filtered out) leave the selection too
+  useEffect(() => {
+    if (!selected.size) return;
+    const here = new Set(sorted.map(f => f.path));
+    if ([...selected].some(p => !here.has(p))) setSelected(new Set([...selected].filter(p => here.has(p))));
+  }, [sorted]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selectedFiles = useMemo(() => sorted.filter(f => selected.has(f.path)), [sorted, selected]);
+  const clearSelection = () => { setSelected(new Set()); anchorRef.current = null; };
+
+  const onRowClick = (e, file, idx) => {
+    if (e.ctrlKey || e.metaKey) {
+      const next = new Set(selected);
+      if (next.has(file.path)) next.delete(file.path); else next.add(file.path);
+      setSelected(next);
+      anchorRef.current = idx;
+      listRef.current?.focus({ preventScroll: true });
+      return;
+    }
+    if (e.shiftKey) {
+      const from = anchorRef.current ?? idx;
+      const [a, b] = from < idx ? [from, idx] : [idx, from];
+      setSelected(new Set(sorted.slice(a, b + 1).map(f => f.path)));
+      if (anchorRef.current === null) anchorRef.current = idx;
+      listRef.current?.focus({ preventScroll: true });
+      return;
+    }
+    if (selected.size) clearSelection();
+    onPlay(file, idx, sorted);
+  };
+
+  // Ctrl+A / Esc work whenever focus is in the list or nowhere in particular (e.g. right after a
+  // dialog closes and focus falls back to <body>), so the page never selects its own text instead
+  useEffect(() => {
+    const onKey = (e) => {
+      const list = listRef.current;
+      if (!list || !list.offsetParent) return; // not on screen
+      const t = e.target;
+      if (t !== document.body && t !== document.documentElement && !list.contains(t)) return;
+      if (document.querySelector('[role="dialog"], .modal-backdrop')) return;
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        setSelected(new Set(sorted.map(f => f.path)));
+        list.focus({ preventScroll: true });
+      } else if (e.key === 'Escape' && selected.size) {
+        clearSelection();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sorted, selected]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openMenu = (e, idx) => {
+    e.stopPropagation();
+    if (menu?.idx === idx) { setMenu(null); return; }
+    const r = e.currentTarget.getBoundingClientRect();
+    const h = 230;
+    setMenu({ idx, x: Math.max(8, r.right - 210), y: window.innerHeight - r.bottom < h + 100 ? r.top - h - 6 : r.bottom + 6 });
+  };
+
+  const menuFile = menu ? sorted[menu.idx] : null;
+  const act = (fn) => { if (menuFile && fn) fn(menuFile); setMenu(null); };
+
+  return (
+    <div className="track-list" ref={listRef} tabIndex={-1}>
+      {(title || showSort) && (
+        <div className="page-head">
+          {title && <h2>{title}</h2>}
+          {onInfoClick && <button className="icon-btn sm" onClick={onInfoClick} title="What do the badges mean?"><Icon name="info" /></button>}
+          <span className="sub">{subtitle ?? `${musicFiles.length.toLocaleString()} tracks`}</span>
+          {headerActions}
+          {showSort && (
+            <div className="end" ref={sortRef}>
+              <button className="btn-ghost" onClick={() => setSortOpen(o => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <Icon name="sort" style={{ width: 15, height: 15 }} />
+                {SORTS.find(s => s.id === sortOption)?.label || 'Default'}
+              </button>
+              {sortOpen && (
+                <div className="menu" style={{ right: 0, top: 'calc(100% + 6px)' }}>
+                  {SORTS.map(s => (
+                    <button key={s.id} className={`menu-item ${sortOption === s.id ? 'on' : ''}`} onClick={() => { setSortOption(s.id); setSortOpen(false); }}>
+                      {sortOption === s.id ? <Icon name="check" /> : <span style={{ width: 16 }} />}{s.label}
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
-            {showSort && (
-              <div style={{ position: 'relative' }}>
-                <div
-                  onClick={(e) => { e.stopPropagation(); setIsSortMenuOpen(!isSortMenuOpen); }}
-                  style={{
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text-secondary)',
-                    border: '1px solid var(--bg-tertiary)',
-                    padding: '8px 35px 8px 15px',
-                    borderRadius: '20px',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    transition: 'background 0.2s',
-                    minWidth: '160px'
-                  }}
-                  onMouseOver={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                  onMouseOut={e => e.currentTarget.style.background = 'var(--bg-secondary)'}
-                >
-                  <span style={{ flex: 1 }}>
-                    {sortOption === 'latest' ? 'Latest Added' : sortOption === 'name' ? 'Name' : sortOption === 'name_ignore_the' ? 'Name (Ignore \'The\')' : sortOption === 'artist' ? 'Artist' : sortOption === 'album' ? 'Album' : 'Default'}
-                  </span>
-                  <svg style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} viewBox="0 0 24 24" width="16" height="16" fill="var(--text-muted)">
-                    <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
-                  </svg>
-                </div>
+          )}
+        </div>
+      )}
 
-                {isSortMenuOpen && (
-                  <div style={{
-                    position: 'absolute',
-                    top: 'calc(100% + 5px)',
-                    right: '0',
-                    background: 'var(--bg-secondary)',
-                    borderRadius: '8px',
-                    boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-                    padding: '10px 0',
-                    zIndex: 1000,
-                    width: '200px'
-                  }}>
-                    {[
-                      { id: 'latest', label: 'Latest Added' },
-                      { id: 'name', label: 'Name' },
-                      { id: 'name_ignore_the', label: "Name (Ignore 'The')" },
-                      { id: 'artist', label: 'Artist' },
-                      { id: 'album', label: 'Album' }
-                    ].map(opt => (
-                      <div
-                        key={opt.id}
-                        onClick={() => { setSortOption(opt.id); setIsSortMenuOpen(false); }}
-                        style={{
-                          padding: '10px 20px',
-                          color: sortOption === opt.id ? 'var(--text-main)' : 'var(--text-secondary)',
-                          background: sortOption === opt.id ? 'var(--accent-red)' : 'transparent',
-                          cursor: 'pointer',
-                          fontSize: '13px'
-                        }}
-                        onMouseOver={e => { if (sortOption !== opt.id) e.currentTarget.style.background = 'var(--bg-hover)' }}
-                        onMouseOut={e => { if (sortOption !== opt.id) e.currentTarget.style.background = 'transparent' }}
-                      >
-                        {opt.label}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+      {toolbar}
+      {sorted.length === 0 ? (
+        <div className="empty">No tracks here yet.</div>
+      ) : (
+        <>
+          <div className="track-head">
+            <span className="t-num">#</span><span>Title</span><span className="c-album">Album</span>
+            <span>Quality</span><span className="c-src src-head">Source<SourceInfo /></span><span style={{ textAlign: 'right' }}>Time</span><span />
           </div>
-        )}
-
-        {sortedMusicFiles.map((file, idx) => {
-          const bitDepth = file.metadata?.bitsPerSample;
-          const sampleRate = file.metadata?.sampleRate ? `${Math.round(file.metadata.sampleRate / 1000)}kHz` : '';
-          const bitrateStr = file.metadata?.bitrate ? `${Math.round(file.metadata.bitrate / 1000)}kbps` : '';
-          const qualityString = [file.ext?.toUpperCase().replace('.', ''), (bitDepth && bitDepth > 0) ? `${bitDepth}-bit` : '', sampleRate, bitrateStr].filter(Boolean).join(' / ');
-          const isActive = currentFile && currentFile.path === file.path;
-          const isFav = favorites.some(f => f.path === file.path);
-
-          let pillBg = 'rgba(0,0,0,0.3)';
-          let pillText = 'var(--text-secondary)';
-          const extL = file.ext?.toLowerCase();
-          const isLossless = extL === '.flac' || extL === '.wav' || extL === '.alac';
-          const sRate = file.metadata?.sampleRate || 0;
-          const bDepth = file.metadata?.bitsPerSample || 0;
-
-          if (isLossless) {
-            if (bDepth > 16 || sRate > 48000) {
-              pillBg = 'rgba(229, 192, 123, 0.15)';
-              pillText = '#e5c07b';
-            } else if (bDepth === 16 && sRate >= 44100) {
-              pillBg = 'rgba(37, 182, 130, 0.15)';
-              pillText = '#25b682';
-            }
-          }
-
-          // Storage type indicator
-          const storageType = file.storage_type || 'local';
-          let storageIcon = null;
-          if (storageType === 'cloud') {
-            storageIcon = <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 18H6c-2.21 0-4-1.79-4-4 0-2.05 1.53-3.76 3.56-3.97l1.07-.11.5-.95C8.08 7.14 9.94 6 12 6c2.62 0 4.88 1.86 5.39 4.43l.3 1.5 1.53.11c1.56.1 2.78 1.44 2.78 3.02 0 1.65-1.35 3-3 3z" /></svg>;
-          } else if (storageType === 'both' || file.cache_path) {
-            storageIcon = <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM12 17l-4-4h2.55v-3h2.91v3H16l-4 4z" /></svg>;
-          } else if (storageType === 'local') {
-            storageIcon = <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 3v9.28c-.47-.17-.97-.28-1.5-.28C8.01 12 6 14.01 6 16.5S8.01 21 10.5 21c2.31 0 4.2-1.75 4.45-4H15V6h4V3h-7z" /></svg>;
-          }
-
-          return (
-            <div
-              key={file.path}
-              className={`song-item ${isActive ? 'active' : ''}`}
-              onClick={() => onPlay(file, idx, sortedMusicFiles)}
-            >
-              <div className="song-number">
-                {file.metadata?.track ? String(file.metadata.track).padStart(2, '0') : String(idx + 1).padStart(2, '0')}
-              </div>
-              <div className="song-play-btn">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="white"><path d="M8 5v14l11-7z" /></svg>
-              </div>
-
-              <img
-                key={file.path + (file.cache_path || '')}
-                src={file.path ? `media://${encodeURIComponent(file.path)}` : (file.cover || 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2250%22 height=%2250%22 viewBox=%220 0 50 50%22%3E%3Crect width=%2250%22 height=%2250%22 fill=%22%23333%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2220%22 fill=%22%23888%22%3E%E2%99%AB%3C/text%3E%3C/svg%3E')}
-                alt="cover"
-                loading="lazy"
-                className="cover-art"
-              />
-
-              <div className="song-info">
-                <p className="song-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {storageIcon && <span style={{ color: 'var(--accent-red)', display: 'inline-flex', alignItems: 'center' }}>{storageIcon}</span>}
-                  {file.metadata?.title || file.name}
-                </p>
-                <p className="song-artist">
-                  {file.metadata?.artist || 'Unknown'}
-                  <br />
-                  {qualityString && <span style={{ display: 'inline-block', marginTop: '4px', fontSize: '10px', background: pillBg, padding: '4px 8px', borderRadius: '4px', color: pillText, fontWeight: pillText !== 'var(--text-secondary)' ? 'bold' : 'normal' }}>{qualityString}</span>}
-                </p>
-              </div>
-
-              <div className="song-actions">
-                <svg
-                  viewBox="0 0 24 24"
-                  width="20"
-                  height="20"
-                  onClick={(e) => { e.stopPropagation(); onToggleFavorite(file); }}
-                  style={{ fill: isFav ? 'var(--accent-red)' : (isActive ? 'var(--text-main)' : 'var(--text-muted)'), stroke: isFav ? 'var(--text-main)' : 'none', strokeWidth: isFav ? '1.5' : '0', cursor: 'pointer', transition: 'all 0.2s' }}
-                >
-                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-                </svg>
-                <span style={{ fontSize: '14px', width: '45px', textAlign: 'right' }}>
-                  {file.metadata?.duration ?
-                    `${Math.floor(file.metadata.duration / 60)}:${String(Math.floor(file.metadata.duration % 60)).padStart(2, '0')}`
-                    : '00:00'
-                  }
+          <div className="track-rows" ref={rowsRef} style={{ paddingTop: start * ROW_H, height: sorted.length * ROW_H }}>
+          {sorted.slice(start, end).map((file, i) => {
+            const idx = start + i;
+            const active = currentFile?.path === file.path;
+            const fav = favSet.has(file.path);
+            const q = qualityOf(file);
+            return (
+              <div
+                key={file.path}
+                className={`track-row ${active ? 'playing' : ''} ${selected.has(file.path) ? 'selected' : ''}`}
+                aria-selected={selected.has(file.path)}
+                onMouseDown={(e) => { if (e.shiftKey || e.ctrlKey || e.metaKey) e.preventDefault(); }}
+                onClick={(e) => onRowClick(e, file, idx)}
+                onContextMenu={(e) => { e.preventDefault(); setMenu({ idx, x: Math.min(e.clientX, window.innerWidth - 220), y: Math.min(e.clientY, window.innerHeight - 240) }); }}
+              >
+                <span className="t-num">
+                  {active
+                    ? <span className={`eq-bars ${isPlaying ? '' : 'paused'}`}><i /><i /><i /></span>
+                    : idx + 1}
                 </span>
-                <div style={{ position: 'relative' }} onClick={(e) => toggleMenu(e, idx)}>
-                  <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" /></svg>
-
-                  {menuOpenIdx === idx && (
-                    <div
-                      className="context-menu"
-                      style={{
-                        top: menuPos.y,
-                        left: menuPos.x
-                      }}
-                      onClick={e => e.stopPropagation()}
-                    >
-                      <div className="context-menu-item" onClick={() => { onToggleFavorite(file); setMenuOpenIdx(null); }} style={{ color: isFav ? 'var(--accent-red)' : 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>
-                        <span style={{ width: '24px', textAlign: 'center', marginRight: '8px' }}>♡</span> {isFav ? 'Remove Favourite' : 'Favourites'}
-                      </div>
-                      <div className="context-menu-item" style={{ display: 'flex', alignItems: 'center' }} onClick={() => { onCheckSpectrum && onCheckSpectrum(file); setMenuOpenIdx(null); }}>
-                        <span style={{ width: '24px', textAlign: 'center', marginRight: '8px', display: 'flex', justifyContent: 'center', color: 'var(--text-main)' }}>
-                          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 10v4h3v-4H6zm5-6v16h3V4h-3zm5 8v8h3v-8h-3z" /></svg>
-                        </span>
-                        Check Spectrum
-                      </div>
-                      <div className="context-menu-item" style={{ display: 'flex', alignItems: 'center' }} onClick={() => { onDownloadSong && onDownloadSong(file); setMenuOpenIdx(null); }}>
-                        <span style={{ width: '24px', textAlign: 'center', marginRight: '8px' }}>⤓</span> Download Now
-                      </div>
-                      <div className="context-menu-item" style={{ display: 'flex', alignItems: 'center' }} onClick={() => { onAddPlaylist(file); setMenuOpenIdx(null); }}>
-                        <span style={{ width: '24px', textAlign: 'center', marginRight: '8px' }}>☰</span> Add to Playlist
-                      </div>
-                      <div className="context-menu-item" style={{ display: 'flex', alignItems: 'center', color: 'var(--accent-red)' }} onClick={() => { onDeleteSong && onDeleteSong(file); setMenuOpenIdx(null); }}>
-                        <span style={{ width: '24px', textAlign: 'center', marginRight: '8px' }}>🗑</span> Delete from Library
-                      </div>
-                    </div>
-                  )}
+                <div className="t-main">
+                  <Cover file={file} key={file.path + (file.cache_path || '')} />
+                  <div className="t-text">
+                    <div className="t-title">{titleOf(file)}</div>
+                    <div className="t-artist">{file.metadata?.artist || 'Unknown artist'}</div>
+                  </div>
                 </div>
+                <span className="t-album c-album">{file.metadata?.album || '—'}</span>
+                <span><span className={`badge b-${q.tier} mono`}>{q.label}</span></span>
+                <span className="t-src c-src" title={file.telegram_message_id && storageNames ? `In ${storageNames.get(String(file.telegram_channel_id)) || 'TeleCloud'}` : undefined}>{storageOf(file).map(s => SRC_BADGE[s])}</span>
+                <span className="t-dur mono">{formatTime(file.metadata?.duration)}</span>
+                <span className="t-act">
+                  <button
+                    className={`${fav ? 'fav' : ''} ${popKey === file.path ? 'pop' : ''}`}
+                    onClick={(e) => { e.stopPropagation(); onToggleFavorite(file); setPopKey(null); requestAnimationFrame(() => setPopKey(file.path)); }}
+                    title={fav ? 'Remove from favourites' : 'Add to favourites'}
+                  >
+                    <Icon name="heart" />
+                  </button>
+                  <button className={menu?.idx === idx ? 'open' : ''} onClick={(e) => openMenu(e, idx)} title="More"><Icon name="more" /></button>
+                </span>
               </div>
-            </div>
-          );
-        })}
-      </div>
-      <div
-        className="list-bottom-blur"
-        style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: '100px',
-          background: 'linear-gradient(to bottom, transparent, var(--bg-main))',
-          pointerEvents: 'none',
-          transition: 'opacity 0.3s'
-        }}
-      />
+            );
+          })}
+          </div>
+        </>
+      )}
+
+      {menu && menuFile && (
+        <div className="menu" ref={menuRef} style={{ position: 'fixed', left: menu.x, top: menu.y, width: 210 }}>
+          <button className="menu-item" onClick={() => act(onToggleFavorite)}><Icon name="heart" />{favSet.has(menuFile.path) ? 'Remove favourite' : 'Add to favourites'}</button>
+          {onAddPlaylist && <button className="menu-item" onClick={() => act(onAddPlaylist)}><Icon name="playlist" />Add to playlist</button>}
+          {onCheckSpectrum && <button className="menu-item" onClick={() => act(onCheckSpectrum)}><Icon name="spectrum" />Check spectrum</button>}
+          {onBackupTo && <button className="menu-item" onClick={() => act(onBackupTo)}><Icon name="cloud" />{menuFile.telegram_message_id ? `In ${storageNames?.get(String(menuFile.telegram_channel_id)) || 'TeleCloud'} · move…` : 'Back up to…'}</button>}
+          {onDownloadSong && <button className="menu-item" onClick={() => act(onDownloadSong)}><Icon name="download" />Download</button>}
+          {onRemoveFromCloud && menuFile.telegram_message_id && <button className="menu-item danger" onClick={() => { const f = menuFile; setMenu(null); onRemoveFromCloud([f]); }}><Icon name="cloud" />Remove from TeleCloud</button>}
+          {onDeleteSong && <>
+            <div className="menu-sep" />
+            <button className="menu-item danger" onClick={() => act(onDeleteSong)}><Icon name="trash" />{deleteLabel}</button>
+          </>}
+        </div>
+      )}
+
+      {selected.size > 0 && (
+        <div className="select-bar" role="toolbar" aria-label="Selected tracks">
+          <b>{selected.size.toLocaleString()} selected</b>
+          <button className="btn-ghost sm" onClick={() => onPlay(selectedFiles[0], 0, selectedFiles)}><Icon name="play" />Play</button>
+          {onQueueMany && <button className="btn-ghost sm" onClick={() => onQueueMany(selectedFiles)}><Icon name="queue" />Add to queue</button>}
+          {onAddPlaylist && <button className="btn-ghost sm" onClick={() => onAddPlaylist(selectedFiles[0], selectedFiles)}><Icon name="playlist" />Add to playlist</button>}
+          {onFavoriteMany && (() => {
+            const allFav = selectedFiles.every(f => favSet.has(f.path));
+            return <button className={`icon-btn sm ${allFav ? 'on' : ''}`} onClick={() => onFavoriteMany(selectedFiles, !allFav)} title={allFav ? 'Remove from favourites' : 'Add to favourites'}><Icon name="heart" filled={allFav} /></button>;
+          })()}
+          {onBackupMany && <button className="icon-btn sm" onClick={() => onBackupMany(selectedFiles, `${selectedFiles.length} selected tracks`)} title="Back up to…"><Icon name="cloud" /></button>}
+          {onRemoveFromCloud && selectedFiles.some(f => f.telegram_message_id) && (
+            <button className="btn-ghost sm danger" onClick={() => onRemoveFromCloud(selectedFiles.filter(f => f.telegram_message_id))}><Icon name="cloud" />Remove from TeleCloud</button>
+          )}
+          {onDeleteMany && <button className="icon-btn sm danger" onClick={() => onDeleteMany(selectedFiles)} title={deleteLabel}><Icon name="trash" /></button>}
+          <span className="sep" />
+          <button className="icon-btn sm" onClick={clearSelection} title="Clear selection (Esc)"><Icon name="close" /></button>
+        </div>
+      )}
     </div>
   );
 };

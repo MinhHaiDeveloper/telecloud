@@ -1,183 +1,105 @@
-import React, { useMemo, useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import SongList from './SongList';
+import Cover from './Cover';
+import Icon from './Icon';
+import { Select, BackButton, useDetailScroll } from './ui';
+import { formatDuration } from '../utils/audio';
 
-const ArtistsView = ({ musicFiles, currentFile, onPlay, onToggleFavorite, onAddPlaylist, favorites, onCheckSpectrum }) => {
-  const [selectedArtist, setSelectedArtist] = useState(null);
-  const [sortBy, setSortBy] = useState('name'); // name, name-desc
-  const [sortMenuOpen, setSortMenuOpen] = useState(false);
-  const sortMenuRef = useRef(null);
+const SORTS = [
+  { value: 'name', label: 'Name A → Z' },
+  { value: 'name-desc', label: 'Name Z → A' },
+  { value: 'tracks', label: 'Most tracks' },
+];
 
-  // Click outside to close sort menu
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (sortMenuRef.current && !sortMenuRef.current.contains(e.target)) {
-        setSortMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+const noThe = (s) => s.toLowerCase().replace(/^the /, '');
 
-  const sortOptions = [
-    { value: 'name', label: 'Name' },
-    { value: 'name-desc', label: "Name (Ignore 'The')" }
-  ];
+const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavorite, onAddPlaylist, favorites, onCheckSpectrum, onDeleteSong, onDownloadSong }) => {
+  const [selectedName, setSelectedName] = useState(null);
+  const [sortBy, setSortBy] = useState('name');
+  useDetailScroll(selectedName ?? null);
 
-  const currentSortLabel = sortOptions.find(opt => opt.value === sortBy)?.label || 'Sort';
-
-  const artistsData = useMemo(() => {
-    const artistMap = {};
-
+  const artists = useMemo(() => {
+    const map = new Map();
     musicFiles.forEach(file => {
-      let rawArtist = file.metadata?.artist || 'Unknown Artist';
-      // Split by common delimiters
-      const splitArtists = rawArtist.split(/,|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+/i).map(a => a.trim()).filter(Boolean);
-
-      splitArtists.forEach(artist => {
-        if (!artistMap[artist]) {
-          artistMap[artist] = { name: artist, songs: [], cover: file.path ? `media://${encodeURIComponent(file.path)}` : file.cover };
-        }
-        artistMap[artist].songs.push(file);
+      // "A, B & C feat. D" counts toward each artist
+      const names = (file.metadata?.artist || 'Unknown Artist')
+        .split(/,|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+/i).map(a => a.trim()).filter(Boolean);
+      names.forEach(name => {
+        if (!map.has(name)) map.set(name, { name, file, songs: [], albums: new Set() });
+        const a = map.get(name);
+        a.songs.push(file);
+        if (file.metadata?.album) a.albums.add(file.metadata.album);
       });
     });
-
-    const artists = Object.values(artistMap);
-    return sortBy === 'name-desc'
-      ? artists.sort((a, b) => b.name.localeCompare(a.name))
-      : artists.sort((a, b) => a.name.localeCompare(b.name));
+    const list = [...map.values()];
+    switch (sortBy) {
+      case 'name-desc': return list.sort((a, b) => noThe(b.name).localeCompare(noThe(a.name)));
+      case 'tracks': return list.sort((a, b) => b.songs.length - a.songs.length);
+      default: return list.sort((a, b) => noThe(a.name).localeCompare(noThe(b.name)));
+    }
   }, [musicFiles, sortBy]);
 
-  if (selectedArtist) {
-    return (
-      <div style={{ display: 'flex', flex: 1, flexDirection: 'column', padding: '0 20px', paddingTop: '20px', minHeight: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px', gap: '15px' }}>
-          <button
-            onClick={() => setSelectedArtist(null)}
-            style={{ background: 'var(--bg-tertiary)', border: 'none', color: 'white', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
-          >
-            ← Back
-          </button>
-          <h2 style={{ margin: 0, fontSize: '24px' }}>{selectedArtist.name}</h2>
-          <span style={{ color: 'var(--text-muted)', marginLeft: 'auto' }}>{selectedArtist.songs.length} songs</span>
-        </div>
+  const selected = selectedName ? artists.find(a => a.name === selectedName) : null;
 
-        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-          <SongList
-            musicFiles={selectedArtist.songs}
-            currentFile={currentFile}
-            onPlay={onPlay}
-            onToggleFavorite={onToggleFavorite}
-            onAddPlaylist={onAddPlaylist}
-            favorites={favorites}
-            onCheckSpectrum={onCheckSpectrum}
-          />
+  if (selected) {
+    const songs = selected.songs;
+    const total = songs.reduce((s, f) => s + (f.metadata?.duration || 0), 0);
+    return (
+      <>
+        <div className="page-head" style={{ marginBottom: 6 }}>
+          <BackButton onClick={() => setSelectedName(null)} label="All artists" />
+          <span className="sub">Artists</span>
         </div>
-      </div>
+        <div className="detail-head">
+          <Cover file={selected.file} className="round" />
+          <div className="info">
+            <span className="eyebrow">Artist</span>
+            <h2>{selected.name}</h2>
+            <div className="meta">{selected.albums.size} albums · {songs.length} tracks · {formatDuration(total)}</div>
+            <div className="btn-row">
+              <button className="btn-primary" onClick={() => onPlay(songs[0], 0, songs)}><Icon name="play" filled />Play</button>
+              <button className="btn-ghost" onClick={() => { const s = [...songs].sort(() => Math.random() - 0.5); onPlay(s[0], 0, s); }}><Icon name="shuffle" />Shuffle</button>
+            </div>
+          </div>
+        </div>
+        <SongList
+          musicFiles={songs}
+          currentFile={currentFile}
+          isPlaying={isPlaying}
+          onPlay={(file, idx, list) => onPlay(file, idx, list)}
+          onToggleFavorite={onToggleFavorite}
+          onAddPlaylist={onAddPlaylist}
+          favorites={favorites}
+          onCheckSpectrum={onCheckSpectrum}
+          onDeleteSong={onDeleteSong}
+          onDownloadSong={onDownloadSong}
+          showSort
+        />
+      </>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flex: 1, flexDirection: 'column', padding: '0 20px', paddingTop: '20px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-        <h2 style={{ margin: 0, fontSize: '24px' }}>Artists</h2>
-
-        {/* Custom Sort Dropdown */}
-        <div ref={sortMenuRef} style={{ position: 'relative' }}>
-          <button
-            onClick={() => setSortMenuOpen(!sortMenuOpen)}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '20px',
-              border: 'none',
-              background: 'var(--bg-tertiary)',
-              color: 'var(--text-primary)',
-              fontSize: '13px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              minWidth: '140px',
-              justifyContent: 'space-between'
-            }}
-          >
-            <span>{currentSortLabel}</span>
-            <span style={{ fontSize: '10px' }}>▼</span>
-          </button>
-
-          {sortMenuOpen && (
-            <div style={{
-              position: 'absolute',
-              top: '100%',
-              right: 0,
-              marginTop: '4px',
-              background: 'var(--bg-tertiary)',
-              borderRadius: '8px',
-              overflow: 'hidden',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-              zIndex: 1000,
-              minWidth: '180px'
-            }}>
-              {sortOptions.map(option => (
-                <div
-                  key={option.value}
-                  onClick={() => {
-                    setSortBy(option.value);
-                    setSortMenuOpen(false);
-                  }}
-                  style={{
-                    padding: '12px 16px',
-                    cursor: 'pointer',
-                    background: sortBy === option.value ? 'var(--accent-red)' : 'transparent',
-                    color: 'var(--text-primary)',
-                    fontSize: '13px',
-                    transition: 'background 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (sortBy !== option.value) {
-                      e.currentTarget.style.background = 'var(--bg-hover)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (sortBy !== option.value) {
-                      e.currentTarget.style.background = 'transparent';
-                    }
-                  }}
-                >
-                  {option.label}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+    <>
+      <div className="page-head">
+        <h2>Artists</h2>
+        <span className="sub">{artists.length.toLocaleString()} artists</span>
+        <div className="end"><Select variant="ghost" icon="sort" align="right" value={sortBy} options={SORTS} onChange={setSortBy} /></div>
       </div>
-
-      <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '20px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '20px' }}>
-          {artistsData.map((artist, idx) => (
-            <div
-              key={idx}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', padding: '15px', background: 'var(--bg-secondary)', borderRadius: '12px', transition: 'background 0.2s' }}
-              onClick={() => setSelectedArtist(artist)}
-              onMouseOver={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-              onMouseOut={e => e.currentTarget.style.background = 'var(--bg-secondary)'}
-            >
-              <div style={{ width: '100px', height: '100px', borderRadius: '50%', backgroundColor: 'var(--bg-tertiary)', marginBottom: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', boxShadow: '0 5px 15px rgba(0,0,0,0.3)' }}>
-                {artist.cover ? (
-                  <img src={artist.cover} alt="artist cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <svg viewBox="0 0 24 24" width="50" height="50" fill="#777"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" /></svg>
-                )}
-              </div>
-              <div style={{ fontWeight: 'bold', textAlign: 'center', width: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{artist.name}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '5px' }}>{artist.songs.length} songs</div>
+      {artists.length === 0 ? (
+        <div className="empty">No artists in your library yet.</div>
+      ) : (
+        <div className="tile-grid">
+          {artists.map(artist => (
+            <div key={artist.name} className="tile round pressable" role="button" tabIndex={0} onClick={() => setSelectedName(artist.name)} onKeyDown={(e) => e.key === 'Enter' && setSelectedName(artist.name)}>
+              <div className="cover-wrap" style={{ width: '100%' }}><Cover file={artist.file} /></div>
+              <b>{artist.name}</b>
+              <span>{artist.songs.length} tracks</span>
             </div>
           ))}
-          {artistsData.length === 0 && (
-            <div style={{ color: 'var(--text-muted)' }}>No artists found in your library.</div>
-          )}
         </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 };
 
