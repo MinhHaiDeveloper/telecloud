@@ -204,6 +204,8 @@ function startMpv() {
     '--demuxer-max-back-bytes=16MiB',
     '--volume-max=100',
   ];
+  // automated tests: play to a silent output instead of the real device
+  if (process.env.TELECLOUD_MPV_AO) args.push(`--ao=${process.env.TELECLOUD_MPV_AO}`);
 
   proc = spawn(mpvPath, args, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
   let stderrTail = '';
@@ -560,6 +562,8 @@ async function applyAudioSettings(settings) {
 }
 
 ipcMain.handle('get-audio-settings', () => currentAudioSettings);
+// exact playback position (the 'time-pos' event is throttled to ~4/s) — used to sync lyrics by hand
+ipcMain.handle('player:position', async () => { try { const t = await getProp('time-pos'); return typeof t?.data === 'number' ? t.data : (typeof t === 'number' ? t : null); } catch { return null; } });
 
 app.on('before-quit', () => {
   cancelCrossfade();

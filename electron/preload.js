@@ -66,6 +66,7 @@ const INVOKE_CHANNELS = new Set([
     'lyrics:search',
     'lyrics:save',
     'tags:read',
+    'player:position',
     'tags:edit',
     'lastfm:status',
     'lastfm:connect',

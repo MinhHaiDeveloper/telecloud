@@ -743,3 +743,18 @@ html.np-cover-only .app.np-mode .np-body { padding-bottom: 0; }
 .update-row { display: flex; align-items: center; gap: 10px; padding: 12px 20px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-2); }
 .update-row span { flex: 1; }
 .update-row .ico.spin { animation: spin 1s linear infinite; }
+/* lyrics: syncing by hand */
+.lyr-sync { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); }
+.lyr-transport { display: flex; align-items: center; gap: 4px; }
+.lyr-transport .play { background: var(--accent); color: #fff; }
+.lyr-transport .play:hover:not(:disabled) { background: var(--accent-2); color: #fff; }
+.lyr-clock { margin-left: 8px; font-size: 13px; color: var(--text-2); }
+.lyr-transport + .lyr-syncbtn { position: absolute; }
+.lyr-sync { position: relative; }
+.lyr-syncbtn { position: absolute !important; right: 12px; top: 10px; padding: 7px 14px; font-size: 13px; }
+.lyr-syncbtn kbd { font: 600 10.5px var(--mono); padding: 1px 5px; border-radius: 5px; background: rgba(255, 255, 255, .2); }
+.lyr-tools { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-3); }
+.lyr-tools > span:not(.lyr-sp) { margin: 0 2px 0 6px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; }
+.lyr-tools > span:first-child { margin-left: 0; }
+.lyr-tools .btn-ghost.sm { padding: 4px 9px; font-size: 12px; background: var(--surface); }
+.lyr-sp { flex: 1; }

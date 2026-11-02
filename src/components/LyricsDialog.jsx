@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Icon from './Icon';
 import { Dialog, Segmented } from './ui';
 
@@ -7,13 +7,24 @@ const SAVE_TO = [
   { value: 'lrc', label: '.lrc file' },
   { value: 'both', label: 'Both' },
 ];
+// ---- LRC timestamp helpers (for syncing by hand)
+const STAMP = /^\s*((?:\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\])+)/;
+const fmtStamp = (t) => {
+  const cs = Math.max(0, Math.round(t * 100));
+  return `[${String(Math.floor(cs / 6000)).padStart(2, '0')}:${String(Math.floor(cs / 100) % 60).padStart(2, '0')}.${String(cs % 100).padStart(2, '0')}]`;
+};
+const parseStamp = (s) => { const m = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/.exec(s || ''); return m ? Number(m[1]) * 60 + Number(m[2]) + (m[3] ? Number(`0.${m[3]}`) : 0) : null; };
+const NL = String.fromCharCode(10);
+const lineAt = (text, pos) => { const start = text.lastIndexOf(NL, pos - 1) + 1; const nl = text.indexOf(NL, pos); return { start, end: nl < 0 ? text.length : nl }; };
+const fmtClock = (t) => (t == null ? '--:--.--' : fmtStamp(t).slice(1, -1));
+
 const firstLines = (text, n = 3) => (text || '').split(/\r?\n/).map(l => l.replace(/\[[^\]]*\]/g, '').trim()).filter(Boolean).slice(0, n);
 
 /**
  * Search every lyrics source for a track, pick a result, edit it, save it to the tag and/or a .lrc.
  * `initial` is what the track has now (shown first so it can be edited directly).
  */
-const LyricsDialog = ({ file, onClose, onSaved }) => {
+const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFile, onTogglePlay, onSeek }) => {
   const m = file?.metadata || {};
   const [title, setTitle] = useState(m.title || file?.name || '');
   const [artist, setArtist] = useState(m.artist || '');
@@ -26,6 +37,73 @@ const LyricsDialog = ({ file, onClose, onSaved }) => {
   const [saveTo, setSaveTo] = useState('tag');
   const [saving, setSaving] = useState(false);
   const cloudOnly = (file?.storage_type || 'local') === 'cloud' || file?.path?.startsWith('tc://');
+
+  // ---- syncing by hand: play the track, put the cursor on a line, press Sync line (Ctrl+Enter)
+  const taRef = useRef(null);
+  const original = useRef(m.lyrics || '');
+  const history = useRef([]);
+  const [pos, setPos] = useState(null);
+  const isThis = playingPath === file?.path;
+  useEffect(() => {
+    if (!isThis) { setPos(null); return undefined; }
+    let alive = true;
+    const tick = async () => { const t = await window.ipcRenderer.invoke('player:position').catch(() => null); if (alive) setPos(t); };
+    tick();
+    const id = setInterval(tick, 100);
+    return () => { alive = false; clearInterval(id); };
+  }, [isThis]);
+  // where the cursor goes after a change, applied once React has put the new text in
+  const pendingCaret = useRef(null);
+  useLayoutEffect(() => {
+    const caret = pendingCaret.current;
+    const ta = taRef.current;
+    if (caret == null || !ta) return;
+    pendingCaret.current = null;
+    ta.focus();
+    ta.setSelectionRange(caret, caret);
+    // keep that line in view
+    const lineNo = text.slice(0, caret).split(NL).length - 1;
+    const lh = parseFloat(getComputedStyle(ta).lineHeight) || 20;
+    if (lineNo * lh < ta.scrollTop + lh || lineNo * lh > ta.scrollTop + ta.clientHeight - 3 * lh) ta.scrollTop = Math.max(0, lineNo * lh - ta.clientHeight / 2);
+  }, [text]);
+  const edit = (next, caret) => {
+    history.current.push(text);
+    pendingCaret.current = caret;
+    setText(next);
+    setPick(null);
+  };
+  const caretLine = () => { const ta = taRef.current; return lineAt(text, ta ? ta.selectionStart : 0); };
+  const syncLine = async () => {
+    if (!isThis) return;
+    const t = await window.ipcRenderer.invoke('player:position').catch(() => null);
+    if (t == null) return;
+    const { start, end } = caretLine();
+    const line = text.slice(start, end).replace(STAMP, '');
+    const next = text.slice(0, start) + fmtStamp(t) + line + text.slice(end);
+    // move on to the next line that has words, so the next press syncs it
+    let nextStart = start + fmtStamp(t).length + line.length + 1;
+    while (nextStart < next.length) {
+      const l = lineAt(next, nextStart);
+      if (next.slice(l.start, l.end).replace(STAMP, '').trim()) break;
+      nextStart = l.end + 1;
+    }
+    edit(next, Math.min(nextStart, next.length));
+  };
+  const nudgeLine = (d) => {
+    const { start, end } = caretLine();
+    const line = text.slice(start, end);
+    const t = parseStamp(line);
+    if (t == null) return;
+    edit(text.slice(0, start) + fmtStamp(t + d) + line.replace(STAMP, '') + text.slice(end), start);
+  };
+  const offsetAll = (d) => edit(text.replace(/\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g, (mm) => fmtStamp(parseStamp(mm) + d)), null);
+  const playLine = () => {
+    const t = parseStamp(text.slice(caretLine().start, caretLine().end));
+    if (t == null) return;
+    if (!isThis) onPlayFile?.(file); else onSeek?.(Math.max(0, t - 0.5));
+  };
+  const undo = () => { if (history.current.length) { setText(history.current.pop()); setPick(null); } };
+  const reset = () => { history.current.push(text); setText(original.current); setPick(-1); };
 
   const run = async () => {
     setBusy(true);
@@ -100,10 +178,37 @@ const LyricsDialog = ({ file, onClose, onSaved }) => {
           </div>
         </div>
         <div className="lyr-edit">
+          <div className="lyr-sync">
+            <div className="lyr-transport">
+              <button className="icon-btn sm" onClick={() => onSeek?.(Math.max(0, (pos || 0) - 5))} disabled={!isThis} title="Back 5 s"><Icon name="prev" /></button>
+              <button className="icon-btn sm play" onClick={() => (isThis ? onTogglePlay?.() : onPlayFile?.(file))} title={isThis && isPlaying ? 'Pause' : 'Play this track'}>
+                <Icon name={isThis && isPlaying ? 'pause' : 'play'} filled />
+              </button>
+              <button className="icon-btn sm" onClick={() => onSeek?.((pos || 0) + 5)} disabled={!isThis} title="Forward 5 s"><Icon name="next" /></button>
+              <span className="mono lyr-clock">{isThis ? fmtClock(pos) : 'Not playing'}</span>
+            </div>
+            <button className="btn-primary lyr-syncbtn" onClick={syncLine} disabled={!isThis} title="Put the current time on the line with the cursor, then go to the next line (Ctrl+Enter)">
+              Sync line <kbd>Ctrl+Enter</kbd>
+            </button>
+            <div className="lyr-tools">
+              <span>Line</span>
+              <button className="btn-ghost sm" onClick={() => nudgeLine(-0.1)} title="Line 0.1 s earlier">−0.1s</button>
+              <button className="btn-ghost sm" onClick={() => nudgeLine(0.1)} title="Line 0.1 s later">+0.1s</button>
+              <button className="btn-ghost sm" onClick={playLine} title="Play from this line">Play line</button>
+              <span>All</span>
+              <button className="btn-ghost sm" onClick={() => offsetAll(-0.25)} title="Every line 0.25 s earlier">−0.25s</button>
+              <button className="btn-ghost sm" onClick={() => offsetAll(0.25)} title="Every line 0.25 s later">+0.25s</button>
+              <span className="lyr-sp" />
+              <button className="btn-ghost sm" onClick={undo} title="Undo the last change">Undo</button>
+              <button className="btn-ghost sm" onClick={reset} title="Back to the lyrics the track had">Reset</button>
+            </div>
+          </div>
           <textarea
+            ref={taRef}
+            onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); syncLine(); } }}
             className="input mono"
             value={text}
-            onChange={e => { setText(e.target.value); setPick(null); }}
+            onChange={e => { history.current.push(text); setText(e.target.value); setPick(null); }}
             placeholder={'Type or paste lyrics. Synced lines look like:\n[00:12.40]First line\n[00:16.10]Second line'}
             spellCheck={false}
           />

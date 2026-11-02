@@ -1400,6 +1400,11 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
         <LyricsDialog
           file={lyricsFile}
           onClose={() => setLyricsFile(null)}
+          playingPath={currentFile?.path}
+          isPlaying={isPlaying}
+          onPlayFile={(f) => playMusic(f, 0, [f])}
+          onTogglePlay={handleTogglePlay}
+          onSeek={handleSeek}
           onSaved={(r) => showToast(r.error ? `Could not save lyrics: ${r.error}` : r.cloudOnly ? 'Lyrics saved to your library' : `Lyrics saved${r.saved?.length ? ` (${r.saved.join(' + ').replace('lrc', '.lrc file')})` : ''}`, r.error ? 'error' : 'success')}
         />
       )}
