@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useContext, useMemo, useState } from 'react';
 import SongList from './SongList';
+import SongActions from './songActions';
 import Cover from './Cover';
 import Icon from './Icon';
 import { Select, MoreMenu, BackButton, useDetailScroll } from './ui';
@@ -18,6 +19,7 @@ const bestQuality = (songs) => songs.map(qualityOf).sort((a, b) => (b.bits * 1e6
 
 const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavorite, onAddPlaylist, favorites, onCheckSpectrum, selectedAlbum, setSelectedAlbum, onDeleteSong, onDeleteAlbum, onDownloadSong, onBackupMany, onBackupTo, storageNames, onRemoveFromCloud }) => {
   const [sortBy, setSortBy] = useState('name');
+  const ctx = useContext(SongActions);
   useDetailScroll(selectedAlbum?.name ?? null);
 
   const albums = useMemo(() => {
@@ -73,6 +75,7 @@ const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavori
               <MoreMenu items={[
                 ...(onDownloadSong ? [{ label: 'Download album', icon: 'download', onClick: () => songs.forEach(s => onDownloadSong(s)) }] : []),
                 ...(onAddPlaylist ? [{ label: 'Add to playlist', icon: 'playlist', onClick: () => onAddPlaylist(songs[0], songs) }] : []),
+                ...(ctx.onEditInfo ? [{ label: 'Edit album info…', icon: 'music', onClick: () => ctx.onEditInfo(songs) }] : []),
                 ...(onBackupMany ? [{ label: 'Back up album to…', icon: 'cloud', onClick: () => onBackupMany(songs, `“${selectedAlbum.name}”`) }] : []),
                 ...(onRemoveFromCloud && songs.some(f => f.telegram_message_id) ? [{ label: 'Remove album from TeleCloud', icon: 'cloud', danger: true, onClick: () => onRemoveFromCloud(songs.filter(f => f.telegram_message_id)) }] : []),
                 ...(onDeleteAlbum ? [{ sep: true }, { label: 'Delete album', icon: 'trash', danger: true, onClick: () => onDeleteAlbum({ ...selectedAlbum, songs }) }] : []),
@@ -81,6 +84,8 @@ const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavori
           </div>
         </div>
         <SongList
+          groupDiscs
+          linkAlbum={false}
           onBackupTo={onBackupTo}
           onBackupMany={onBackupMany}
           onRemoveFromCloud={onRemoveFromCloud}

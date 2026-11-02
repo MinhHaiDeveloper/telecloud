@@ -1,5 +1,7 @@
 import React from 'react';
 import Icon from './Icon';
+import MetaLinks from './MetaLinks';
+import LyricsNote from './LyricsNote';
 import Cover from './Cover';
 import LyricsView from './LyricsView';
 import SignalPathSteps from './SignalPathSteps';
@@ -16,7 +18,7 @@ const RightPanel = ({
     </button>
     <div className="np-title">{currentFile?.metadata?.title || currentFile?.name || 'Nothing playing'}</div>
     <div className="np-artist">
-      {currentFile ? [currentFile.metadata?.artist || 'Unknown artist', currentFile.metadata?.album].filter(Boolean).join(' · ') : 'Pick a track from your library'}
+      {currentFile ? <MetaLinks file={currentFile} /> : 'Pick a track from your library'}
     </div>
 
     {currentFile && signal && (
@@ -40,7 +42,7 @@ const RightPanel = ({
       <div className="lyrics-body">
         <div>
           {currentFile
-            ? <LyricsView lyrics={currentFile.metadata?.lyrics} currentTime={currentTime} onSeek={onSeek} />
+            ? <><LyricsView lyrics={currentFile.metadata?.lyrics} currentTime={currentTime} onSeek={onSeek} /><LyricsNote file={currentFile} /></>
             : <div className="lyrics-empty">Lyrics appear here while a track plays.</div>}
         </div>
       </div>

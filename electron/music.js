@@ -93,6 +93,11 @@ let syncInFlight = null;
 const cloudChangeListeners = [];
 /** Called with the paths of backed-up files whose content changed on disk */
 const onCloudFilesChanged = (fn) => cloudChangeListeners.push(fn);
+function notifyCloudChanged(paths) {
+  // their cloud copy is out of date: back them up again (TeleCloud replaces the old copy)
+  paths.forEach(p => database.setStorageType(p, 'local'));
+  cloudChangeListeners.forEach(fn => { try { fn(paths); } catch (err) { console.error('[Library] cloud change listener:', err.message); } });
+}
 let cancelRequested = false;
 const BATCH = 200;          // rows per database transaction / UI update
 
@@ -205,11 +210,7 @@ async function syncLibrary({ mode = 'refresh', onProgress, onBatch } = {}) {
 
   const cancelled = cancelRequested;
   cancelRequested = false;
-  if (cloudChanged.length) {
-    // their cloud copy is out of date: back them up again (TeleCloud replaces the old copy)
-    cloudChanged.forEach(p => database.setStorageType(p, 'local'));
-    cloudChangeListeners.forEach(fn => { try { fn(cloudChanged); } catch (err) { console.error('[Library] cloud change listener:', err.message); } });
-  }
+  if (cloudChanged.length) notifyCloudChanged(cloudChanged);
   // With onBatch the UI already has every change; skip re-sending the whole library
   const files = onBatch ? null : database.getAllFiles().map(toFrontend);
   const total = files ? files.length : database.countFiles();
@@ -286,8 +287,14 @@ ipcMain.handle('load-library', async () => {
 /** Used by the folder watcher for a single added/changed file. */
 async function upsertSingleFile(filePath) {
   const stat = await fs.promises.stat(filePath);
+  const before = database.getFileByPath(filePath);
   const data = await parseTrack(filePath, stat);
   database.insertOrUpdateFile(data);
+  // a backed-up file whose bytes changed (tags edited here or in another program): back it up again
+  if (before?.telegram_message_id && (before.storage_type === 'both' || before.storage_type === 'cloud')
+    && (before.size !== stat.size || Math.round(before.mtime || 0) !== Math.round(stat.mtimeMs))) {
+    notifyCloudChanged([filePath]);
+  }
   return toFrontend(database.getFileByPath(filePath));
 }
 

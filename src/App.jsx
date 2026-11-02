@@ -17,13 +17,18 @@ import SearchView from './components/SearchView';
 import SettingsView from './components/SettingsView';
 import EqSettingsView from './components/EqSettingsView';
 import Modal from './components/Modal'; // Import the new Modal component
-import { computeSignalPath, matchesSource, storageOf } from './utils/audio';
+import { computeSignalPath, matchesSource, storageOf, qualityOf } from './utils/audio';
 import { DialogHost, confirmDialog, alertDialog, Progress } from './components/ui';
 import useEq from './hooks/useEq';
 import StorageDialog from './components/StorageDialog';
 import { SOURCE_HELP, QUALITY_HELP } from './utils/badges';
 import OverflowTooltip from './components/OverflowTooltip';
 import SongActions from './components/songActions';
+import Presence from './components/Presence';
+import DashboardView from './components/DashboardView';
+import LyricsDialog from './components/LyricsDialog';
+import MetadataDialog from './components/MetadataDialog';
+import { useUpdateStatus } from './components/UpdateStatus';
 
 // localStorage can throw (private mode, blocked storage); UI prefs are optional
 const readPref = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
@@ -88,6 +93,7 @@ function App() {
   const [playlistModalData, setPlaylistModalData] = useState(null);
   const [spectrumFile, setSpectrumFile] = useState(null);
   const [selectedAlbum, setSelectedAlbum] = useState(null);
+  const [selectedArtist, setSelectedArtist] = useState(null);
   const [theme, setTheme] = useState(() => readPref('tc-theme') || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
 
   // New shell UI state
@@ -175,6 +181,93 @@ function App() {
 
   // 🛡️ Ref to track current file for event listeners (avoids re-registering on every track change)
   const currentFileRef = useRef(currentFile);
+
+  // ---- Listening history: count a play once enough of the track was actually heard
+  const [playCounts, setPlayCounts] = useState({});
+  useEffect(() => {
+    // the history can grow from elsewhere too (other windows, imports): re-read the counts when it does
+    let t = null;
+    const load = () => window.ipcRenderer.invoke('stats:counts').then(c => setPlayCounts(c || {})).catch(() => {});
+    const onChange = () => { clearTimeout(t); t = setTimeout(load, 400); };
+    load();
+    window.ipcRenderer.on('stats:changed', onChange);
+    return () => { clearTimeout(t); window.ipcRenderer.removeListener?.('stats:changed', onChange); };
+  }, []);
+  const listenRef = useRef({ path: null });
+
+  // ---- Lyrics: the dialog, and lyrics found online for the playing track (shown before they are saved)
+  const [lyricsFile, setLyricsFile] = useState(null);
+  const [lyricsFound, setLyricsFound] = useState(null); // { path, label, lyrics }
+  const [metaFiles, setMetaFiles] = useState(null); // tracks open in the tag editor
+  const update = useUpdateStatus();
+  const [updateDismissed, setUpdateDismissed] = useState(false);
+  useEffect(() => {
+    const onSaved = (e, { path, lyrics }) => {
+      const patchFile = (f) => (f && f.path === path ? { ...f, metadata: { ...f.metadata, lyrics } } : f);
+      setMusicFiles(prev => prev.map(patchFile));
+      setCurrentFile(patchFile);
+      setLyricsFound(f => (f?.path === path ? null : f));
+    };
+    window.ipcRenderer.on('lyrics:saved', onSaved);
+    return () => window.ipcRenderer.removeListener?.('lyrics:saved', onSaved);
+  }, []);
+  // Last.fm "now playing" (ignored when no account is connected)
+  useEffect(() => {
+    const m = currentFile?.metadata;
+    if (!m) return;
+    window.ipcRenderer.invoke('lastfm:now-playing', { artist: m.artist, title: m.title || currentFile.name, album: m.album, duration: m.duration }).catch(() => {});
+  }, [currentFile?.path]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const f = currentFile;
+    setLyricsFound(null);
+    if (!f || f.metadata?.lyrics) return undefined;
+    let alive = true;
+    (async () => {
+      const o = await window.ipcRenderer.invoke('lyrics:options').catch(() => null);
+      if (!o?.search || !alive) return;
+      const m = f.metadata || {};
+      const r = await window.ipcRenderer.invoke('lyrics:search', { track: { path: f.path, title: m.title || f.name, artist: m.artist, album: m.album, duration: m.duration } }).catch(() => null);
+      const best = r?.results?.find(x => x.score >= 0.7);
+      if (!alive || !best) return;
+      if (o.autoSave) window.ipcRenderer.invoke('lyrics:save', { path: f.path, lyrics: best.lyrics });
+      else setLyricsFound({ path: f.path, label: o.sources?.[best.source]?.label || best.source, lyrics: best.lyrics });
+    })();
+    return () => { alive = false; };
+  }, [currentFile?.path]); // eslint-disable-line react-hooks/exhaustive-deps
+  const flushListen = () => {
+    const r = listenRef.current;
+    listenRef.current = { path: null };
+    if (!r.file || r.listened < 1) return;
+    const m = r.file.metadata || {};
+    window.ipcRenderer.invoke('stats:add-play', {
+      path: r.file.path, startedAt: r.startedAt, listenedMs: r.listened * 1000, durationMs: (m.duration || 0) * 1000,
+      title: m.title || r.file.name, artist: m.artist, album: m.album, quality: qualityOf(r.file).tier,
+    }).catch(() => {});
+  };
+  useEffect(() => {
+    const r = listenRef.current;
+    const path = currentFile?.path || null;
+    if (path !== r.path) {
+      flushListen();
+      listenRef.current = { path, file: currentFile, listened: 0, last: currentTime, startedAt: Date.now() };
+      return;
+    }
+    if (!path) return;
+    const d = currentTime - r.last;
+    if (isPlaying && d > 0 && d < 3) r.listened += d; // normal progress; seeks don't count as listening
+    else if (d < -5 && currentTime < 3 && r.listened > 0) { // the same track started over (repeat one)
+      flushListen();
+      listenRef.current = { path, file: currentFile, listened: 0, last: currentTime, startedAt: Date.now() };
+      return;
+    }
+    r.last = currentTime;
+    r.file = currentFile;
+  }, [currentTime, currentFile, isPlaying]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const onUnload = () => flushListen();
+    window.addEventListener('beforeunload', onUnload);
+    return () => window.removeEventListener('beforeunload', onUnload);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep currentFileRef in sync with currentFile
   useEffect(() => {
@@ -890,7 +983,10 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
       setDownloadToasts(prev => prev.filter(t => t.id !== toastId));
       showToast(`Download failed: ${result?.error || 'unknown error'}`, 'error');
     }
-    setTimeout(() => setDownloadToasts(prev => prev.filter(t => t.id !== toastId)), 2500);
+    setTimeout(() => {
+      setDownloadToasts(prev => prev.map(t => (t.id === toastId ? { ...t, leaving: true } : t)));
+      setTimeout(() => setDownloadToasts(prev => prev.filter(t => t.id !== toastId)), 300);
+    }, 2500);
   };
 
   // Recent, favourites, playlists and the queue keep copies of tracks from when they were added;
@@ -925,7 +1021,11 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     setNowPlaying(null);
     if (view !== 'playlists') setSelectedPlaylistId(null);
     if (view === 'albums') setSelectedAlbum(null);
+    if (view === 'artists') setSelectedArtist(null);
   };
+  // Clicking an album or artist name anywhere opens its page (and leaves full screen)
+  const openAlbum = (name) => { if (!name) return; navigate('albums'); setSelectedAlbum({ name }); };
+  const openArtist = (name) => { if (!name) return; navigate('artists'); setSelectedArtist(name); };
   const openEq = () => { setNowPlaying(null); setCurrentView('eq-settings'); };
   const openNowPlaying = (panel, origin = 'player') => currentFile && setNowPlaying({ panel, origin });
 
@@ -976,7 +1076,18 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     onAddPlaylist: handleAddPlaylist, onBackupTo: songListProps.onBackupTo, onBackupMany: songListProps.onBackupMany,
     onRemoveFromCloud: songListProps.onRemoveFromCloud, storageNames,
     onQueueMany: handleQueueMany, onFavoriteMany: handleFavoriteMany, onDeleteMany: handleDeleteMany,
+    openAlbum, openArtist, playCounts,
+    onEditLyrics: (file) => setLyricsFile(file), lyricsFound,
+    onEditInfo: (files) => setMetaFiles(files),
+    onSaveFound: async () => {
+      if (!lyricsFound) return;
+      const r = await window.ipcRenderer.invoke('lyrics:save', { path: lyricsFound.path, lyrics: lyricsFound.lyrics });
+      showToast(r?.success ? 'Lyrics saved' : `Could not save lyrics: ${r?.error}`, r?.success ? 'success' : 'error');
+    },
   };
+  // the playing track with lyrics found online filled in (until they are saved)
+  const lyricsLive = currentLive && !currentLive.metadata?.lyrics && lyricsFound?.path === currentLive.path
+    ? { ...currentLive, metadata: { ...currentLive.metadata, lyrics: lyricsFound.lyrics } } : currentLive;
 
   const renderView = () => {
     if (searchQuery) {
@@ -1040,6 +1151,8 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
             />
           </div>
         );
+      case 'dashboard':
+        return <div className="view"><DashboardView musicFiles={musicFiles} onPlay={playMusic} /></div>;
       case 'favorites':
         return <div className="view"><FavoritesView {...songListProps} /></div>;
       case 'recent':
@@ -1059,7 +1172,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
           </div>
         );
       case 'artists':
-        return <div className="view"><ArtistsView musicFiles={sourceFiles} {...songListProps} /></div>;
+        return <div className="view"><ArtistsView musicFiles={sourceFiles} {...songListProps} selectedArtist={selectedArtist} setSelectedArtist={setSelectedArtist} /></div>;
       case 'albums':
         return (
           <div className="view">
@@ -1149,7 +1262,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
       </main>
 
       <RightPanel
-        currentFile={currentLive}
+        currentFile={lyricsLive}
         currentTime={currentTime}
         onSeek={handleSeek}
         signal={signal}
@@ -1168,7 +1281,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
 
       {nowPlaying && currentFile && (
         <NowPlayingFullscreen
-          currentFile={currentLive}
+          currentFile={lyricsLive}
           currentTime={currentTime}
           onSeek={handleSeek}
           signal={signal}
@@ -1239,12 +1352,12 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
         </div>
       </Modal>
 
-      {toastMessage && (
+      <Presence show={!!toastMessage} ms={260}>
         <div className={`toast ${toastType === 'error' ? 'error' : toastType === 'info' ? 'info' : ''}`} role="status">
           <Icon name={toastType === 'error' ? 'alert' : toastType === 'info' ? 'info' : 'check'} />
           {toastMessage}
         </div>
-      )}
+      </Presence>
 
       {playlistModalData && (
         <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setPlaylistModalData(null); }}>
@@ -1268,12 +1381,51 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
 
       <DialogHost />
 
+      {metaFiles && (
+        <MetadataDialog
+          files={metaFiles}
+          onClose={() => setMetaFiles(null)}
+          onDone={(r) => {
+            if (!r?.success) { showToast(`Could not save tags: ${r?.error || 'unknown error'}`, 'error'); return; }
+            const byPath = new Map((r.files || []).filter(Boolean).map(f => [f.path, f]));
+            setMusicFiles(prev => prev.map(f => byPath.get(f.path) || f));
+            setCurrentFile(f => (f && byPath.has(f.path) ? byPath.get(f.path) : f));
+            if (r.errors?.length) showToast(`${r.errors.length} ${r.errors.length === 1 ? 'file' : 'files'} could not be changed: ${r.errors[0].error}`, 'error');
+            else showToast(byPath.size === 1 ? 'Track info saved' : `Saved ${byPath.size} tracks`);
+          }}
+        />
+      )}
+
+      {lyricsFile && (
+        <LyricsDialog
+          file={lyricsFile}
+          onClose={() => setLyricsFile(null)}
+          onSaved={(r) => showToast(r.error ? `Could not save lyrics: ${r.error}` : r.cloudOnly ? 'Lyrics saved to your library' : `Lyrics saved${r.saved?.length ? ` (${r.saved.join(' + ').replace('lrc', '.lrc file')})` : ''}`, r.error ? 'error' : 'success')}
+        />
+      )}
+
       {spectrumFile && (
         <SpectrumModal file={spectrumFile} onClose={() => setSpectrumFile(null)} theme={theme} />
       )}
 
       <div className="float-stack">
-        {scanProgress && (
+        <Presence show={update.state === 'ready' && !updateDismissed}>
+          <div className="card float-card">
+            <div className="row">
+              <Icon name="download" style={{ color: 'var(--accent)' }} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <b>TeleCloud {update.next} is ready</b>
+                <small>Installs when you restart, or the next time you quit.</small>
+              </div>
+            </div>
+            <div className="row" style={{ marginTop: 10, justifyContent: 'flex-end' }}>
+              <button className="btn-ghost" style={{ padding: '5px 12px' }} onClick={() => setUpdateDismissed(true)}>Later</button>
+              <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 13 }} onClick={() => window.ipcRenderer.invoke('update:install')}>Restart now</button>
+            </div>
+          </div>
+        </Presence>
+        <Presence show={!!scanProgress}>
+          {scanProgress ? (
           <div className="card float-card">
             <div className="row">
               {scanProgress.status === 'inProgress' ? <span className="ring" /> : <Icon name="check" style={{ color: 'var(--ok)' }} />}
@@ -1293,9 +1445,10 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
               <div style={{ marginTop: 10 }}><Progress value={(scanProgress.current / scanProgress.total) * 100} /></div>
             )}
           </div>
-        )}
+          ) : null}
+        </Presence>
         {downloadToasts.map(toast => (
-          <div key={toast.id} className="card float-card">
+          <div key={toast.id} className={`card float-card ${toast.leaving ? 'leaving' : ''}`}>
             <div className="row" style={{ marginBottom: 8 }}>
               {toast.progress === 100 ? <Icon name="check" style={{ color: 'var(--ok)' }} /> : <Icon name="download" />}
               <div style={{ minWidth: 0, flex: 1 }}>

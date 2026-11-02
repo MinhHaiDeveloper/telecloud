@@ -396,6 +396,26 @@ async function writeManifest(storageId) {
   return { id, tracks: tracks.length };
 }
 
+/**
+ * Tags or lyrics of backed-up tracks changed in the app (lyrics editor, metadata editor): their
+ * storages' index is rewritten shortly after, so other computers restore the new text. The audio
+ * file itself is re-uploaded by the file watcher when its bytes changed.
+ */
+let indexTimer = null;
+function indexChanged(paths) {
+  for (const p of paths || []) {
+    const row = store.library.row(p);
+    const s = row?.telegram_message_id && store.storages.byPeer(row.telegram_channel_id);
+    if (s) manifestDirty.add(s.id);
+  }
+  if (!manifestDirty.size) return;
+  clearTimeout(indexTimer);
+  indexTimer = setTimeout(async () => {
+    if (runner || !cm().isAuthenticated()) return; // a running backup writes it at its next checkpoint
+    try { await ensureConnected(); await writeDirtyManifests(); } catch (err) { console.warn('[TeleCloud] index update failed:', err.message); }
+  }, 5000);
+}
+
 async function writeDirtyManifests() {
   for (const id of [...manifestDirty]) {
     manifestDirty.delete(id);
@@ -1080,4 +1100,4 @@ function cleanupTeleCloudSync() {
   worker.stop();
 }
 
-module.exports = { setupTeleCloudSyncHandlers, cleanupTeleCloudSync, _internals: { cacheTrack, refreshIndex, restore, startRunner, enforceCacheLimit, store, options, setOptions } };
+module.exports = { setupTeleCloudSyncHandlers, cleanupTeleCloudSync, indexChanged, _internals: { cacheTrack, refreshIndex, restore, startRunner, enforceCacheLimit, store, options, setOptions } };

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import SongList from './SongList';
+import ArtistBio from './ArtistBio';
 import Cover from './Cover';
 import Icon from './Icon';
 import { Select, BackButton, useDetailScroll } from './ui';
@@ -13,8 +14,11 @@ const SORTS = [
 
 const noThe = (s) => s.toLowerCase().replace(/^the /, '');
 
-const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavorite, onAddPlaylist, favorites, onCheckSpectrum, onDeleteSong, onDownloadSong }) => {
-  const [selectedName, setSelectedName] = useState(null);
+const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavorite, onAddPlaylist, favorites, onCheckSpectrum, onDeleteSong, onDownloadSong, selectedArtist, setSelectedArtist }) => {
+  // App owns the open artist (so a click on an artist name anywhere can open it); local state as a fallback
+  const [localName, setLocalName] = useState(null);
+  const selectedName = setSelectedArtist ? selectedArtist : localName;
+  const setSelectedName = setSelectedArtist || setLocalName;
   const [sortBy, setSortBy] = useState('name');
   useDetailScroll(selectedName ?? null);
 
@@ -62,6 +66,7 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
             </div>
           </div>
         </div>
+        <ArtistBio name={selected.name} known={new Set(artists.map(a => a.name))} />
         <SongList
           musicFiles={songs}
           currentFile={currentFile}

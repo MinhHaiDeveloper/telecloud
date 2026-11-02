@@ -26,6 +26,8 @@
     <nav class="nav-links" aria-label="Sections">
       <a href="#sound">Sound</a>
       <a href="#cloud">Cloud</a>
+      <a href="#lyrics">Lyrics</a>
+      <a href="#stats">Stats</a>
       <a href="#eq">EQ</a>
       <a href="#compare">Compare</a>
     </nav>
@@ -190,6 +192,56 @@
       </div>
     </section>
 
+    <!-- Lyrics -->
+    <section class="split" id="lyrics">
+      <div class="split-copy reveal">
+        <p class="eyebrow">Lyrics that find themselves</p>
+        <h2>Sing along, line by line.</h2>
+        <p>Synced lyrics follow the music and a click jumps to any line. When a track has none, TeleCloud looks them up for you, and you choose what gets saved.</p>
+        <ul class="ticks">
+          <li>Searches LRCLIB, NetEase Cloud Music, QQ Music and more, in the order you set</li>
+          <li>Edit by hand, save into the file's tag or a .lrc next to it</li>
+          <li>Reads existing .lrc files, and backs lyrics up with your library</li>
+        </ul>
+      </div>
+      <div class="split-shot reveal">
+        <img src="assets/lyrics.webp" alt="Full-screen now playing with synced lyrics" loading="lazy" width="1920" height="1200">
+      </div>
+    </section>
+
+    <!-- Stats -->
+    <section class="split rev" id="stats">
+      <div class="split-copy reveal">
+        <p class="eyebrow">Your listening, measured</p>
+        <h2>A dashboard for the music you actually play.</h2>
+        <p>Every play is counted, by day, week, month or year: your top tracks, artists and albums, when you listen, and how much of it is hi-res.</p>
+        <ul class="ticks">
+          <li>Play counts on every track, and a "Most played" sort</li>
+          <li>Last.fm scrobbling, with "now playing" on your profile</li>
+          <li>Artist biographies and similar artists on every artist page</li>
+        </ul>
+      </div>
+      <div class="split-shot reveal">
+        <img src="assets/dashboard.webp" alt="Dashboard with minutes listened, top tracks and top artists" loading="lazy" width="1920" height="1200">
+      </div>
+    </section>
+
+    <!-- More -->
+    <section class="more" id="more">
+      <div class="center reveal">
+        <p class="eyebrow">And there's more</p>
+        <h2>The details that make it yours.</h2>
+      </div>
+      <div class="more-grid">
+        <article class="card more-card reveal"><div class="m-ico"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></svg></div><h3>Tag editor</h3><p>Fix titles, artists, albums and disc numbers for one track or a whole album at once. Backed-up files follow.</p></article>
+        <article class="card more-card reveal"><div class="m-ico"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/><path d="M18 16l2 2 3-4"/></svg></div><h3>Select many, act once</h3><p><kbd>Ctrl</kbd>/<kbd>Shift</kbd>+click and <kbd>Ctrl+A</kbd> in every list: queue, favourite, back up, tag or remove together.</p></article>
+        <article class="card more-card reveal"><div class="m-ico"><svg viewBox="0 0 24 24"><path d="M4 20V10M8 20V4M12 20v-7M16 20V8M20 20v-4"/></svg></div><h3>Spectrum check</h3><p>See the whole file's frequencies and spot upsampled or lossy-sourced "hi-res", with a clear explanation of each verdict.</p></article>
+        <article class="card more-card reveal"><div class="m-ico"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 4v16"/></svg></div><h3>Albums, discs, links</h3><p>Multi-disc albums split by disc. Any artist or album name opens its page, from anywhere in the app.</p></article>
+        <article class="card more-card reveal"><div class="m-ico"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></div><h3>Cover-only mode</h3><p>One key hides everything but the artwork, for when the music is the only thing on screen.</p></article>
+        <article class="card more-card reveal"><div class="m-ico"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></div><h3>Updates itself</h3><p>New versions download in the background and install on the next restart. Beta users get betas first.</p></article>
+      </div>
+    </section>
+
     <!-- Gallery -->
     <section class="gallery" data-scroll="gallery">
       <div class="gallery-sticky">
@@ -199,7 +251,7 @@
         </div>
         <div class="gallery-track">
           <figure><img src="assets/album.webp" alt="Album page with quality and source tags" loading="lazy" width="1920" height="1200"><figcaption>Albums show quality and where every track lives.</figcaption></figure>
-          <figure><img src="assets/nowplaying.webp" alt="Full-screen now playing view" loading="lazy" width="1920" height="1200"><figcaption>Full-screen now playing, with lyrics and the queue.</figcaption></figure>
+          <figure><img src="assets/nowplaying.webp" alt="Full-screen now playing view" loading="lazy" width="1920" height="1200"><figcaption>Full-screen now playing, with every detail of the file.</figcaption></figure>
           <figure><img src="assets/sources.webp" alt="Source tag explanations" loading="lazy" width="1920" height="1200"><figcaption>Every tag explains itself.</figcaption></figure>
           <figure><img src="assets/select.webp" alt="Several tracks selected" loading="lazy" width="1920" height="1200"><figcaption>Select many, act once.</figcaption></figure>
           <figure><img src="assets/telecloud.webp" alt="TeleCloud page filtered by storage" loading="lazy" width="1920" height="1200"><figcaption>Everything in the cloud, per storage.</figcaption></figure>
@@ -223,6 +275,8 @@
             <tr><td>Unlimited cloud backup of your library</td><td class="us y">Yes, free</td><td class="n">No</td><td class="n">No</td></tr>
             <tr><td>Stream your own files on another PC</td><td class="us y">Yes</td><td class="n">No</td><td class="m">Only their catalogue</td></tr>
             <tr><td>Encrypted, only you hold the key</td><td class="us y">Yes</td><td class="n">—</td><td class="n">No</td></tr>
+            <tr><td>Finds and edits synced lyrics</td><td class="us y">Built in</td><td class="m">With plugins</td><td class="y">Their catalogue</td></tr>
+            <tr><td>Listening stats and Last.fm scrobbling</td><td class="us y">Built in</td><td class="m">With plugins</td><td class="m">Yearly recap</td></tr>
             <tr><td>Restore with tags, lyrics and covers</td><td class="us y">Yes</td><td class="n">No</td><td class="n">—</td></tr>
             <tr><td>Monthly subscription</td><td class="us y">None</td><td class="y">None</td><td class="n">Required</td></tr>
           </tbody>

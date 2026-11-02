@@ -6,6 +6,7 @@ const PLAYLIST_COLORS = ['#ff5c5c', '#3fcf8e', '#f5b942', '#9b7bff', '#4cc3ff', 
 
 const NAV_MAIN = [
   { id: 'home', label: 'Discover', icon: 'discover' },
+  { id: 'dashboard', label: 'Dashboard', icon: 'chart' },
   { id: 'library', label: 'Library', icon: 'library', countKey: 'library' },
 ];
 const NAV_MUSIC = [

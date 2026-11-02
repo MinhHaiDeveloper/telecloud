@@ -1,6 +1,7 @@
 // Tag reading shared by the main process and the scan worker (no Electron imports).
 
 const path = require('path');
+const fs = require('fs');
 
 
 function extractLyrics(parsed) {
@@ -50,7 +51,8 @@ async function parseTrack(filePath, stat) {
     return {
       ...base,
       title: c.title || path.basename(filePath, base.ext),
-      artist: c.artist || (c.artists && c.artists.join(', ')) || 'Unknown Artist',
+      // several ARTIST tags (e.g. "Yu-Peng Chen" + "HOYO-MiX") all count, not only the first
+      artist: (c.artists && c.artists.length > 1 ? c.artists.join(', ') : c.artist) || (c.artists && c.artists.join(', ')) || 'Unknown Artist',
       album: c.album || 'Unknown Album',
       year: c.year || null,
       genre: c.genre && c.genre.length ? c.genre.join(', ') : null,
@@ -62,12 +64,22 @@ async function parseTrack(filePath, stat) {
       bitDepth: f.bitsPerSample || 0,
       codec: f.codec || null,
       lossless: f.lossless === true ? 1 : f.lossless === false ? 0 : null,
-      lyrics: extractLyrics(parsed),
+      // no lyrics in the tags: a .lrc with the same name next to the file counts too
+      lyrics: extractLyrics(parsed) || sidecarLyrics(filePath),
     };
   } catch (err) {
     console.error(`[Library] Could not parse ${filePath}: ${err.message}`);
     return { ...base, title: path.basename(filePath, base.ext), artist: 'Unknown Artist', album: 'Unknown Album', duration: 0 };
   }
+}
+
+function sidecarLyrics(filePath) {
+  try {
+    const p = path.parse(filePath);
+    const lrc = path.join(p.dir, `${p.name}.lrc`);
+    const text = fs.existsSync(lrc) ? fs.readFileSync(lrc, 'utf8').trim() : '';
+    return text || null;
+  } catch { return null; }
 }
 
 module.exports = { parseTrack, extractLyrics };

@@ -31,14 +31,15 @@ if (fs.existsSync(target)) {
 const out = path.join(ROOT, build.directories.output);
 fs.rmSync(out, { recursive: true, force: true });
 execSync('npx vite build', { cwd: ROOT, stdio: 'inherit' });
-execSync('npx electron-builder --win', { cwd: ROOT, stdio: 'inherit' });
+execSync('npx electron-builder --win --publish never', { cwd: ROOT, stdio: 'inherit' });
 
-const exe = fs.readdirSync(out).find(f => f.endsWith('.exe'));
-if (!exe) { console.error('No installer was produced.'); process.exit(1); }
-fs.mkdirSync(target, { recursive: true });
 const name = `TeleCloud-Setup-${version}.exe`;
-fs.copyFileSync(path.join(out, exe), path.join(target, name));
+if (!fs.existsSync(path.join(out, name))) { console.error('No installer was produced.'); process.exit(1); }
+fs.mkdirSync(target, { recursive: true });
+// the installer plus what auto-update reads: the channel file (latest.yml / beta.yml) and the blockmap
+const upload = fs.readdirSync(out).filter(f => f === name || f === `${name}.blockmap` || (f.endsWith('.yml') && !f.startsWith('builder-')));
+upload.forEach(f => fs.copyFileSync(path.join(out, f), path.join(target, f)));
 const sha = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(target, name))).digest('hex');
 fs.writeFileSync(path.join(target, 'SHA256.txt'), `${sha}  ${name}\n`);
 const mb = (fs.statSync(path.join(target, name)).size / 1048576).toFixed(1);
-console.log(`\n${channel} ${version}: ${path.relative(ROOT, path.join(target, name))} (${mb} MB)\nSHA-256 ${sha}`);
+console.log(`\n${channel} ${version} (${mb} MB) in ${path.relative(ROOT, target)}:\n  ${upload.join('\n  ')}\nSHA-256 ${sha}\nUpload all of these (not SHA256.txt) to the GitHub release.`);

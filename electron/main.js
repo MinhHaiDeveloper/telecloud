@@ -21,6 +21,11 @@ const { backgroundRefresh } = require('./music.js');
 const { applyAudioSettings } = require('./player.js');
 require('./spectrum.js');
 require('./autoeq.js');
+require('./stats.js');
+require('./lyrics.js');
+require('./tagEdit.js');
+require('./lastfm.js');
+require('./updater.js');
 
 // File system watcher instance
 let folderWatcher = null;

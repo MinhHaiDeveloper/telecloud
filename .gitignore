@@ -31,8 +31,12 @@ coverage/
 demo/
 design/
 telegram phases.md
+small_features.md
 
 # Installers (published on GitHub Releases, too big for git)
 out/
 beta/
 release/
+
+# Last.fm API key for builds (never commit)
+electron/lastfm-key.json

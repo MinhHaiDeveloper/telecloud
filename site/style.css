@@ -346,3 +346,14 @@ td.us.y { color: var(--accent); }
   .reveal { opacity: 1; transform: none; }
   .window { transform: none; }
 }
+
+/* ===== And there's more ===== */
+.more { width: min(var(--wrap), calc(100% - 2 * var(--gutter))); margin: 140px auto; }
+.more-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.more-card { padding: 24px; display: flex; flex-direction: column; gap: 8px; transition: transform .45s var(--spring), border-color .2s, opacity .7s var(--ease-out); }
+.more-card:hover { transform: translateY(-4px); border-color: var(--border-2); }
+.more-card:nth-child(3n+2) { transition-delay: .06s; } .more-card:nth-child(3n) { transition-delay: .12s; }
+.more-card p { color: var(--text-2); font-size: 14.5px; }
+.m-ico { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-soft); margin-bottom: 8px; }
+.m-ico svg { width: 21px; height: 21px; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 900px) { .more-grid { grid-template-columns: 1fr; } .more { margin: 90px auto; } }

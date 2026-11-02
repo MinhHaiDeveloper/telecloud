@@ -35,17 +35,29 @@ const OverflowTooltip = () => {
 
     // Truncated text that carries a title attribute: show ours, and park the title meanwhile
     // so the plain system tooltip doesn't pop up on top of it
-    const parkTitle = (el) => { if (el.hasAttribute('title')) { el.dataset.tipTitle = el.getAttribute('title'); el.removeAttribute('title'); } };
-    const restoreTitle = (el) => { if (el && el.dataset.tipTitle !== undefined) { el.setAttribute('title', el.dataset.tipTitle); delete el.dataset.tipTitle; } };
+    // (and on the few ancestors around it, e.g. a menu item whose ellipsis lives in an inner <span>)
+    let parked = [];
+    const parkTitle = (el) => {
+      for (let n = el, i = 0; n && n !== document.body && i < MAX_DEPTH; n = n.parentElement, i++) {
+        if (n.hasAttribute('title')) { n.dataset.tipTitle = n.getAttribute('title'); n.removeAttribute('title'); parked.push(n); }
+      }
+    };
+    const restoreTitle = () => {
+      parked.forEach(n => { if (n.dataset.tipTitle !== undefined) { n.setAttribute('title', n.dataset.tipTitle); delete n.dataset.tipTitle; } });
+      parked = [];
+    };
+    let watch = null;
     const hide = () => {
+      clearInterval(watch);
       clearTimeout(timer);
       timer = null;
-      restoreTitle(target);
+      restoreTitle();
       target = null;
       tip.classList.remove('show');
     };
     const show = (el) => {
-      const text = (el.dataset.tipTitle || el.innerText).replace(/\s+/g, ' ').trim();
+      const titled = parked.find(n => n === el || n.contains(el));
+      const text = (titled?.dataset.tipTitle || el.innerText).replace(/\s+/g, ' ').trim();
       if (!text) return;
       tip.textContent = text;
       tip.style.left = '0px';
@@ -59,9 +71,21 @@ const OverflowTooltip = () => {
       tip.style.left = `${Math.round(left)}px`;
       tip.style.top = `${Math.round(below ? r.bottom + 6 : r.top - t.height - 6)}px`;
       tip.classList.add('show');
+      // The hovered text can be replaced (a list re-rendering) or vanish (a menu closing) under
+      // the pointer: follow the new copy of it, or hide instead of leaving the tooltip behind
+      clearInterval(watch);
+      watch = setInterval(() => {
+        if (target && target.isConnected) return;
+        const el = findTruncated(document.elementFromPoint(pointer.x, pointer.y));
+        if (!el) { hide(); return; }
+        target = el;
+        parkTitle(el);
+      }, 250);
     };
 
+    const pointer = { x: 0, y: 0 };
     const onOver = (e) => {
+      pointer.x = e.clientX; pointer.y = e.clientY;
       const el = findTruncated(e.target);
       if (el === target) return;
       hide();

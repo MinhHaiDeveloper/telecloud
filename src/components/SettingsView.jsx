@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import TeleCloudSyncSettings from './TeleCloudSyncSettings';
 import Icon from './Icon';
+import LyricsSettings from './LyricsSettings';
+import LastfmSettings from './LastfmSettings';
+import UpdateStatus from './UpdateStatus';
 import { Toggle, Segmented, Select, SettingRow, Callout, Dialog, alertDialog } from './ui';
 import useSlidingIndicator from '../hooks/useSlidingIndicator';
 import pkg from '../../package.json';
@@ -237,6 +240,7 @@ const SettingsView = ({
     switch (activeTab) {
       case 'general':
         return (
+          <>
           <section className="set-section">
             <h3>Appearance</h3>
             <div className="card set-card">
@@ -245,6 +249,9 @@ const SettingsView = ({
               </SettingRow>
             </div>
           </section>
+          <LyricsSettings />
+          <LastfmSettings />
+          </>
         );
 
       case 'library':
@@ -422,6 +429,7 @@ const SettingsView = ({
                   <div style={{ color: 'var(--text-3)', fontSize: 13 }}>Version {pkg.version} · Local hi-res player with Telegram cloud backup</div>
                 </div>
               </div>
+              <UpdateStatus />
             </div>
           </section>
         );

@@ -1,6 +1,6 @@
 {
   "name": "telecloud",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "Hi-res music player with encrypted, unlimited backup to your own Telegram",
   "main": "electron/main.js",
   "scripts": {
@@ -33,6 +33,13 @@
         "to": "mpv.com"
       }
     ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "MinhHaiDeveloper",
+        "repo": "telecloud"
+      }
+    ],
     "win": {
       "target": [
         {
@@ -42,7 +49,8 @@
           ]
         }
       ],
-      "icon": "public/icon.ico"
+      "icon": "public/icon.ico",
+      "artifactName": "TeleCloud-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -64,7 +72,9 @@
     "cross-env": "^10.1.0",
     "dotenv": "^17.4.2",
     "electron-store": "^11.0.2",
+    "electron-updater": "^6.6.8",
     "music-metadata": "^11.13.0",
+    "node-taglib-sharp": "^6.0.3",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-window": "^2.2.7",

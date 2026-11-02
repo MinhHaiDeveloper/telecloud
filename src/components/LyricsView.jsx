@@ -45,13 +45,16 @@ const LyricsView = ({ lyrics, currentTime, onSeek, className = 'lyrics-scroll' }
 
   useEffect(() => {
     const box = scrollRef.current;
-    if (!box || activeIndex < 0 || Date.now() < userScrollUntil.current) return;
+    if (!box) return;
+    // the track started over (repeat, seek to 0): go back to the first line and wait there
+    if (activeIndex < 0) { userScrollUntil.current = 0; box.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    if (Date.now() < userScrollUntil.current) return;
     const el = box.querySelector(`[data-index="${activeIndex}"]`);
     if (el) box.scrollTo({ top: el.offsetTop - box.clientHeight / 2 + el.offsetHeight / 2, behavior: 'smooth' });
   }, [activeIndex]);
 
   if (!parsed.lines.length) {
-    return <div className="lyrics-empty">No lyrics in this file's metadata.</div>;
+    return <div className="lyrics-empty">No lyrics for this track yet.</div>;
   }
 
   return (

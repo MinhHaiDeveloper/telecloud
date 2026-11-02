@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Icon from './Icon';
+import MetaLinks from './MetaLinks';
 import Cover from './Cover';
 import SignalPathSteps from './SignalPathSteps';
 import QueueList from './QueueList';
@@ -45,7 +46,7 @@ const PlayerBar = ({
         </button>
         <div className="meta">
           <b>{currentFile?.metadata?.title || currentFile?.name || 'Nothing playing'}</b>
-          <span>{currentFile ? (currentFile.metadata?.artist || 'Unknown artist') : 'Pick a track to start'}</span>
+          <span>{currentFile ? <MetaLinks file={currentFile} /> : 'Pick a track to start'}</span>
         </div>
         {currentFile && (
           <button

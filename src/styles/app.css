@@ -427,7 +427,7 @@
 .mini .cover { width: 42px; height: 42px; border-radius: 8px; }
 .mini .meta { flex: 1; min-width: 0; }
 .mini .meta b { display: block; font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mini .meta span { display: block; font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini .meta > span { display: block; font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ===== Player bar ===== */
 .player {
@@ -448,7 +448,7 @@
 .p-track .cover { width: 52px; height: 52px; border-radius: 8px; }
 .p-track .meta { min-width: 0; }
 .p-track b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.p-track span { display: block; font-size: 12px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.p-track .meta > span { display: block; font-size: 12px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .p-center { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .p-controls { display: flex; align-items: center; justify-content: center; gap: 14px; }
 .p-controls .icon-btn { width: 34px; height: 34px; position: relative; }
@@ -515,8 +515,12 @@
   position: fixed; left: 50%; bottom: calc(var(--player-h) + 24px); transform: translateX(-50%);
   z-index: 1000; padding: 10px 18px; border-radius: 999px; font-weight: 700; font-size: 13px;
   background: var(--text); color: var(--bg-app); box-shadow: var(--shadow);
-  display: flex; align-items: center; gap: 8px; animation: riseIn .25s var(--ease-out);
+  display: flex; align-items: center; gap: 8px; animation: toastIn .32s var(--ease-out) both;
 }
+/* centred above the mini player: fades in rising up, fades out sinking back */
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 14px) scale(.98); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes toastOut { from { opacity: 1; transform: translate(-50%, 0); } to { opacity: 0; transform: translate(-50%, 10px) scale(.98); } }
+.toast.leaving { animation: toastOut .26s var(--ease-out) both; pointer-events: none; }
 .toast .ico { width: 16px; height: 16px; }
 .toast.error { background: var(--danger); color: #fff; }
 .toast.info { background: var(--surface-hover); color: var(--text); }
@@ -524,7 +528,21 @@
   position: fixed; right: 24px; bottom: calc(var(--player-h) + 20px); z-index: 900;
   display: flex; flex-direction: column; gap: 10px; width: 300px;
 }
-.float-card { padding: 14px 16px; box-shadow: var(--shadow); animation: slideIn .3s var(--ease-out); }
+.float-card { padding: 14px 16px; box-shadow: var(--shadow); animation: floatIn .38s var(--ease-out) both; }
+/* scan / refresh / download cards: drift in from the screen edge, drift back out when done */
+@keyframes floatIn { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes floatOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(28px); } }
+.float-card.leaving { animation: floatOut .3s var(--ease-out) both; pointer-events: none; }
+.meta-link { cursor: pointer; border-radius: 3px; transition: color .15s; }
+.meta-link:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.meta-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.disc-head {
+  height: 56px; display: flex; align-items: flex-end; gap: 10px; padding: 0 12px 10px;
+  border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.disc-head b { font-weight: 800; font-size: 14px; }
+.disc-head span:last-child { color: var(--text-3); font-size: 12px; }
+.disc-ico { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--accent); box-shadow: inset 0 0 0 3px var(--bg-app), inset 0 0 0 5px var(--accent); align-self: center; margin-bottom: -10px; }
 .float-card .row { display: flex; align-items: center; gap: 10px; }
 .float-card b { font-size: 13px; }
 .float-card small { display: block; font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

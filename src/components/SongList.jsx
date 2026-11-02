@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, useContext } from 'react';
 import Icon from './Icon';
 import Cover from './Cover';
 import SongActions from './songActions';
+import MetaLinks from './MetaLinks';
 import { formatTime, qualityOf, storageOf } from '../utils/audio';
 import { SOURCE_HELP, QUALITY_HELP } from '../utils/badges';
 
@@ -12,6 +13,7 @@ const SORTS = [
   { id: 'artist', label: 'Artist' },
   { id: 'album', label: 'Album' },
   { id: 'quality', label: 'Quality' },
+  { id: 'plays', label: 'Most played' },
 ];
 
 const SRC_BADGE = {
@@ -102,6 +104,7 @@ const SongList = ({
   onDeleteSong, onDownloadSong, favorites = [], title, subtitle, showSort = false, onInfoClick, deleteLabel = 'Delete from library',
   onBackupTo: backupToProp, storageNames: storageNamesProp, headerActions, toolbar, onBackupMany: backupManyProp, onRemoveFromCloud: removeFromCloudProp,
   onQueueMany: queueManyProp, onFavoriteMany: favoriteManyProp, onDeleteMany: deleteManyProp,
+  linkAlbum = true, groupDiscs = false,
 }) => {
   const ctx = useContext(SongActions);
   const onAddPlaylist = addPlaylistProp || ctx.onAddPlaylist;
@@ -152,12 +155,28 @@ const SongList = ({
       case 'artist': return list.sort((a, b) => (a.metadata?.artist || 'Unknown').localeCompare(b.metadata?.artist || 'Unknown'));
       case 'album': return list.sort((a, b) => (a.metadata?.album || 'Unknown').localeCompare(b.metadata?.album || 'Unknown'));
       case 'quality': return list.sort((a, b) => qualityRank(b) - qualityRank(a));
+      case 'plays': { const n = ctx.playCounts || {}; return list.sort((a, b) => (n[b.path] || 0) - (n[a.path] || 0)); }
       case 'latest': return list.reverse();
       default: return list;
     }
-  }, [musicFiles, sortOption]);
+  }, [musicFiles, sortOption, sortOption === 'plays' ? ctx.playCounts : null]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { start, end } = useRowWindow(rowsRef, sorted.length);
+  // An album with several discs gets a "Disc N" header row before each disc (in track order only)
+  const items = useMemo(() => {
+    const discs = groupDiscs && sortOption === 'default' ? new Set(sorted.map(f => f.metadata?.disc || 1)) : null;
+    if (!discs || discs.size < 2) return sorted.map((file, idx) => ({ file, idx }));
+    const out = [];
+    let disc = null;
+    sorted.forEach((file, idx) => {
+      const d = file.metadata?.disc || 1;
+      if (d !== disc) { disc = d; out.push({ disc: d, count: sorted.filter(f => (f.metadata?.disc || 1) === d).length }); }
+      out.push({ file, idx });
+    });
+    return out;
+  }, [sorted, groupDiscs, sortOption]);
+  const numbered = items.length !== sorted.length; // disc view: show each track's own number
+
+  const { start, end } = useRowWindow(rowsRef, items.length);
 
   // tracks that left the list (deleted, filtered out) leave the selection too
   useEffect(() => {
@@ -259,9 +278,16 @@ const SongList = ({
             <span className="t-num">#</span><span>Title</span><span className="c-album">Album</span>
             <span>Quality</span><span className="c-src src-head">Source<SourceInfo /></span><span style={{ textAlign: 'right' }}>Time</span><span />
           </div>
-          <div className="track-rows" ref={rowsRef} style={{ paddingTop: start * ROW_H, height: sorted.length * ROW_H }}>
-          {sorted.slice(start, end).map((file, i) => {
-            const idx = start + i;
+          <div className="track-rows" ref={rowsRef} style={{ paddingTop: start * ROW_H, height: items.length * ROW_H }}>
+          {items.slice(start, end).map((item) => {
+            if (!item.file) {
+              return (
+                <div key={`disc-${item.disc}`} className="disc-head">
+                  <span className="disc-ico" aria-hidden="true" /><b>Disc {item.disc}</b><span>{item.count} {item.count === 1 ? 'track' : 'tracks'}</span>
+                </div>
+              );
+            }
+            const { file, idx } = item;
             const active = currentFile?.path === file.path;
             const fav = favSet.has(file.path);
             const q = qualityOf(file);
@@ -277,16 +303,16 @@ const SongList = ({
                 <span className="t-num">
                   {active
                     ? <span className={`eq-bars ${isPlaying ? '' : 'paused'}`}><i /><i /><i /></span>
-                    : idx + 1}
+                    : (numbered && file.metadata?.track) || idx + 1}
                 </span>
                 <div className="t-main">
                   <Cover file={file} key={file.path + (file.cache_path || '')} />
                   <div className="t-text">
                     <div className="t-title">{titleOf(file)}</div>
-                    <div className="t-artist">{file.metadata?.artist || 'Unknown artist'}</div>
+                    <div className="t-artist"><MetaLinks file={file} album={false} /></div>
                   </div>
                 </div>
-                <span className="t-album c-album">{file.metadata?.album || '—'}</span>
+                <span className="t-album c-album">{linkAlbum ? (<MetaLinks file={file} artist={false} />) : (file.metadata?.album || '—')}{linkAlbum && (!file.metadata?.album || file.metadata.album === 'Unknown Album') && '—'}</span>
                 <span><span className={`badge b-${q.tier} mono`}>{q.label}</span></span>
                 <span className="t-src c-src" title={file.telegram_message_id && storageNames ? `In ${storageNames.get(String(file.telegram_channel_id)) || 'TeleCloud'}` : undefined}>{storageOf(file).map(s => SRC_BADGE[s])}</span>
                 <span className="t-dur mono">{formatTime(file.metadata?.duration)}</span>
@@ -313,6 +339,8 @@ const SongList = ({
           {onAddPlaylist && <button className="menu-item" onClick={() => act(onAddPlaylist)}><Icon name="playlist" />Add to playlist</button>}
           {onCheckSpectrum && <button className="menu-item" onClick={() => act(onCheckSpectrum)}><Icon name="spectrum" />Check spectrum</button>}
           {onBackupTo && <button className="menu-item" onClick={() => act(onBackupTo)}><Icon name="cloud" />{menuFile.telegram_message_id ? `In ${storageNames?.get(String(menuFile.telegram_channel_id)) || 'TeleCloud'} · move…` : 'Back up to…'}</button>}
+          {ctx.onEditInfo && <button className="menu-item" onClick={() => { const f = menuFile; setMenu(null); ctx.onEditInfo([f]); }}><Icon name="music" />Edit info…</button>}
+          {ctx.onEditLyrics && <button className="menu-item" onClick={() => act(ctx.onEditLyrics)}><Icon name="lyrics" />Lyrics…</button>}
           {onDownloadSong && <button className="menu-item" onClick={() => act(onDownloadSong)}><Icon name="download" />Download</button>}
           {onRemoveFromCloud && menuFile.telegram_message_id && <button className="menu-item danger" onClick={() => { const f = menuFile; setMenu(null); onRemoveFromCloud([f]); }}><Icon name="cloud" />Remove from TeleCloud</button>}
           {onDeleteSong && <>
@@ -328,6 +356,7 @@ const SongList = ({
           <button className="btn-ghost sm" onClick={() => onPlay(selectedFiles[0], 0, selectedFiles)}><Icon name="play" />Play</button>
           {onQueueMany && <button className="btn-ghost sm" onClick={() => onQueueMany(selectedFiles)}><Icon name="queue" />Add to queue</button>}
           {onAddPlaylist && <button className="btn-ghost sm" onClick={() => onAddPlaylist(selectedFiles[0], selectedFiles)}><Icon name="playlist" />Add to playlist</button>}
+          {ctx.onEditInfo && <button className="btn-ghost sm" onClick={() => ctx.onEditInfo(selectedFiles)}><Icon name="music" />Edit info</button>}
           {onFavoriteMany && (() => {
             const allFav = selectedFiles.every(f => favSet.has(f.path));
             return <button className={`icon-btn sm ${allFav ? 'on' : ''}`} onClick={() => onFavoriteMany(selectedFiles, !allFav)} title={allFav ? 'Remove from favourites' : 'Add to favourites'}><Icon name="heart" filled={allFav} /></button>;

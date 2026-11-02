@@ -1,5 +1,8 @@
-import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useContext } from 'react';
+import SongActions from './songActions';
 import Icon from './Icon';
+import MetaLinks from './MetaLinks';
+import LyricsNote from './LyricsNote';
 import Cover from './Cover';
 import LyricsView, { parseLyrics } from './LyricsView';
 import QueueList from './QueueList';
@@ -97,7 +100,22 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, onSeek, signal, queueF
   const [panel, setPanel] = useState(initialPanel !== undefined ? initialPanel : (hasLyrics ? 'lyrics' : null));
   const [phase, setPhase] = useState('entering'); // entering → open → leaving
   const rootRef = useRef(null);
+  const { playCounts } = useContext(SongActions);
   const closingRef = useRef(false);
+  // Cover only: everything else (top bar, text, panels, the player bar) fades away
+  const [coverOnly, setCoverOnly] = useState(false);
+  const [peek, setPeek] = useState(false); // the "show all" button while the mouse moves
+  useEffect(() => {
+    document.documentElement.classList.toggle('np-cover-only', coverOnly);
+    return () => document.documentElement.classList.remove('np-cover-only');
+  }, [coverOnly]);
+  useEffect(() => {
+    if (!coverOnly) return undefined;
+    let t = null;
+    const move = () => { setPeek(true); clearTimeout(t); t = setTimeout(() => setPeek(false), 1800); };
+    window.addEventListener('mousemove', move);
+    return () => { window.removeEventListener('mousemove', move); clearTimeout(t); setPeek(false); };
+  }, [coverOnly]);
 
   // Opening: the big cover grows out of the small artwork that was clicked
   useLayoutEffect(() => {
@@ -127,8 +145,9 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, onSeek, signal, queueF
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') requestClose();
+      if (e.key === 'Escape') { if (document.documentElement.classList.contains('np-cover-only')) setCoverOnly(false); else requestClose(); return; }
       if (e.target.tagName === 'INPUT' || e.ctrlKey || e.altKey) return;
+      if (e.key.toLowerCase() === 'h') setCoverOnly(v => !v);
       if (e.key.toLowerCase() === 'l') setPanel(p => (p === 'lyrics' ? null : 'lyrics'));
       if (e.key.toLowerCase() === 'q') setPanel(p => (p === 'queue' ? null : 'queue'));
     };
@@ -144,12 +163,18 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, onSeek, signal, queueF
     m.genre && { label: 'Genre', value: m.genre },
     m.track ? { label: 'Track', value: m.disc > 1 ? `${m.disc}-${m.track}` : m.track } : null,
     m.duration && { label: 'Length', value: formatTime(m.duration) },
+    { label: 'Plays', value: (playCounts || {})[currentFile?.path] || 0 },
     m.bitrate && { label: 'Bitrate', value: `${Math.round(m.bitrate / 1000).toLocaleString()} kbps` },
     currentFile?.size && { label: 'Size', value: formatBytes(currentFile.size) },
   ].filter(Boolean);
 
   return (
-    <section ref={rootRef} className={`np-full ${panel ? 'with-panel' : ''} np-${phase}`} aria-label="Now playing">
+    <section ref={rootRef} className={`np-full ${panel ? 'with-panel' : ''} np-${phase} ${coverOnly ? 'cover-only' : ''}`} aria-label="Now playing">
+      {coverOnly && (
+        <button className={`np-reveal ${peek ? 'show' : ''}`} onClick={() => setCoverOnly(false)} title="Show everything (H or Esc)">
+          <Icon name="eye" />
+        </button>
+      )}
       <div className="np-backdrop">
         <Cover file={currentFile} className="np-bg" key={`bg-${currentFile?.path}`} />
       </div>
@@ -161,6 +186,9 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, onSeek, signal, queueF
           <b>{m.album || 'Unknown album'}</b>
         </div>
         <div className="np-top-actions">
+          <button className="np-pill icon-only" onClick={() => setCoverOnly(true)} title="Cover only (H)">
+            <Icon name="eyeOff" />
+          </button>
           <button className={`np-pill ${panel === 'lyrics' ? 'on' : ''}`} onClick={() => toggle('lyrics')} title="Lyrics (L)">
             <Icon name="lyrics" />Lyrics
           </button>
@@ -175,7 +203,7 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, onSeek, signal, queueF
           <Cover file={currentFile} className="np-cover" key={`c-${currentFile?.path}`} />
           <div className="np-info np-fade">
             <h1 title={m.title || currentFile?.name}>{m.title || currentFile?.name || 'Nothing playing'}</h1>
-            <div className="np-sub">{[m.artist, m.album].filter(Boolean).join(' · ')}</div>
+            <div className="np-sub"><MetaLinks file={currentFile} /></div>
             {currentFile && (
               <div className="np-badges">
                 <span className={`badge b-${q.tier} mono`}>{q.label}</span>
@@ -194,12 +222,13 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, onSeek, signal, queueF
         <div className="np-panel np-fade">
           <div className="np-panel-inner">
             {panel === 'lyrics' && (hasLyrics
-              ? <LyricsView lyrics={m.lyrics} currentTime={currentTime} onSeek={onSeek} className="np-lyrics" />
+              ? <><LyricsView lyrics={m.lyrics} currentTime={currentTime} onSeek={onSeek} className="np-lyrics" /><LyricsNote file={currentFile} /></>
               : (
                 <div className="np-empty">
                   <Icon name="lyrics" />
                   No lyrics for this track
-                  <small>Add a LYRICS tag (plain or synced LRC) to the file and run a refresh.</small>
+                  <small>Search the lyrics sources, or type them in.</small>
+                  <LyricsNote file={currentFile} />
                 </div>
               ))}
             {panel === 'queue' && (

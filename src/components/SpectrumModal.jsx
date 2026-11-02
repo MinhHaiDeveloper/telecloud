@@ -29,11 +29,40 @@ const VERDICT_STYLE = {
   info: { icon: 'info', tone: 'info' },
 };
 
+// What the analysis does and how each verdict is reached (mirrors electron/spectrumCore.js)
+const SpectrumHelp = () => (
+  <div className="spec-help">
+    <section>
+      <b>How it's measured</b>
+      <p>The whole file is decoded and cut into short overlapping slices. Each slice goes through an FFT, which splits it into frequencies: every column of the picture is one moment, every row one frequency, and brighter means louder (from −120 to 0 dBFS).</p>
+      <p>The levels are then averaged over the entire track. The <b>cutoff</b> (white line) is the highest frequency that stays clearly above the noise floor for a stretch of at least 400 Hz. A cutoff is <b>sharp</b> when the level drops by more than 25 dB within about 1 kHz above it, which is what an encoder's low-pass filter does.</p>
+      <p>Bit depth is checked separately: the samples are inspected to see how many of the declared bits ever change.</p>
+    </section>
+    <section>
+      <b>What the results mean</b>
+      <dl>
+        <dt className="ok">Lossless, full range</dt><dd>Content reaches at least 93% of the limit for this sample rate (about 20.5 kHz at 44.1 kHz) with no brick wall. What you expect from a CD rip or a real hi-res file.</dd>
+        <dt className="bad">Lossy source</dt><dd>A sharp cutoff between 10 and 20.8 kHz in a lossless file: it was most likely made from an MP3 or AAC. Rough guide: ~16 kHz ≈ 128 kbps, ~19 kHz ≈ 192, ~19.5 kHz ≈ 256, ~20 kHz ≈ 320. It can look perfect elsewhere and still be lossy.</dd>
+        <dt className="bad">Upsampled</dt><dd>A sample rate above 48 kHz with nothing above about 24.5 kHz: the music was made at 44.1 or 48 kHz and converted up. It sounds the same as the original, it is just bigger.</dd>
+        <dt className="bad">Padded bit depth</dt><dd>Declared 24-bit, but only 16 bits ever carry data: 16-bit audio stored in a 24-bit container.</dd>
+        <dt className="warn">Gradual roll-off</dt><dd>The highs fade out slowly instead of stopping. Common for older or analogue recordings and gentle masters; not a sign of lossy encoding on its own.</dd>
+        <dt>Lossy by design</dt><dd>MP3, AAC, Opus and Vorbis files are expected to stop early; the cutoff shows roughly which bitrate.</dd>
+      </dl>
+    </section>
+    <section>
+      <b>Limits</b>
+      <p>This is strong evidence, not proof. A high-bitrate AAC or 320 kbps MP3 can reach 20 kHz, some masters are filtered on purpose, and very quiet or very short tracks give weaker readings.</p>
+    </section>
+  </div>
+);
+
 const SpectrumModal = ({ file, onClose }) => {
   const canvasRef = useRef(null);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [pct, setPct] = useState(0);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showLine, setShowLine] = useState(() => { try { return localStorage.getItem("spec-line") !== "0"; } catch { return true; } });
 
   useEffect(() => {
     if (!file) return undefined;
@@ -85,6 +114,7 @@ const SpectrumModal = ({ file, onClose }) => {
 
   if (!file) return null;
   const q = qualityOf(file);
+  const toggleLine = () => setShowLine(v => { try { localStorage.setItem('spec-line', v ? '0' : '1'); } catch { /* private storage */ } return !v; });
   const duration = result?.duration || file.metadata?.duration || 0;
   const v = result?.verdict;
   const style = v ? VERDICT_STYLE[v.level] || VERDICT_STYLE.info : null;
@@ -98,7 +128,16 @@ const SpectrumModal = ({ file, onClose }) => {
           {file.metadata?.bitrate > 0 && <span className="badge b-lossy mono">{Math.round(file.metadata.bitrate / 1000)} kbps</span>}
           {result?.effectiveBits && <span className="badge b-lossy mono">{result.effectiveBits}-bit used</span>}
           {result && <span className="badge b-lossy mono">FFT {result.fftSize}</span>}
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            <button className={`btn-ghost sm ${showLine ? 'on' : ''}`} onClick={toggleLine} title="The white line marks where the content stops">
+              <Icon name={showLine ? 'eye' : 'eyeOff'} />Cutoff line
+            </button>
+            <button className={`btn-ghost sm ${showHelp ? 'on' : ''}`} onClick={() => setShowHelp(v => !v)} aria-expanded={showHelp}>
+              <Icon name="info" />How it's measured
+            </button>
+          </span>
         </div>
+        {showHelp && <SpectrumHelp />}
         <div className="meta">{file.path}</div>
 
         {v && (
@@ -118,7 +157,7 @@ const SpectrumModal = ({ file, onClose }) => {
           </div>
           <div className="spec-canvas" style={{ background: '#000004' }}>
             <canvas ref={canvasRef} style={{ opacity: result ? 1 : 0, imageRendering: 'auto' }} />
-            {result && result.cutoffHz < nyq * 0.97 && (
+            {showLine && result && result.cutoffHz < nyq * 0.97 && (
               <div className="spec-cutoff" style={{ top: `${(1 - result.cutoffHz / nyq) * 100}%` }}>
                 <span>{(result.cutoffHz / 1000).toFixed(1)} kHz</span>
               </div>
