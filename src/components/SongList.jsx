@@ -174,7 +174,8 @@ const SongList = ({
     });
     return out;
   }, [sorted, groupDiscs, sortOption]);
-  const numbered = items.length !== sorted.length; // disc view: show each track's own number
+  // album view in track order: show each track's own number (a missing track keeps its gap)
+  const numbered = groupDiscs && sortOption === 'default';
 
   const { start, end } = useRowWindow(rowsRef, items.length);
 

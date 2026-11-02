@@ -42,7 +42,8 @@ const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavori
     // the album as it is in the library now (tracks change while it is open: cached, tagged, removed)
     const current = albums.find(a => a.name === selectedAlbum.name) || selectedAlbum;
     const songs = [...current.songs].sort((a, b) => {
-      const da = a.metadata?.disc || 0, db = b.metadata?.disc || 0;
+      // no disc number means disc 1 (only some tracks of an album often carry one)
+      const da = a.metadata?.disc || 1, db = b.metadata?.disc || 1;
       if (da !== db) return da - db;
       const ta = a.metadata?.track || 0, tb = b.metadata?.track || 0;
       return ta !== tb ? ta - tb : (a.name || '').localeCompare(b.name || '');
