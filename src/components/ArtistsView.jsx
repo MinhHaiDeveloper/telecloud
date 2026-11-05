@@ -50,12 +50,12 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
   }, [musicFiles, sortBy]);
 
   const selected = selectedName ? artists.find(a => a.name === selectedName) : null;
-  // the grid can be limited to album artists; pages of everyone else stay reachable from their tracks
+  // the grid shows album artists by default; pages of everyone else stay reachable from their tracks
   const shown = useMemo(() => {
-    if (!ctx.onlyAlbumArtists) return artists;
+    if (ctx.artistFilter === 'all') return artists;
     const owners = new Set(albumIndex(musicFiles).list.flatMap(a => [...a.owners]));
     return artists.filter(a => owners.has(a.name.toLowerCase()));
-  }, [artists, ctx.onlyAlbumArtists, musicFiles]);
+  }, [artists, ctx.artistFilter, musicFiles]);
 
   if (selected) {
     const songs = ctx.dedupe ? ctx.dedupe(selected.songs) : selected.songs;
@@ -137,10 +137,25 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
       <div className="page-head">
         <h2>Artists</h2>
         <span className="sub">{shown.length.toLocaleString()} artists</span>
-        <div className="end"><Select variant="ghost" icon="sort" align="right" value={sortBy} options={SORTS} onChange={setSortBy} /></div>
+        <div className="end">
+          <Segmented
+            size="sm"
+            value={ctx.artistFilter === 'all' ? 'all' : 'album'}
+            onChange={(v) => { ctx.setArtistFilter?.(v); const view = document.querySelector('.view'); if (view) view.scrollTop = 0; }}
+            options={[{ value: 'album', label: 'Album artists' }, { value: 'all', label: 'All artists' }]}
+          />
+          <Select variant="ghost" icon="sort" align="right" value={sortBy} options={SORTS} onChange={setSortBy} />
+        </div>
       </div>
       {shown.length === 0 ? (
-        <div className="empty">No artists in your library yet.</div>
+        <div className="empty">
+          {artists.length === 0 ? 'No artists in your library yet.' : (
+            <>
+              <div>No album artists here yet. The artists in your library are only on compilations.</div>
+              <button className="btn-ghost" style={{ marginTop: 12 }} onClick={() => ctx.setArtistFilter?.('all')}>Show all artists</button>
+            </>
+          )}
+        </div>
       ) : (
         <div className="tile-grid">
           {shown.map(artist => (

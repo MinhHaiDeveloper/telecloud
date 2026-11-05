@@ -192,7 +192,7 @@ async function search(track, { all = false, sources } = {}) {
       // what is on this computer wins; online, keep looking while only unsynced lyrics were found
       if (!all && found.some(r => r.score >= 0.7 && (r.synced || !SOURCES[id].online))) break;
     } catch (err) {
-      errors[id] = err.name === 'AbortError' ? 'timed out' : err.message;
+      errors[id] = err.name === 'AbortError' ? 'timed out' : err.message === 'fetch failed' ? 'could not connect' : err.message;
     }
   }
   if (!all) results.sort((a, b) => goodSynced(b) - goodSynced(a)); // the sort keeps source order otherwise

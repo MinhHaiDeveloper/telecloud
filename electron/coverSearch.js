@@ -201,7 +201,7 @@ async function search(q, { all = false, auto = false } = {}) {
       found.sort((a, b) => b.score - a.score);
       return found;
     } catch (err) {
-      errors[id] = err.name === 'AbortError' ? 'timed out' : err.message;
+      errors[id] = err.name === 'AbortError' ? 'timed out' : err.message === 'fetch failed' ? 'could not connect' : err.message;
       return [];
     }
   };

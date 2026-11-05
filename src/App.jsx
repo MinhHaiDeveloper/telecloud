@@ -107,9 +107,10 @@ function App() {
     await window.ipcRenderer.invoke('save-store', 'settings', { ...(Array.isArray(s) ? {} : s), ...patch });
   };
   const setSkipDuplicates = (v) => { setSkipDuplicatesState(v); return saveSetting({ skipDuplicates: v }); };
-  const [onlyAlbumArtists, setOnlyAlbumArtistsState] = useState(false);
-  useEffect(() => { window.ipcRenderer.invoke('load-store', 'settings').then(s => { if (s?.onlyAlbumArtists) setOnlyAlbumArtistsState(true); }).catch(() => {}); }, []);
-  const setOnlyAlbumArtists = (v) => { setOnlyAlbumArtistsState(v); return saveSetting({ onlyAlbumArtists: v }); };
+  // the Artists page: album artists only ('album', the default) or everyone credited ('all')
+  const [artistFilter, setArtistFilterState] = useState('album');
+  useEffect(() => { window.ipcRenderer.invoke('load-store', 'settings').then(s => { if (s?.artistFilter === 'all') setArtistFilterState('all'); }).catch(() => {}); }, []);
+  const setArtistFilter = (v) => { setArtistFilterState(v); return saveSetting({ artistFilter: v }); };
   const [theme, setTheme] = useState(() => readPref('tc-theme') || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
 
   // New shell UI state
@@ -1160,7 +1161,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     onQueueMany: handleQueueMany, onFavoriteMany: handleFavoriteMany, onDeleteMany: handleDeleteMany,
     openAlbum, openArtist, playCounts,
     duplicates, skipDuplicates, setSkipDuplicates, openDuplicates: () => navigate('duplicates'),
-    onlyAlbumArtists, setOnlyAlbumArtists,
+    artistFilter, setArtistFilter,
     dedupe: skipDuplicates ? (list) => dedupeTracks(list) : null,
     countUnique: (list) => (skipDuplicates ? list.filter(f => !duplicates.has(f.path)).length : list.length),
     onEditLyrics: (file) => setLyricsFile(file), lyricsFound,

@@ -6,7 +6,6 @@ import CoverSettings from './CoverSettings';
 import LastfmSettings from './LastfmSettings';
 import UpdateStatus from './UpdateStatus';
 import DuplicatesSettings from './DuplicatesSettings';
-import ArtistsSettings from './ArtistsSettings';
 import PerformanceSettings from './PerformanceSettings';
 import { Toggle, Segmented, Select, SettingRow, Callout, Dialog, alertDialog } from './ui';
 import useSlidingIndicator from '../hooks/useSlidingIndicator';
@@ -300,7 +299,6 @@ const SettingsView = ({
                 </SettingRow>
               </div>
             </section>
-            <ArtistsSettings />
             <DuplicatesSettings />
           </>
         );
