@@ -104,7 +104,7 @@ const MetadataDialog = ({ files, onClose, onDone }) => {
                 <input
                   className={`input ${values[f.key] === MIXED ? 'mixed' : ''}`}
                   value={values[f.key] === MIXED ? '' : values[f.key]}
-                  placeholder={values[f.key] === MIXED ? 'Multiple values (unchanged)' : ''}
+                  placeholder={values[f.key] === MIXED ? 'Multiple values (unchanged)' : (!many && files[0].metadata?.inferred?.includes(f.key) ? `Not in the file. Showing: ${files[0].metadata[f.key]}` : '')}
                   inputMode={['year', 'track', 'disc'].includes(f.key) ? 'numeric' : undefined}
                   onChange={(e) => { setValues(v => ({ ...v, [f.key]: e.target.value })); setTouched(t => ({ ...t, [f.key]: true })); }}
                 />

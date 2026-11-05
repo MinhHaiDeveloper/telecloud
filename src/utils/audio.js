@@ -1,3 +1,4 @@
+import { albumIndex, albumArtistsOf, splitArtists, UNKNOWN_ALBUM } from './albums';
 // Shared helpers for presenting tracks: time, quality labels, storage badges, signal path
 
 export const formatTime = (sec) => {
@@ -38,23 +39,23 @@ export const coverUrl = (file) => {
   const rev = coverRevisions.get(file.path);
   return `media://${encodeURIComponent(file.path)}${rev ? `?r=${rev}` : ''}`;
 };
-const firstCredit = (a) => (a || '').split(/,|;|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+/i)[0].trim();
-const folderOf = (p) => p.replace(/[\\/][^\\/]*$/, '');
-const hasAlbum = (f) => { const a = f?.metadata?.album; return !!a && a !== 'Unknown Album'; };
+const firstCredit = (a) => splitArtists(a)[0] || '';
+const hasAlbum = (f) => { const a = f?.metadata?.album; return !!a && a !== UNKNOWN_ALBUM; };
 /** Every track a cover applies to: the album (including copies elsewhere), or just the given tracks when they span albums */
 export const coverTargets = (files, all) => {
   if (!files?.length) return [];
-  const album = files[0].metadata?.album;
-  if (!hasAlbum(files[0]) || files.some(f => f.metadata?.album !== album)) return files;
-  const artists = new Set(files.map(f => firstCredit(f.metadata?.artist).toLowerCase()));
-  const folders = new Set(files.map(f => folderOf(f.path)));
-  const extra = (all || []).filter(f => f.metadata?.album === album && (folders.has(folderOf(f.path)) || artists.has(firstCredit(f.metadata?.artist).toLowerCase())));
-  return [...new Map([...files, ...extra].map(f => [f.path, f])).values()];
+  if (!all || !hasAlbum(files[0])) return files;
+  const idx = albumIndex(all);
+  const album = idx.byPath.get(files[0].path);
+  if (!album || files.some(f => idx.byPath.get(f.path) !== album)) return files;
+  return album.songs;
 };
 /** Album and main artist to search for ("Various" albums search by name only) */
 export const albumQuery = (files) => {
   const first = files?.[0];
   if (!first) return { album: '', artist: '' };
+  const tagged = albumArtistsOf(first)[0];
+  if (tagged) return { album: hasAlbum(first) ? first.metadata.album : '', artist: /^various/i.test(tagged) ? '' : tagged };
   const counts = new Map();
   files.forEach(f => { const a = firstCredit(f.metadata?.artist); if (a && a !== 'Unknown Artist') counts.set(a, (counts.get(a) || 0) + 1); });
   const [top, n] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0] || ['', 0];

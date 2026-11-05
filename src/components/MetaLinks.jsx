@@ -1,8 +1,8 @@
 import React, { useContext } from 'react';
 import SongActions from './songActions';
+import { artistsOf, splitArtists } from '../utils/albums';
 
-// "A, B & C feat. D" → each artist on its own (the Artists page counts them the same way)
-export const splitArtists = (s) => (s || '').split(/,|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+/i).map(a => a.trim()).filter(Boolean);
+export { splitArtists };
 
 // Text that opens a page when clicked. Ctrl/Shift clicks fall through to the row (track selection).
 const Link = ({ children, onOpen }) => (
@@ -21,7 +21,7 @@ const Link = ({ children, onOpen }) => (
 const MetaLinks = ({ file, album = true, artist = true, fallback = 'Unknown artist' }) => {
   const { openArtist, openAlbum } = useContext(SongActions);
   const m = file?.metadata || {};
-  const artists = splitArtists(m.artist).filter(a => a !== 'Unknown Artist');
+  const artists = artistsOf(file).filter(a => a !== 'Unknown Artist');
   const parts = [];
   if (artist) {
     if (!artists.length) parts.push(<React.Fragment key="a">{fallback}</React.Fragment>);
@@ -31,7 +31,7 @@ const MetaLinks = ({ file, album = true, artist = true, fallback = 'Unknown arti
   }
   if (album && m.album && m.album !== 'Unknown Album') {
     parts.push(
-      <React.Fragment key="al">{parts.length > 0 && ' · '}{openAlbum ? <Link onOpen={() => openAlbum(m.album)}>{m.album}</Link> : m.album}</React.Fragment>,
+      <React.Fragment key="al">{parts.length > 0 && ' · '}{openAlbum ? <Link onOpen={() => openAlbum(file)}>{m.album}</Link> : m.album}</React.Fragment>,
     );
   }
   return <>{parts}</>;

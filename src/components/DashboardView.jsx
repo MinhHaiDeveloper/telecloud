@@ -208,7 +208,7 @@ const DashboardView = ({ musicFiles, onPlay }) => {
             <div className="dash-head"><b>Top albums</b></div>
             <div className="dash-albums">
               {(data?.topAlbums || []).map(a => (
-                <button key={`${a.name}-${a.artist}`} className="dash-album" onClick={() => openAlbum?.(a.name)}>
+                <button key={`${a.name}-${a.artist}`} className="dash-album" onClick={() => openAlbum?.(byPath.get(a.path) || a.name)}>
                   <Cover file={byPath.get(a.path) || null} />
                   <b>{a.name}</b>
                   <span>{a.plays} {a.plays === 1 ? 'play' : 'plays'}</span>

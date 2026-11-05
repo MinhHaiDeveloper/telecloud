@@ -77,7 +77,7 @@ function createSchema() {
     }
 
     // Library: file name/extension and codec details
-    for (const col of ['name TEXT', 'ext TEXT', 'codec TEXT', 'lossless INTEGER', 'cloud_cover TEXT']) {
+    for (const col of ['name TEXT', 'ext TEXT', 'codec TEXT', 'lossless INTEGER', 'cloud_cover TEXT', 'album_artist TEXT']) {
         try { db.exec(`ALTER TABLE music_files ADD COLUMN ${col}`); } catch (e) { /* exists */ }
     }
 
@@ -153,11 +153,11 @@ function getFileByPath(filePath) {
  */
 const UPSERT_SQL = `
     INSERT INTO music_files (
-      path, name, ext, mtime, size, title, artist, album, year, genre,
+      path, name, ext, mtime, size, title, artist, album, album_artist, year, genre,
       track_number, disc_number, duration, bitrate, sample_rate, bit_depth,
       codec, lossless, lyrics, cover, has_cover, cover_hash, last_scanned, created_at
     ) VALUES (
-      @path, @name, @ext, @mtime, @size, @title, @artist, @album, @year, @genre,
+      @path, @name, @ext, @mtime, @size, @title, @artist, @album, @albumArtist, @year, @genre,
       @trackNumber, @discNumber, @duration, @bitrate, @sampleRate, @bitDepth,
       @codec, @lossless, @lyrics, @cover, @hasCover, @coverHash, @lastScanned, @addedAt
     )
@@ -171,6 +171,7 @@ const UPSERT_SQL = `
       title = @title,
       artist = @artist,
       album = @album,
+      album_artist = @albumArtist,
       year = @year,
       genre = @genre,
       track_number = @trackNumber,
@@ -197,6 +198,8 @@ function upsertParams(fileData) {
         title: fileData.title || null,
         artist: fileData.artist || null,
         album: fileData.album || null,
+        // null: not read yet (older library); '' : the file has no such tag
+        albumArtist: fileData.albumArtist ?? null,
         year: fileData.year || null,
         genre: fileData.genre || null,
         trackNumber: fileData.trackNumber || null,

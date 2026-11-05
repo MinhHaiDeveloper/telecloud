@@ -13,7 +13,7 @@ const clip = (v, n = 120) => (typeof v === 'string' ? v.slice(0, n) : v);
 /** Track info kept with the file (enough to show it in the library without downloading it) */
 function trackInfo(row) {
   return {
-    title: clip(row.title), artist: clip(row.artist), album: clip(row.album), albumArtist: clip(row.albumArtist),
+    title: clip(row.title), artist: clip(row.artist), album: clip(row.album), albumArtist: clip(row.album_artist || row.albumArtist),
     year: row.year || null, genre: clip(row.genre, 60), track: row.track_number || row.trackNumber || null,
     disc: row.disc_number || row.discNumber || null, duration: row.duration || null, bitrate: row.bitrate || null,
     sampleRate: row.sample_rate || row.sampleRate || null, bitDepth: row.bit_depth || row.bitDepth || null,

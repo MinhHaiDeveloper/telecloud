@@ -3,21 +3,19 @@ import Icon from './Icon';
 import Cover from './Cover';
 import SongActions from './songActions';
 import SongList from './SongList';
-import { qualityOf, storageOf, formatDuration, formatBytes } from '../utils/audio';
+import { qualityOf, storageOf, formatDuration, formatBytes, sortAlbumTracks } from '../utils/audio';
+import { albumIndex, trackCount } from '../utils/albums';
 
 const FORMAT_COLORS = ['var(--accent)', 'var(--ok)', '#9b7bff', 'var(--info)', 'var(--text-3)'];
 
 const groupAlbums = (musicFiles, limit) => {
-  const seen = new Map();
+  const idx = albumIndex(musicFiles);
+  const seen = new Set();
   for (let i = musicFiles.length - 1; i >= 0 && seen.size < limit; i--) {
-    const file = musicFiles[i];
-    const name = file.metadata?.album || 'Unknown Album';
-    if (!seen.has(name)) seen.set(name, { name, artist: file.metadata?.artist || 'Unknown Artist', file, firstTrackIndex: i });
+    const album = idx.byPath.get(musicFiles[i].path);
+    if (album) seen.add(album);
   }
-  return [...seen.values()].map(a => {
-    const songs = musicFiles.filter(f => (f.metadata?.album || 'Unknown Album') === a.name);
-    return { ...a, cover: a.file.path ? `media://${encodeURIComponent(a.file.path)}` : a.file.cover, songs };
-  });
+  return [...seen].map(a => ({ ...a, songs: sortAlbumTracks(a.songs) }));
 };
 
 // While a scan streams in thousands of tracks, recompute the page at most every `ms`
@@ -104,7 +102,7 @@ const Homepage = ({ musicFiles, recentPlayed = [], onPlay, onNavClick, setSelect
                   {latestStorage.includes('local') && <span className="badge b-local"><Icon name="monitor" />Local</span>}
                   {latestStorage.includes('cloud') && <span className="badge b-cloud"><Icon name="cloud" />Synced</span>}
                 </div>
-                <div className="hero-sub">{latest.artist} · {ctx.countUnique ? ctx.countUnique(latest.songs) : latest.songs.length} tracks</div>
+                <div className="hero-sub">{latest.artist} · {trackCount(ctx.countUnique ? ctx.countUnique(latest.songs) : latest.songs.length)}</div>
                 <div className="hero-actions">
                   <button className="btn-primary" onClick={() => onPlay(latest.songs[0], 0, latest.songs)}><Icon name="play" filled />Play album</button>
                   <button className="icon-btn" title="Shuffle album" onClick={() => {
@@ -135,7 +133,7 @@ const Homepage = ({ musicFiles, recentPlayed = [], onPlay, onNavClick, setSelect
           <div className="album-grid" ref={gridRef} style={{ '--cols': cols }}>
             {/* Newest first; one row of whatever fits, the rest is on the Albums page */}
             {albums.slice(0, cols).map(a => (
-              <button key={a.name} className="album-tile" onClick={() => openAlbum(a)}>
+              <button key={a.key} className="album-tile" onClick={() => openAlbum(a)}>
                 <Cover file={a.file} />
                 <b>{a.name}</b><span>{a.artist}</span>
               </button>

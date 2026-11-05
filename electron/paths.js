@@ -9,7 +9,7 @@ const path = require('path');
 
 const AUDIO_EXTENSIONS = new Set([
   '.flac', '.wav', '.aiff', '.aif', '.alac', '.m4a', '.ape', '.wv', '.tta',
-  '.dsf', '.dff', '.mp3', '.ogg', '.opus', '.aac',
+  '.dsf', '.dff', '.mp3', '.ogg', '.opus', '.aac', '.wma', '.aifc', '.m4b', '.mka', '.mpc',
 ]);
 
 const SETTINGS_PATH = () => path.join(app.getPath('userData'), 'settings.json');

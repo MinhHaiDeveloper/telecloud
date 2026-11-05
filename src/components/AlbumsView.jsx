@@ -5,6 +5,7 @@ import Cover from './Cover';
 import Icon from './Icon';
 import { Select, MoreMenu, BackButton, useDetailScroll } from './ui';
 import { qualityOf, formatDuration, sortAlbumTracks } from '../utils/audio';
+import { albumIndex, trackCount } from '../utils/albums';
 
 const SORTS = [
   { value: 'name', label: 'Title A → Z' },
@@ -20,16 +21,10 @@ const bestQuality = (songs) => songs.map(qualityOf).sort((a, b) => (b.bits * 1e6
 const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavorite, onAddPlaylist, favorites, onCheckSpectrum, selectedAlbum, setSelectedAlbum, onDeleteSong, onDeleteAlbum, onDownloadSong, onBackupMany, onBackupTo, storageNames, onRemoveFromCloud }) => {
   const [sortBy, setSortBy] = useState('name');
   const ctx = useContext(SongActions);
-  useDetailScroll(selectedAlbum?.name ?? null);
+  useDetailScroll(selectedAlbum ? (selectedAlbum.key ?? selectedAlbum.name) : null);
 
   const albums = useMemo(() => {
-    const map = new Map();
-    musicFiles.forEach(file => {
-      const name = file.metadata?.album || 'Unknown Album';
-      if (!map.has(name)) map.set(name, { name, artist: file.metadata?.artist || 'Unknown Artist', file, songs: [], cover: file.path ? `media://${encodeURIComponent(file.path)}` : file.cover });
-      map.get(name).songs.push(file);
-    });
-    const list = [...map.values()];
+    const list = [...albumIndex(musicFiles).list];
     switch (sortBy) {
       case 'name-desc': return list.sort((a, b) => noThe(b.name).localeCompare(noThe(a.name)));
       case 'artist': return list.sort((a, b) => noThe(a.artist).localeCompare(noThe(b.artist)));
@@ -40,12 +35,15 @@ const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavori
 
   if (selectedAlbum) {
     // the album as it is in the library now (tracks change while it is open: cached, tagged, removed)
-    const current = albums.find(a => a.name === selectedAlbum.name) || selectedAlbum;
-    const songs = sortAlbumTracks(ctx.dedupe ? ctx.dedupe(current.songs) : current.songs);
+    const idx = albumIndex(musicFiles);
+    const current = (selectedAlbum.key && idx.byKey.get(selectedAlbum.key))
+      || (selectedAlbum.file && idx.byPath.get(selectedAlbum.file.path))
+      || albums.find(a => a.name === selectedAlbum.name) || selectedAlbum;
+    const songs = sortAlbumTracks(ctx.dedupe ? ctx.dedupe(current.songs || []) : current.songs || []);
     const q = bestQuality(songs);
     const total = songs.reduce((s, f) => s + (f.metadata?.duration || 0), 0);
     const year = songs.find(f => f.metadata?.year)?.metadata?.year;
-    const artist = selectedAlbum.artist || songs[0]?.metadata?.artist || 'Unknown Artist';
+    const artist = current.artist || songs[0]?.metadata?.artist || 'Unknown Artist';
 
     return (
       <>
@@ -63,7 +61,7 @@ const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavori
             <div className="meta">
               <b style={{ color: 'var(--text)' }}>{artist}</b>
               {year && <span>· {year}</span>}
-              <span>· {songs.length} tracks · {formatDuration(total)}</span>
+              <span>· {trackCount(songs.length)} · {formatDuration(total)}</span>
               {q && <span className={`badge b-${q.tier} mono`}>{q.label}</span>}
             </div>
             <div className="btn-row">
@@ -115,13 +113,13 @@ const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavori
       ) : (
         <div className="tile-grid">
           {albums.map(album => (
-            <div key={album.name} className="tile pressable" role="button" tabIndex={0} onClick={() => setSelectedAlbum(album)} onKeyDown={(e) => e.key === 'Enter' && setSelectedAlbum(album)}>
+            <div key={album.key} className="tile pressable" role="button" tabIndex={0} onClick={() => setSelectedAlbum(album)} onKeyDown={(e) => e.key === 'Enter' && setSelectedAlbum(album)}>
               <div className="cover-wrap">
                 <Cover file={album.file} />
                 <button className="play-fab" title="Play album" onClick={(e) => { e.stopPropagation(); const list = sortAlbumTracks(album.songs); onPlay(list[0], 0, list); }}><Icon name="play" /></button>
               </div>
               <b>{album.name}</b>
-              <span>{album.artist} · {ctx.countUnique ? ctx.countUnique(album.songs) : album.songs.length} tracks</span>
+              <span>{album.artist} · {trackCount(ctx.countUnique ? ctx.countUnique(album.songs) : album.songs.length)}</span>
             </div>
           ))}
         </div>

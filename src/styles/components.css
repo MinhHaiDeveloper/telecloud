@@ -813,3 +813,6 @@ html.np-cover-only .app.np-mode .np-body { padding-bottom: 0; }
 @container (max-width: 560px) {
   .track-head .src-head, .track-row .c-src, .track-row .c-plays { display: none; }
 }
+
+/* Artist page: albums they only appear on */
+.artist-appears { margin-top: 26px; }

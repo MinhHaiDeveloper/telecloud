@@ -17,6 +17,7 @@ import SearchView from './components/SearchView';
 import SettingsView from './components/SettingsView';
 import EqSettingsView from './components/EqSettingsView';
 import Modal from './components/Modal'; // Import the new Modal component
+import { albumIndex } from './utils/albums';
 import { computeSignalPath, matchesSource, storageOf, qualityOf, findDuplicates, dedupeTracks, coverTargets, albumQuery, bumpCovers, setCoverPreview, clearCoverPreview } from './utils/audio';
 import { DialogHost, confirmDialog, alertDialog, Progress } from './components/ui';
 import useEq from './hooks/useEq';
@@ -101,11 +102,14 @@ function App() {
   // Extra copies of the same track: skipped everywhere unless turned off (Settings -> Library)
   const [skipDuplicates, setSkipDuplicatesState] = useState(true);
   useEffect(() => { window.ipcRenderer.invoke('load-store', 'settings').then(s => { if (s && s.skipDuplicates === false) setSkipDuplicatesState(false); }).catch(() => {}); }, []);
-  const setSkipDuplicates = async (v) => {
-    setSkipDuplicatesState(v);
+  const saveSetting = async (patch) => {
     const s = (await window.ipcRenderer.invoke('load-store', 'settings')) || {};
-    await window.ipcRenderer.invoke('save-store', 'settings', { ...(Array.isArray(s) ? {} : s), skipDuplicates: v });
+    await window.ipcRenderer.invoke('save-store', 'settings', { ...(Array.isArray(s) ? {} : s), ...patch });
   };
+  const setSkipDuplicates = (v) => { setSkipDuplicatesState(v); return saveSetting({ skipDuplicates: v }); };
+  const [onlyAlbumArtists, setOnlyAlbumArtistsState] = useState(false);
+  useEffect(() => { window.ipcRenderer.invoke('load-store', 'settings').then(s => { if (s?.onlyAlbumArtists) setOnlyAlbumArtistsState(true); }).catch(() => {}); }, []);
+  const setOnlyAlbumArtists = (v) => { setOnlyAlbumArtistsState(v); return saveSetting({ onlyAlbumArtists: v }); };
   const [theme, setTheme] = useState(() => readPref('tc-theme') || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
 
   // New shell UI state
@@ -1095,7 +1099,14 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     if (view === 'artists') setSelectedArtist(null);
   };
   // Clicking an album or artist name anywhere opens its page (and leaves full screen)
-  const openAlbum = (name, fromArtist) => { if (!name) return; navigate('albums'); setSelectedAlbum({ name, fromArtist }); };
+  /** Open an album given a track of it, an album, or (when nothing better is known) its name */
+  const openAlbum = (target, fromArtist) => {
+    if (!target) return;
+    const idx = albumIndex(musicFiles);
+    const album = typeof target === 'string' ? idx.list.find(a => a.name === target) : target.path ? idx.byPath.get(target.path) : target;
+    navigate('albums');
+    setSelectedAlbum(album ? { ...album, fromArtist } : { name: String(target), fromArtist });
+  };
   const openArtist = (name, tab = 'songs') => { if (!name) return; navigate('artists'); setSelectedArtist(name); setArtistTab(tab); };
   const openEq = () => { setNowPlaying(null); setCurrentView('eq-settings'); };
   const openNowPlaying = (panel, origin = 'player') => currentFile && setNowPlaying({ panel, origin });
@@ -1149,6 +1160,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     onQueueMany: handleQueueMany, onFavoriteMany: handleFavoriteMany, onDeleteMany: handleDeleteMany,
     openAlbum, openArtist, playCounts,
     duplicates, skipDuplicates, setSkipDuplicates, openDuplicates: () => navigate('duplicates'),
+    onlyAlbumArtists, setOnlyAlbumArtists,
     dedupe: skipDuplicates ? (list) => dedupeTracks(list) : null,
     countUnique: (list) => (skipDuplicates ? list.filter(f => !duplicates.has(f.path)).length : list.length),
     onEditLyrics: (file) => setLyricsFile(file), lyricsFound,

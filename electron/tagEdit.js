@@ -3,6 +3,7 @@
 // library and the TeleCloud index. Backed-up files are re-uploaded by the watcher (their bytes changed).
 const { ipcMain } = require('electron');
 const fs = require('fs');
+const path = require('path');
 const database = require('./database');
 
 const FIELDS = ['title', 'artist', 'album', 'albumArtist', 'year', 'genre', 'track', 'disc'];
@@ -14,7 +15,11 @@ const isLocal = (p) => p && !p.startsWith('tc://') && fs.existsSync(p);
 function read(p) {
   const row = database.getFileByPath(p);
   const out = {
-    title: row?.title || '', artist: row?.artist || '', album: row?.album || '', albumArtist: '',
+    // a title that is only the file name, and the "Unknown" labels, are not tags: leave those empty
+    title: row?.title && row.title !== path.basename(p).replace(/\.[^.]+$/, '') ? row.title : '',
+    artist: row?.artist && row.artist !== 'Unknown Artist' ? row.artist : '',
+    album: row?.album && row.album !== 'Unknown Album' ? row.album : '',
+    albumArtist: (row?.album_artist || '').split(/\s*;\s*/).filter(Boolean).join(', '),
     year: row?.year || '', genre: row?.genre || '', track: row?.track_number || '', disc: row?.disc_number || '',
   };
   if (isLocal(p)) {
@@ -24,7 +29,7 @@ function read(p) {
       const t = f.tag;
       Object.assign(out, {
         title: t.title || out.title, artist: (t.performers || []).join(', ') || out.artist, album: t.album || out.album,
-        albumArtist: (t.albumArtists || []).join(', '), year: t.year || out.year, genre: (t.genres || []).join(', ') || out.genre,
+        albumArtist: (t.albumArtists || []).join(', ') || out.albumArtist, year: t.year || out.year, genre: (t.genres || []).join(', ') || out.genre,
         track: t.track || out.track, disc: t.disc || out.disc,
       });
     } finally { f.dispose(); }
@@ -52,11 +57,12 @@ function writeFile(p, c) {
 function writeRow(p, c) {
   const set = [];
   const v = {};
-  const col = { title: 'title', artist: 'artist', album: 'album', year: 'year', genre: 'genre', track: 'track_number', disc: 'disc_number' };
+  const col = { title: 'title', artist: 'artist', album: 'album', albumArtist: 'album_artist', year: 'year', genre: 'genre', track: 'track_number', disc: 'disc_number' };
   for (const [k, column] of Object.entries(col)) {
     if (!(k in c)) continue;
     set.push(`${column} = @${k}`);
-    v[k] = k === 'year' || k === 'track' || k === 'disc' ? (num(c[k]) || null) : (c[k] || null);
+    if (k === 'albumArtist') v[k] = list(c[k]).join('; ');
+    else v[k] = k === 'year' || k === 'track' || k === 'disc' ? (num(c[k]) || null) : (c[k] || null);
   }
   if (set.length) database.initDatabase().prepare(`UPDATE music_files SET ${set.join(', ')} WHERE path = @path`).run({ ...v, path: p });
 }

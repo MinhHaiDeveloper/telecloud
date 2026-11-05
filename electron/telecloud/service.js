@@ -16,6 +16,8 @@ const worker = require('./workerClient');
 const { buildCaption, buildManifestCaption, buildCoverCaption, parseCaption, trackInfo } = require('./caption');
 const { newMasterKey, fingerprint, toRecoveryKey, fromRecoveryKey } = require('./crypto');
 const store = require('./store');
+const { inferRow } = require('../inferTags');
+const { getLibraryRoots } = require('../paths');
 
 const CHANNEL_TITLE = 'TeleCloud Music Library';
 const CHANNEL_ABOUT = 'Private music library storage for TeleCloud';
@@ -185,7 +187,7 @@ async function uploadOne(item) {
   const iv = encrypt ? crypto.randomBytes(16).toString('base64') : null;
   const ext = path.extname(item.path).toLowerCase();
   const name = path.basename(item.path);
-  const info = trackInfo(row);
+  const info = infoOf(row);
   const caption = buildCaption({ name, size, sha256, info, enc: encrypt ? { iv } : null, master: key });
   activeJob = { id: `up-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` };
   queueSnapshot.active.stage = 'uploading';
@@ -298,7 +300,9 @@ const CHECKPOINT_TRACKS = Number(process.env.TELECLOUD_MANIFEST_EVERY) || 25;
 const CHECKPOINT_MS = 5 * 60 * 1000;
 const manifestFile = (storageId) => path.join(app.getPath('userData'), 'telecloud', `manifest-${storageId}.json`);
 const newIv = () => (options().encrypt && masterKey() ? crypto.randomBytes(16).toString('base64') : null);
-const fullInfo = (row) => ({ ...trackInfo(row), lyrics: row.lyrics || null });
+// a file without tags keeps what the app worked out from its name and folders: another computer has neither
+const infoOf = (row) => trackInfo(inferRow(row, getLibraryRoots()));
+const fullInfo = (row) => ({ ...infoOf(row), lyrics: row.lyrics || null });
 
 async function uploadSmall({ storage, buffer, fileName, caption, iv, mime }) {
   const tmp = path.join(getTempDir(), `tc-up-${crypto.randomBytes(6).toString('hex')}`);
@@ -661,7 +665,7 @@ async function restore() {
     const linked = store.library.linkedMessages(storage.peer_id);
     const wantCovers = new Map(); // cover key -> library paths
     const rowFields = (info) => ({
-      title: info.title, artist: info.artist, album: info.album, year: info.year, genre: info.genre,
+      title: info.title, artist: info.artist, album: info.album, albumArtist: info.albumArtist ?? '', year: info.year, genre: info.genre,
       trackNumber: info.track, discNumber: info.disc, duration: info.duration, bitrate: info.bitrate,
       sampleRate: info.sampleRate, bitDepth: info.bitDepth, codec: info.codec, lossless: info.lossless, lyrics: info.lyrics || null,
     });
@@ -672,7 +676,7 @@ async function restore() {
         // a cloud-only track restored before (maybe from captions only): bring its info up to date
         const row = store.library.byMessage(storage.peer_id, e.message_id);
         if (row && row.storage_type === 'cloud' && m) {
-          database.insertOrUpdateFile({ ...rowFields(info), path: row.path, name: row.name, ext: row.ext, size: row.size, mtime: row.mtime, addedAt: row.created_at });
+          database.insertOrUpdateFile({ ...rowFields(info), albumArtist: info.albumArtist ?? row.album_artist, path: row.path, name: row.name, ext: row.ext, size: row.size, mtime: row.mtime, addedAt: row.created_at });
           if (m.cover) { store.library.setCover(row.path, m.cover); wantCovers.set(m.cover, [...(wantCovers.get(m.cover) || []), row.path]); }
           changed.push(row.path);
           updated++;

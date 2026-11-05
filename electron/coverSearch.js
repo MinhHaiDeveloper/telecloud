@@ -265,11 +265,12 @@ function writeTag(file, jpeg, { onlyMissing = false, onlyIfEmbedded = false } = 
   } finally { f.dispose(); }
 }
 
+const albumId = (r) => `${r?.album || ''}\u0000${(r?.album_artist || '').toLowerCase()}`;
 /** Does this folder hold another album? Then a cover.jpg would show on that album too. */
 function folderHasOtherAlbum(dir, albums) {
   const like = `${dir.replace(/[\\%_]/g, c => `\\${c}`)}${path.sep === '\\' ? '\\\\' : path.sep}%`;
-  const rows = database.initDatabase().prepare("SELECT path, album FROM music_files WHERE path LIKE ? ESCAPE '\\'").all(like);
-  return rows.some(r => path.dirname(r.path) === dir && !albums.has(r.album || ''));
+  const rows = database.initDatabase().prepare("SELECT path, album, album_artist FROM music_files WHERE path LIKE ? ESCAPE '\\'").all(like);
+  return rows.some(r => path.dirname(r.path) === dir && !albums.has(albumId(r)));
 }
 
 async function save({ paths, image, to, onlyMissing = false }) {
@@ -292,7 +293,7 @@ async function save({ paths, image, to, onlyMissing = false }) {
   }
 
   for (const [dir, list] of dirs) {
-    const albums = new Set(list.map(p => database.getFileByPath(p)?.album || ''));
+    const albums = new Set(list.map(p => albumId(database.getFileByPath(p))));
     let wantTag = where !== 'file';
     if (where !== 'tag') {
       if (folderHasOtherAlbum(dir, albums)) wantTag = true;

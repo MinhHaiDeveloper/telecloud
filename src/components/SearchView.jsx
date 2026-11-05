@@ -1,6 +1,6 @@
 import React, { useContext, useMemo } from 'react';
 import SongActions from './songActions';
-import { splitArtists } from './MetaLinks';
+import { albumIndex, albumArtistsOf, artistsOf, trackCount } from '../utils/albums';
 import SongList from './SongList';
 import Cover from './Cover';
 import Icon from './Icon';
@@ -23,25 +23,20 @@ const SearchView = ({ searchQuery, musicFiles, playlists, onNavClick, setSelecte
     const songs = musicFiles.filter(f => has(f.metadata?.title) || has(f.name) || has(f.metadata?.artist) || has(f.metadata?.album));
 
     const artistMap = new Map();
-    const albumMap = new Map();
     musicFiles.forEach(f => {
-      const artistNames = splitArtists(f.metadata?.artist || 'Unknown Artist');
-      const album = f.metadata?.album || 'Unknown Album';
-      artistNames.forEach(artist => {
+      [...artistsOf(f), ...albumArtistsOf(f)].forEach(artist => {
         if (!has(artist)) return;
-        if (!artistMap.has(artist)) artistMap.set(artist, { name: artist, file: f, songs: [] });
-        artistMap.get(artist).songs.push(f);
+        if (!artistMap.has(artist)) artistMap.set(artist, { name: artist, file: f, songs: [], paths: new Set() });
+        const a = artistMap.get(artist);
+        if (!a.paths.has(f.path)) { a.paths.add(f.path); a.songs.push(f); }
       });
-      if (has(album) || artistNames.some(has)) {
-        if (!albumMap.has(album)) albumMap.set(album, { name: album, artist: f.metadata?.artist || 'Unknown Artist', file: f, songs: [], cover: f.path ? `media://${encodeURIComponent(f.path)}` : f.cover });
-        albumMap.get(album).songs.push(f);
-      }
     });
+    const albums = albumIndex(musicFiles).list.filter(a => has(a.name) || has(a.artist) || a.songs.some(f => artistsOf(f).some(has)));
 
     return {
       songs,
       artists: [...artistMap.values()],
-      albums: [...albumMap.values()],
+      albums,
       playlists: playlists.filter(p => has(p.name)),
     };
   }, [q, musicFiles, playlists]);
@@ -69,7 +64,7 @@ const SearchView = ({ searchQuery, musicFiles, playlists, onNavClick, setSelecte
           <div className="section-head"><span>Albums</span></div>
           <div className="h-scroll">
             {results.albums.slice(0, 20).map(a => (
-              <button key={a.name} className="tile" onClick={() => openAlbum(a)}>
+              <button key={a.key} className="tile" onClick={() => openAlbum(a)}>
                 <Cover file={a.file} />
                 <b><HighlightText text={a.name} highlight={q} /></b>
                 <span><HighlightText text={a.artist} highlight={q} /></span>
@@ -87,7 +82,7 @@ const SearchView = ({ searchQuery, musicFiles, playlists, onNavClick, setSelecte
               <button key={`a-${a.name}`} className="tile round" onClick={() => { setSearchQuery(''); openArtist?.(a.name); }}>
                 <Cover file={a.file} />
                 <b><HighlightText text={a.name} highlight={q} /></b>
-                <span>Artist · {countUnique ? countUnique(a.songs) : a.songs.length} tracks</span>
+                <span>Artist · {trackCount(countUnique ? countUnique(a.songs) : a.songs.length)}</span>
               </button>
             ))}
             {results.playlists.map(p => (

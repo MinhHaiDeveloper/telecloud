@@ -33,6 +33,18 @@ function extractLyrics(parsed) {
   return '';
 }
 
+const ALBUM_ARTIST_TAGS = new Set(['ALBUMARTIST', 'ALBUM ARTIST', 'ALBUM_ARTIST', 'TPE2', 'AART', 'WM/ALBUMARTIST', '----:COM.APPLE.ITUNES:ALBUM ARTIST']);
+
+/** Every album artist, one per value ("Unknown Brain; Rarin"), so a name with a comma stays whole */
+function albumArtists(parsed) {
+  for (const tags of Object.values(parsed.native || {})) {
+    const values = tags.filter(t => ALBUM_ARTIST_TAGS.has(String(t.id || '').toUpperCase()) && typeof t.value === 'string')
+      .flatMap(t => t.value.split('\u0000')).map(v => v.trim()).filter(Boolean);
+    if (values.length) return [...new Set(values)].join('; ');
+  }
+  return parsed.common.albumartist || '';
+}
+
 /** Parse one file into the flat shape stored in the database. */
 async function parseTrack(filePath, stat) {
   const mm = await import('music-metadata');
@@ -54,6 +66,7 @@ async function parseTrack(filePath, stat) {
       // several ARTIST tags (e.g. "Yu-Peng Chen" + "HOYO-MiX") all count, not only the first
       artist: (c.artists && c.artists.length > 1 ? c.artists.join(', ') : c.artist) || (c.artists && c.artists.join(', ')) || 'Unknown Artist',
       album: c.album || 'Unknown Album',
+      albumArtist: albumArtists(parsed),
       year: c.year || null,
       genre: c.genre && c.genre.length ? c.genre.join(', ') : null,
       trackNumber: c.track?.no || null,
@@ -69,7 +82,7 @@ async function parseTrack(filePath, stat) {
     };
   } catch (err) {
     console.error(`[Library] Could not parse ${filePath}: ${err.message}`);
-    return { ...base, title: path.basename(filePath, base.ext), artist: 'Unknown Artist', album: 'Unknown Album', duration: 0 };
+    return { ...base, title: path.basename(filePath, base.ext), artist: 'Unknown Artist', album: 'Unknown Album', albumArtist: '', duration: 0 };
   }
 }
 

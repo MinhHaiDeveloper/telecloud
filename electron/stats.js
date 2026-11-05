@@ -75,7 +75,7 @@ function relink() {
 
 const playCounts = () => relink() >= 0 && Object.fromEntries(db().prepare('SELECT path, COUNT(*) n FROM plays GROUP BY path').all().map(r => [r.path, r.n]));
 
-const splitArtists = (s) => (s || '').split(/,|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+/i).map(a => a.trim()).filter(Boolean);
+const splitArtists = (s) => (s || '').split(/[,;、]|\s+[&/]\s+|\s+(?:feat\.?|ft\.?|featuring)\s+/i).map(a => a.trim()).filter(Boolean);
 
 /**
  * Everything the Dashboard shows for [from, to): totals, a time series in local buckets
@@ -97,6 +97,9 @@ function summary({ from, to, bucket = 'day' }) {
     return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   };
   const bump = (map, key, extra, ms) => { const e = map.get(key) || { ...extra, plays: 0, ms: 0 }; e.plays++; e.ms += ms; map.set(key, e); };
+  // one album stays one album, however many guests its tracks have
+  let albumArtistOf = new Map();
+  try { albumArtistOf = new Map(db().prepare("SELECT path, album_artist FROM music_files WHERE album_artist IS NOT NULL AND album_artist != ''").all().map(x => [x.path, x.album_artist])); } catch { /* older database */ }
   for (const r of rows) {
     totals.ms += r.listened_ms;
     totals.tracks.add(r.path);
@@ -105,7 +108,10 @@ function summary({ from, to, bucket = 'day' }) {
     const s = series.get(k) || { t: k, plays: 0, ms: 0 }; s.plays++; s.ms += r.listened_ms; series.set(k, s);
     bump(tracks, r.path, { path: r.path, title: r.title, artist: r.artist, album: r.album }, r.listened_ms);
     splitArtists(r.artist).forEach(a => { totals.artists.add(a); bump(artists, a, { name: a }, r.listened_ms); });
-    if (r.album) bump(albums, `${r.album}\u0000${r.artist || ''}`, { name: r.album, artist: r.artist, path: r.path }, r.listened_ms);
+    if (r.album) {
+      const owner = (albumArtistOf.get(r.path) || '').replace(/\s*;\s*/g, ', ') || splitArtists(r.artist)[0] || '';
+      bump(albums, `${r.album}\u0000${owner.toLowerCase()}`, { name: r.album, artist: owner, path: r.path }, r.listened_ms);
+    }
     if (quality[r.quality] !== undefined) quality[r.quality] += r.listened_ms;
     hours[new Date(r.played_at).getHours()] += r.listened_ms;
   }

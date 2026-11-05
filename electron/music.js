@@ -10,10 +10,20 @@ const { AUDIO_EXTENSIONS, getLibraryRoots, getDownloadFolder, isInLibrary, isInA
 // ---------- metadata ----------
 
 const { parseTrack } = require('./tags');
+const { inferRow } = require('./inferTags');
 const tagPool = require('./tagPool');
 
+// The music folders, re-read at most once a second (only rows with missing tags need them)
+let rootsCache = { at: 0, roots: [] };
+const rootsNow = () => {
+  if (Date.now() - rootsCache.at > 1000) rootsCache = { at: Date.now(), roots: getLibraryRoots() };
+  return rootsCache.roots;
+};
+
 /** Database row → object the renderer works with. */
-function toFrontend(row) {
+function toFrontend(dbRow) {
+  // tags that are missing are filled in from the file name and folders, for display only
+  const row = inferRow(dbRow, rootsNow());
   return {
     name: row.name || path.basename(row.path),
     path: row.path,
@@ -24,6 +34,8 @@ function toFrontend(row) {
       title: row.title,
       artist: row.artist,
       album: row.album,
+      albumArtist: row.album_artist || '',
+      inferred: row.inferred || [],
       year: row.year,
       genre: row.genre,
       track: row.track_number || 0,
@@ -256,6 +268,41 @@ async function backgroundRefresh() {
   }
 }
 
+/**
+ * Libraries from before the album artist was stored: read that one tag for every file, once, in
+ * the background. Only this column changes, so nothing counts as modified or is uploaded again.
+ */
+let backfillRan = false;
+async function backfillAlbumArtists() {
+  if (backfillRan) return;
+  backfillRan = true;
+  const d = database.initDatabase();
+  const todo = d.prepare("SELECT path FROM music_files WHERE album_artist IS NULL AND path NOT LIKE 'tc://%'").all().map(r => r.path);
+  const set = d.prepare('UPDATE music_files SET album_artist = ? WHERE path = ?');
+  const backedUp = [];
+  for (let i = 0; i < todo.length; i += 40) {
+    const chunk = [];
+    for (const p of todo.slice(i, i + 40)) {
+      const stat = await fs.promises.stat(p).catch(() => null);
+      if (stat) chunk.push({ path: p, mtimeMs: stat.mtimeMs, size: stat.size });
+    }
+    if (!chunk.length) continue;
+    const results = await tagPool.parseMany(chunk);
+    const changed = [];
+    d.transaction(() => results.forEach((r, k) => {
+      set.run(r.albumArtist || '', chunk[k].path);
+      if (r.albumArtist) changed.push(chunk[k].path);
+    }))();
+    if (changed.length) {
+      const rows = database.getFilesByPaths(changed);
+      sendToUi('library:partial', { files: rows.map(toFrontend) });
+      rows.forEach(r => { if (r.telegram_message_id) backedUp.push(r.path); });
+    }
+    await yieldToEventLoop();
+  }
+  if (backedUp.length) { try { require('./telecloud/service').indexChanged(backedUp); } catch { /* TeleCloud not set up */ } }
+}
+
 ipcMain.handle('library:sync', async (event, opts = {}) => {
   const mode = opts.mode === 'full' ? 'full' : 'refresh';
   if (syncInFlight) return { busy: true };
@@ -263,7 +310,9 @@ ipcMain.handle('library:sync', async (event, opts = {}) => {
   const onBatch = (b) => sendToUi('library:partial', b);
   syncInFlight = syncLibrary({ mode, onProgress, onBatch });
   try {
-    return await syncInFlight;
+    const result = await syncInFlight;
+    backfillAlbumArtists().catch(err => console.error('[Library] Album artist update failed:', err.message));
+    return result;
   } finally {
     afterSync();
   }
