@@ -9,10 +9,18 @@ import useSlidingIndicator from '../hooks/useSlidingIndicator';
 export const useDetailScroll = (detailKey) => {
   const gridScroll = useRef(0);
   const prevKey = useRef(detailKey);
+  // Remember the list's position as it scrolls. Reading it when the detail page opens is too late:
+  // the shorter page is already in the DOM by then and the browser has clamped scrollTop.
+  useEffect(() => {
+    const view = document.querySelector('.view');
+    if (!view) return undefined;
+    const onScroll = () => { if (prevKey.current == null) gridScroll.current = view.scrollTop; };
+    view.addEventListener('scroll', onScroll, { passive: true });
+    return () => view.removeEventListener('scroll', onScroll);
+  }, []);
   useLayoutEffect(() => {
     const view = document.querySelector('.view');
     if (!view || prevKey.current === detailKey) return;
-    if (prevKey.current == null) gridScroll.current = view.scrollTop;
     view.scrollTop = detailKey == null ? gridScroll.current : 0;
     prevKey.current = detailKey;
   }, [detailKey]);
@@ -183,7 +191,15 @@ export const alertDialog = (opts) => new Promise(resolve => {
 export const DialogHost = () => {
   const [queue, setQueue] = useState([]);
   useEffect(() => {
-    pushDialog = (d) => setQueue(q => [...q, d]);
+    // Identical requests share one dialog: a loop (e.g. downloading an album without a folder set)
+    // must not stack one per track, each needing its own click
+    pushDialog = (d) => setQueue(q => {
+      const same = q.find(x => x.kind === d.kind && x.title === d.title && x.message === d.message);
+      if (!same) return [...q, d];
+      const first = same.resolve;
+      same.resolve = (v) => { first(v); d.resolve(v); };
+      return q;
+    });
     return () => { pushDialog = null; };
   }, []);
   const current = queue[0];

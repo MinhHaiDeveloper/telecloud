@@ -5,6 +5,7 @@ const PATHS = {
   // the app mark: an eighth note with a cloud for its head (same design as public/icon.svg)
   logo: <g fill="currentColor" stroke="none" transform="scale(0.046875) translate(-36 4)"><rect x="288" y="112" width="36" height="250" rx="18" /><path d="M306 112 C 306 112 330 108 348 130 C 384 168 418 196 410 262 C 406 296 392 318 378 330 C 390 300 392 270 372 244 C 356 222 334 214 306 210 Z" /><path d="M6.5 19H17.5A4 4 0 0 0 18.2 11.06A6 6 0 0 0 6.6 9.6A4.7 4.7 0 0 0 6.5 19Z" transform="translate(147.72 249.48) scale(8.8000)" /></g>,
   discover: <path d="M3 12h3l3-8 4 16 3-8h5" />,
+  image: <><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m21 15-5-5L5 21" /></>,
   library: <path d="M4 19V5M9 19V5M14 19l-1-14M19 19l-3-14" />,
   heart: <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 1 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z" />,
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,

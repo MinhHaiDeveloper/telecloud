@@ -4,7 +4,7 @@ import SongActions from './songActions';
 import Cover from './Cover';
 import Icon from './Icon';
 import { Select, MoreMenu, BackButton, useDetailScroll } from './ui';
-import { qualityOf, formatDuration } from '../utils/audio';
+import { qualityOf, formatDuration, sortAlbumTracks } from '../utils/audio';
 
 const SORTS = [
   { value: 'name', label: 'Title A → Z' },
@@ -41,13 +41,7 @@ const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavori
   if (selectedAlbum) {
     // the album as it is in the library now (tracks change while it is open: cached, tagged, removed)
     const current = albums.find(a => a.name === selectedAlbum.name) || selectedAlbum;
-    const songs = [...current.songs].sort((a, b) => {
-      // no disc number means disc 1 (only some tracks of an album often carry one)
-      const da = a.metadata?.disc || 1, db = b.metadata?.disc || 1;
-      if (da !== db) return da - db;
-      const ta = a.metadata?.track || 0, tb = b.metadata?.track || 0;
-      return ta !== tb ? ta - tb : (a.name || '').localeCompare(b.name || '');
-    });
+    const songs = sortAlbumTracks(ctx.dedupe ? ctx.dedupe(current.songs) : current.songs);
     const q = bestQuality(songs);
     const total = songs.reduce((s, f) => s + (f.metadata?.duration || 0), 0);
     const year = songs.find(f => f.metadata?.year)?.metadata?.year;
@@ -56,8 +50,10 @@ const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavori
     return (
       <>
         <div className="page-head" style={{ marginBottom: 6 }}>
-          <BackButton onClick={() => setSelectedAlbum(null)} label="All albums" />
-          <span className="sub">Albums</span>
+          {selectedAlbum.fromArtist
+            ? <BackButton onClick={() => ctx.openArtist?.(selectedAlbum.fromArtist, 'albums')} label={`Back to ${selectedAlbum.fromArtist}`} />
+            : <BackButton onClick={() => setSelectedAlbum(null)} label="All albums" />}
+          <span className="sub">{selectedAlbum.fromArtist || 'Albums'}</span>
         </div>
         <div className="detail-head">
           <Cover file={selectedAlbum.file || songs[0]} />
@@ -77,6 +73,7 @@ const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavori
                 ...(onDownloadSong ? [{ label: 'Download album', icon: 'download', onClick: () => songs.forEach(s => onDownloadSong(s)) }] : []),
                 ...(onAddPlaylist ? [{ label: 'Add to playlist', icon: 'playlist', onClick: () => onAddPlaylist(songs[0], songs) }] : []),
                 ...(ctx.onEditInfo ? [{ label: 'Edit album info…', icon: 'music', onClick: () => ctx.onEditInfo(songs) }] : []),
+                ...(ctx.onEditCover ? [{ label: 'Album cover…', icon: 'image', onClick: () => ctx.onEditCover(songs) }] : []),
                 ...(onBackupMany ? [{ label: 'Back up album to…', icon: 'cloud', onClick: () => onBackupMany(songs, `“${selectedAlbum.name}”`) }] : []),
                 ...(onRemoveFromCloud && songs.some(f => f.telegram_message_id) ? [{ label: 'Remove album from TeleCloud', icon: 'cloud', danger: true, onClick: () => onRemoveFromCloud(songs.filter(f => f.telegram_message_id)) }] : []),
                 ...(onDeleteAlbum ? [{ sep: true }, { label: 'Delete album', icon: 'trash', danger: true, onClick: () => onDeleteAlbum({ ...selectedAlbum, songs }) }] : []),
@@ -121,10 +118,10 @@ const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavori
             <div key={album.name} className="tile pressable" role="button" tabIndex={0} onClick={() => setSelectedAlbum(album)} onKeyDown={(e) => e.key === 'Enter' && setSelectedAlbum(album)}>
               <div className="cover-wrap">
                 <Cover file={album.file} />
-                <button className="play-fab" title="Play album" onClick={(e) => { e.stopPropagation(); onPlay(album.songs[0], 0, album.songs); }}><Icon name="play" /></button>
+                <button className="play-fab" title="Play album" onClick={(e) => { e.stopPropagation(); const list = sortAlbumTracks(album.songs); onPlay(list[0], 0, list); }}><Icon name="play" /></button>
               </div>
               <b>{album.name}</b>
-              <span>{album.artist} · {album.songs.length} tracks</span>
+              <span>{album.artist} · {ctx.countUnique ? ctx.countUnique(album.songs) : album.songs.length} tracks</span>
             </div>
           ))}
         </div>

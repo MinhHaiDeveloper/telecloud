@@ -106,7 +106,7 @@ input[type="number"].input::-webkit-inner-spin-button { opacity: .4; }
 .progress.lg { height: 8px; }
 
 /* Dialog */
-.dialog { max-width: calc(100vw - 32px); max-height: calc(100vh - 48px); display: flex; flex-direction: column; box-shadow: var(--shadow); animation: riseIn .25s var(--ease-out); }
+.dialog { max-width: calc(100vw - 32px); max-height: calc(100vh - 48px - var(--titlebar-h)); display: flex; flex-direction: column; box-shadow: var(--shadow); animation: riseIn .25s var(--ease-out); }
 .dialog-head { display: flex; align-items: center; gap: 12px; padding: 18px 18px 0 20px; }
 .dialog-head h3 { font-size: 17px; font-weight: 800; flex: 1; }
 .dialog-icon { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; background: var(--info-soft); color: var(--info); flex-shrink: 0; }
@@ -354,7 +354,7 @@ input[type="number"].input::-webkit-inner-spin-button { opacity: .4; }
 
 .range.vol.muted { opacity: .4; }
 .busy-overlay {
-  position: fixed; inset: 0; z-index: 1100; display: grid; place-items: center;
+  position: fixed; inset: var(--titlebar-h) 0 0 0; z-index: 1100; display: grid; place-items: center;
   background: var(--overlay); backdrop-filter: blur(6px); animation: fadeIn .2s;
 }
 .busy-card { padding: 26px 30px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; }
@@ -380,7 +380,16 @@ input[type="number"].input::-webkit-inner-spin-button { opacity: .4; }
   .eq-lower { grid-template-columns: 1fr; }
   .settings { grid-template-columns: 1fr; }
   .settings-nav { position: static; }
-  .settings-nav .nav-items { flex-direction: row; flex-wrap: wrap; }
+  /* tabs in one row that scrolls sideways; the active tab gets its own background
+     (the sliding indicator is built for the vertical list) */
+  .settings > * { min-width: 0; } /* the scrolling tab row must not widen the column */
+  .settings-nav .nav-items { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 4px; }
+  .settings-nav .nav-items::-webkit-scrollbar { display: none; }
+  /* a soft fade at the right edge hints that more tabs scroll into view */
+  .settings-nav .nav-items { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); padding-right: 40px; }
+  .settings-nav .nav-items > button { flex-shrink: 0; white-space: nowrap; }
+  .settings-nav .indicator { display: none; }
+  .settings-nav .nav-items > button.on { background: var(--accent-soft); border-radius: 10px; }
   .split { grid-template-columns: 1fr; }
   .list-panel { position: static; }
   .stat-grid, .feature-grid { grid-template-columns: 1fr 1fr; }
@@ -758,3 +767,40 @@ html.np-cover-only .app.np-mode .np-body { padding-bottom: 0; }
 .lyr-tools > span:first-child { margin-left: 0; }
 .lyr-tools .btn-ghost.sm { padding: 4px 9px; font-size: 12px; background: var(--surface); }
 .lyr-sp { flex: 1; }
+
+/* Dashboard header: the description gives way (one line, then hidden) before the range picker wraps */
+.dash .page-head { flex-wrap: wrap; row-gap: 10px; }
+.dash .page-head .sub { flex: 1 1 160px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash .page-head .end { margin-left: auto; }
+.dash .segmented { flex-wrap: nowrap; white-space: nowrap; }
+@media (max-width: 1100px) { .dash .page-head .sub { display: none; } }
+
+/* Artist page: Songs | Albums */
+.artist-tabs { margin: 16px 0 14px; }
+
+/* Album cover dialog */
+.cov-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 18px; height: min(60vh, 520px); }
+.cov-side { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; }
+.cov-big { width: 100%; aspect-ratio: 1; border-radius: 12px; overflow: hidden; flex: none; }
+.cov-cap { font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
+.cov-problem { font-size: 12px; color: var(--danger, #e5484d); overflow-wrap: anywhere; }
+.cov-saveto { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-2); }
+.cov-main { display: flex; flex-direction: column; gap: 10px; min-height: 0; min-width: 0; }
+.cov-results { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+.cov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.cov-item { position: relative; display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 6px; text-align: left; border-radius: 12px; background: var(--surface-2); border: 1.5px solid transparent; }
+.cov-item:hover { background: var(--surface-hover); }
+.cov-item.on { border-color: var(--accent); background: var(--accent-soft); }
+.cov-item:active:not(:disabled) { transform: none; }
+.cov-item img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; display: block; margin-bottom: 4px; }
+.cov-item .badge { position: absolute; top: 10px; left: 10px; background: rgba(0, 0, 0, .78); color: #fff; }
+.cov-item b, .cov-item small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cov-item b { font-size: 12.5px; }
+.cov-item small { font-size: 11.5px; color: var(--text-2); }
+.cover-note { padding: 6px 0 2px; }
+
+/* Edit info: album cover row */
+.meta-form > .meta-cover { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; }
+.meta-cover .cover { width: 72px; height: 72px; border-radius: 10px; overflow: hidden; flex: none; }
+.meta-cover-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.meta-cover-side small { font-size: 12px; color: var(--text-2); overflow-wrap: anywhere; }

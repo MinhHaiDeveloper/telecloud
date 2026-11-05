@@ -277,7 +277,7 @@ const SongList = ({
         <>
           <div className="track-head">
             <span className="t-num">#</span><span>Title</span><span className="c-album">Album</span>
-            <span>Quality</span><span className="c-src src-head">Source<SourceInfo /></span><span style={{ textAlign: 'right' }}>Time</span><span />
+            <span>Quality</span><span className="c-src src-head">Source<SourceInfo /></span><span className="c-plays">Plays</span><span style={{ textAlign: 'right' }}>Time</span><span />
           </div>
           <div className="track-rows" ref={rowsRef} style={{ paddingTop: start * ROW_H, height: items.length * ROW_H }}>
           {items.slice(start, end).map((item) => {
@@ -315,7 +315,14 @@ const SongList = ({
                 </div>
                 <span className="t-album c-album">{linkAlbum ? (<MetaLinks file={file} artist={false} />) : (file.metadata?.album || '—')}{linkAlbum && (!file.metadata?.album || file.metadata.album === 'Unknown Album') && '—'}</span>
                 <span><span className={`badge b-${q.tier} mono`}>{q.label}</span></span>
-                <span className="t-src c-src" title={file.telegram_message_id && storageNames ? `In ${storageNames.get(String(file.telegram_channel_id)) || 'TeleCloud'}` : undefined}>{storageOf(file).map(s => SRC_BADGE[s])}</span>
+                <span className="t-src c-src" title={file.telegram_message_id && storageNames ? `In ${storageNames.get(String(file.telegram_channel_id)) || 'TeleCloud'}` : undefined}>{storageOf(file).map(s => SRC_BADGE[s])}{ctx.duplicates?.has(file.path) && <span className="badge b-cached" key="dup" title={`Extra copy of ${ctx.duplicates.get(file.path)}`}>Copy</span>}</span>
+                <span className="c-plays">
+                  {ctx.playCounts?.[file.path] > 0 && (
+                    <span className="t-plays" title={`Played ${ctx.playCounts[file.path]} ${ctx.playCounts[file.path] === 1 ? 'time' : 'times'}`}>
+                      <Icon name="play" filled />{ctx.playCounts[file.path].toLocaleString()}
+                    </span>
+                  )}
+                </span>
                 <span className="t-dur mono">{formatTime(file.metadata?.duration)}</span>
                 <span className="t-act">
                   <button
@@ -342,6 +349,7 @@ const SongList = ({
           {onBackupTo && <button className="menu-item" onClick={() => act(onBackupTo)}><Icon name="cloud" />{menuFile.telegram_message_id ? `In ${storageNames?.get(String(menuFile.telegram_channel_id)) || 'TeleCloud'} · move…` : 'Back up to…'}</button>}
           {ctx.onEditInfo && <button className="menu-item" onClick={() => { const f = menuFile; setMenu(null); ctx.onEditInfo([f]); }}><Icon name="music" />Edit info…</button>}
           {ctx.onEditLyrics && <button className="menu-item" onClick={() => act(ctx.onEditLyrics)}><Icon name="lyrics" />Lyrics…</button>}
+          {ctx.onEditCover && <button className="menu-item" onClick={() => { const f = menuFile; setMenu(null); ctx.onEditCover([f]); }}><Icon name="image" />Album cover…</button>}
           {onDownloadSong && <button className="menu-item" onClick={() => act(onDownloadSong)}><Icon name="download" />Download</button>}
           {onRemoveFromCloud && menuFile.telegram_message_id && <button className="menu-item danger" onClick={() => { const f = menuFile; setMenu(null); onRemoveFromCloud([f]); }}><Icon name="cloud" />Remove from TeleCloud</button>}
           {onDeleteSong && <>

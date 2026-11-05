@@ -17,7 +17,7 @@ import SearchView from './components/SearchView';
 import SettingsView from './components/SettingsView';
 import EqSettingsView from './components/EqSettingsView';
 import Modal from './components/Modal'; // Import the new Modal component
-import { computeSignalPath, matchesSource, storageOf, qualityOf } from './utils/audio';
+import { computeSignalPath, matchesSource, storageOf, qualityOf, findDuplicates, dedupeTracks, coverTargets, albumQuery, bumpCovers, setCoverPreview, clearCoverPreview } from './utils/audio';
 import { DialogHost, confirmDialog, alertDialog, Progress } from './components/ui';
 import useEq from './hooks/useEq';
 import StorageDialog from './components/StorageDialog';
@@ -26,8 +26,11 @@ import OverflowTooltip from './components/OverflowTooltip';
 import SongActions from './components/songActions';
 import Presence from './components/Presence';
 import DashboardView from './components/DashboardView';
+import TitleBar from './components/TitleBar';
+import FpsMeter from './components/FpsMeter';
 import LyricsDialog from './components/LyricsDialog';
 import MetadataDialog from './components/MetadataDialog';
+import CoverDialog from './components/CoverDialog';
 import { useUpdateStatus } from './components/UpdateStatus';
 
 // localStorage can throw (private mode, blocked storage); UI prefs are optional
@@ -94,6 +97,15 @@ function App() {
   const [spectrumFile, setSpectrumFile] = useState(null);
   const [selectedAlbum, setSelectedAlbum] = useState(null);
   const [selectedArtist, setSelectedArtist] = useState(null);
+  const [artistTab, setArtistTab] = useState('songs');
+  // Extra copies of the same track: skipped everywhere unless turned off (Settings -> Library)
+  const [skipDuplicates, setSkipDuplicatesState] = useState(true);
+  useEffect(() => { window.ipcRenderer.invoke('load-store', 'settings').then(s => { if (s && s.skipDuplicates === false) setSkipDuplicatesState(false); }).catch(() => {}); }, []);
+  const setSkipDuplicates = async (v) => {
+    setSkipDuplicatesState(v);
+    const s = (await window.ipcRenderer.invoke('load-store', 'settings')) || {};
+    await window.ipcRenderer.invoke('save-store', 'settings', { ...(Array.isArray(s) ? {} : s), skipDuplicates: v });
+  };
   const [theme, setTheme] = useState(() => readPref('tc-theme') || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
 
   // New shell UI state
@@ -191,15 +203,26 @@ function App() {
     const onChange = () => { clearTimeout(t); t = setTimeout(load, 400); };
     load();
     window.ipcRenderer.on('stats:changed', onChange);
-    return () => { clearTimeout(t); window.ipcRenderer.removeListener?.('stats:changed', onChange); };
+    // the library changed (files moved, renamed, rescanned): re-read, which re-attaches moved tracks
+    window.addEventListener('telecloud:library-changed', onChange);
+    return () => { clearTimeout(t); window.ipcRenderer.removeListener?.('stats:changed', onChange); window.removeEventListener('telecloud:library-changed', onChange); };
   }, []);
   const listenRef = useRef({ path: null });
+
+  // tell the play counts (and the Dashboard) when the set of library paths changes
+  useEffect(() => { if (musicFiles.length) window.dispatchEvent(new Event('telecloud:library-changed')); }, [musicFiles]);
 
   // ---- Lyrics: the dialog, and lyrics found online for the playing track (shown before they are saved)
   const [lyricsFile, setLyricsFile] = useState(null);
   const [lyricsFound, setLyricsFound] = useState(null); // { path, label, lyrics }
   const [metaFiles, setMetaFiles] = useState(null); // tracks open in the tag editor
   const update = useUpdateStatus();
+  const [showFps, setShowFps] = useState(() => { try { return localStorage.getItem('show-fps') === '1'; } catch { return false; } });
+  useEffect(() => {
+    const on = () => { try { setShowFps(localStorage.getItem('show-fps') === '1'); } catch { /* ignore */ } };
+    window.addEventListener('telecloud:fps', on);
+    return () => window.removeEventListener('telecloud:fps', on);
+  }, []);
   const [updateDismissed, setUpdateDismissed] = useState(false);
   useEffect(() => {
     const onSaved = (e, { path, lyrics }) => {
@@ -231,6 +254,48 @@ function App() {
       if (!alive || !best) return;
       if (o.autoSave) window.ipcRenderer.invoke('lyrics:save', { path: f.path, lyrics: best.lyrics });
       else setLyricsFound({ path: f.path, label: o.sources?.[best.source]?.label || best.source, lyrics: best.lyrics });
+    })();
+    return () => { alive = false; };
+  }, [currentFile?.path]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ---- Album covers: the dialog, and a cover found online for the playing album (shown before it is saved)
+  const [coverFiles, setCoverFiles] = useState(null);
+  const [coverFound, setCoverFound] = useState(null); // { paths, label, image }
+  useEffect(() => {
+    const onSaved = (e, { paths, files }) => {
+      const byPath = new Map((files || []).map(f => [f.path, f]));
+      if (byPath.size) {
+        setMusicFiles(prev => prev.map(f => byPath.get(f.path) || f));
+        setCurrentFile(f => (f && byPath.has(f.path) ? byPath.get(f.path) : f));
+      }
+      bumpCovers(paths);
+      setCoverFound(f => (f && paths.some(p => f.paths.includes(p)) ? null : f));
+    };
+    window.ipcRenderer.on('covers:saved', onSaved);
+    return () => window.ipcRenderer.removeListener?.('covers:saved', onSaved);
+  }, []);
+  useEffect(() => {
+    const f = currentFile;
+    if (f && coverFound?.paths.includes(f.path)) return undefined; // the next track of the same album
+    setCoverFound(null);
+    clearCoverPreview();
+    if (!f) return undefined;
+    let alive = true;
+    (async () => {
+      const o = await window.ipcRenderer.invoke('covers:options').catch(() => null);
+      if (!o?.search || !alive) return;
+      if (await window.ipcRenderer.invoke('covers:has', { path: f.path }).catch(() => true)) return;
+      const targets = coverTargets([f], musicFiles);
+      const q = albumQuery(targets);
+      if (!q.album || !alive) return; // nothing to go on: the dialog can still search by hand
+      const paths = targets.map(t => t.path);
+      const r = await window.ipcRenderer.invoke('covers:search', { query: { ...q, paths }, auto: true }).catch(() => null);
+      const best = r?.results?.find(x => x.score >= 0.7);
+      if (!alive || !best) return;
+      if (o.autoSave) window.ipcRenderer.invoke('covers:save', { paths, image: best.image, onlyMissing: true });
+      else {
+        setCoverPreview(paths, best.thumb);
+        setCoverFound({ paths, label: o.sources?.[best.source]?.label || best.source, image: best.image });
+      }
     })();
     return () => { alive = false; };
   }, [currentFile?.path]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -606,6 +671,11 @@ function App() {
     try {
       let listToPlay = contextList || musicFiles;
       let indexToPlay = index;
+      if (!keepQueue && skipDuplicates) {
+        // the same album in two folders plays once (the track you clicked stays the one that plays)
+        const unique = dedupeTracks(listToPlay, file.path);
+        if (unique !== listToPlay) { listToPlay = unique; indexToPlay = unique.findIndex(f => f.path === file.path); }
+      }
       if (!keepQueue) {
         unshuffledQueueRef.current = listToPlay;
         if (isShuffle) {
@@ -941,7 +1011,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
   const handleQueueMany = (files) => {
     if (!currentFile || currentIndex < 0) { playMusic(files[0], 0, files); return; }
     const queued = new Set(playQueue.slice(currentIndex).map(f => f.path));
-    const fresh = files.filter(f => !queued.has(f.path));
+    const fresh = (skipDuplicates ? dedupeTracks(files) : files).filter(f => !queued.has(f.path));
     if (!fresh.length) { showToast('Already in the queue'); return; }
     setPlayQueue([...playQueue, ...fresh]);
     showToast(fresh.length === 1 ? 'Added to the queue' : `Added ${fresh.length} tracks to the queue`);
@@ -998,6 +1068,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
   const playlistsLive = useMemo(() => playlists.map(p => ({ ...p, songs: live(p.songs) })), [live, playlists]);
   const currentLive = (currentFile && libraryByPath.get(currentFile.path)) || currentFile;
 
+  const duplicates = useMemo(() => findDuplicates(musicFiles), [musicFiles]);
   if (isCheckingAuth) {
     return <div className="app" />;
   }
@@ -1024,8 +1095,8 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     if (view === 'artists') setSelectedArtist(null);
   };
   // Clicking an album or artist name anywhere opens its page (and leaves full screen)
-  const openAlbum = (name) => { if (!name) return; navigate('albums'); setSelectedAlbum({ name }); };
-  const openArtist = (name) => { if (!name) return; navigate('artists'); setSelectedArtist(name); };
+  const openAlbum = (name, fromArtist) => { if (!name) return; navigate('albums'); setSelectedAlbum({ name, fromArtist }); };
+  const openArtist = (name, tab = 'songs') => { if (!name) return; navigate('artists'); setSelectedArtist(name); setArtistTab(tab); };
   const openEq = () => { setNowPlaying(null); setCurrentView('eq-settings'); };
   const openNowPlaying = (panel, origin = 'player') => currentFile && setNowPlaying({ panel, origin });
 
@@ -1077,8 +1148,18 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     onRemoveFromCloud: songListProps.onRemoveFromCloud, storageNames,
     onQueueMany: handleQueueMany, onFavoriteMany: handleFavoriteMany, onDeleteMany: handleDeleteMany,
     openAlbum, openArtist, playCounts,
+    duplicates, skipDuplicates, setSkipDuplicates, openDuplicates: () => navigate('duplicates'),
+    dedupe: skipDuplicates ? (list) => dedupeTracks(list) : null,
+    countUnique: (list) => (skipDuplicates ? list.filter(f => !duplicates.has(f.path)).length : list.length),
     onEditLyrics: (file) => setLyricsFile(file), lyricsFound,
     onEditInfo: (files) => setMetaFiles(files),
+    allFiles: musicFiles, coverFound,
+    onEditCover: (files) => setCoverFiles(coverTargets(files, musicFiles)),
+    onSaveCoverFound: async () => {
+      if (!coverFound) return;
+      const r = await window.ipcRenderer.invoke('covers:save', { paths: coverFound.paths, image: coverFound.image });
+      showToast(r?.success ? 'Cover saved' : `Could not save the cover: ${r?.error}`, r?.success ? 'success' : 'error');
+    },
     onSaveFound: async () => {
       if (!lyricsFound) return;
       const r = await window.ipcRenderer.invoke('lyrics:save', { path: lyricsFound.path, lyrics: lyricsFound.lyrics });
@@ -1151,6 +1232,17 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
             />
           </div>
         );
+      case 'duplicates':
+        return (
+          <div className="view">
+            <SongList
+              {...songListProps}
+              title="Duplicates"
+              subtitle={`${duplicates.size.toLocaleString()} extra ${duplicates.size === 1 ? 'copy' : 'copies'}: the better copy of each track stays in your library`}
+              musicFiles={musicFiles.filter(f => duplicates.has(f.path))}
+            />
+          </div>
+        );
       case 'dashboard':
         return <div className="view"><DashboardView musicFiles={musicFiles} onPlay={playMusic} /></div>;
       case 'favorites':
@@ -1172,7 +1264,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
           </div>
         );
       case 'artists':
-        return <div className="view"><ArtistsView musicFiles={sourceFiles} {...songListProps} selectedArtist={selectedArtist} setSelectedArtist={setSelectedArtist} /></div>;
+        return <div className="view"><ArtistsView musicFiles={sourceFiles} {...songListProps} selectedArtist={selectedArtist} setSelectedArtist={setSelectedArtist} artistTab={artistTab} setArtistTab={setArtistTab} /></div>;
       case 'albums':
         return (
           <div className="view">
@@ -1227,6 +1319,8 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
 
   return (
     <SongActions.Provider value={songActions}>
+    {showFps && <FpsMeter />}
+    <TitleBar subtitle={currentLive ? `${currentLive.metadata?.title || currentLive.name}${currentLive.metadata?.artist ? ` · ${currentLive.metadata.artist}` : ''}` : null} />
     <div className={`app ${isSidebarCollapsed ? 'side-collapsed' : ''} ${wideView ? 'no-right' : ''} ${nowPlaying && currentFile && !nowPlaying.closing ? 'np-mode' : ''}`}>
       <OverflowTooltip />
       <Sidebar
@@ -1387,12 +1481,21 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
           onClose={() => setMetaFiles(null)}
           onDone={(r) => {
             if (!r?.success) { showToast(`Could not save tags: ${r?.error || 'unknown error'}`, 'error'); return; }
+            if (r.coverOnly) { showToast('Cover saved'); return; }
             const byPath = new Map((r.files || []).filter(Boolean).map(f => [f.path, f]));
             setMusicFiles(prev => prev.map(f => byPath.get(f.path) || f));
             setCurrentFile(f => (f && byPath.has(f.path) ? byPath.get(f.path) : f));
             if (r.errors?.length) showToast(`${r.errors.length} ${r.errors.length === 1 ? 'file' : 'files'} could not be changed: ${r.errors[0].error}`, 'error');
             else showToast(byPath.size === 1 ? 'Track info saved' : `Saved ${byPath.size} tracks`);
           }}
+        />
+      )}
+
+      {coverFiles && (
+        <CoverDialog
+          files={coverFiles}
+          onClose={() => setCoverFiles(null)}
+          onSaved={(r) => showToast(r.errors?.length ? `Cover saved, but ${r.errors.length} ${r.errors.length === 1 ? 'file' : 'files'} could not be changed` : 'Cover saved', r.errors?.length ? 'error' : 'success')}
         />
       )}
 

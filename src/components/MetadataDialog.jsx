@@ -1,5 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { Dialog, Field } from './ui';
+import Cover from './Cover';
+import Icon from './Icon';
+import SongActions from './songActions';
+import { coverTargets } from '../utils/audio';
 
 const FIELDS = [
   { key: 'title', label: 'Title', single: true },
@@ -22,6 +26,15 @@ const MetadataDialog = ({ files, onClose, onDone }) => {
   const [values, setValues] = useState(null);
   const [touched, setTouched] = useState({});
   const [saving, setSaving] = useState(false);
+  const { onEditCover, allFiles } = useContext(SongActions);
+  const [newCover, setNewCover] = useState(null); // an uploaded picture, written when you press Save
+  const [coverError, setCoverError] = useState('');
+  const upload = async () => {
+    setCoverError('');
+    const r = await window.ipcRenderer.invoke('covers:pick');
+    if (!r?.success) setCoverError(r?.error || 'Could not open that picture');
+    else if (r.picked) setNewCover(r.picked);
+  };
   const cloudOnly = files.filter(f => (f.storage_type || 'local') === 'cloud' || f.path.startsWith('tc://')).length;
   const backedUp = files.filter(f => f.telegram_message_id).length;
 
@@ -42,8 +55,17 @@ const MetadataDialog = ({ files, onClose, onDone }) => {
 
   const save = async () => {
     const changes = Object.fromEntries(Object.keys(touched).map(k => [k, values[k] === MIXED ? '' : values[k]]));
-    if (!Object.keys(changes).length) { onClose(); return; }
+    if (!Object.keys(changes).length && !newCover) { onClose(); return; }
     setSaving(true);
+    if (newCover) {
+      const c = await window.ipcRenderer.invoke('covers:save', { paths: coverTargets(files, allFiles).map(f => f.path), image: { file: newCover.file } });
+      if (!c?.success || c.errors?.length) {
+        setSaving(false);
+        setCoverError(c?.error || `${c.errors.length} ${c.errors.length === 1 ? 'file' : 'files'} could not be changed: ${c.errors[0].error}`);
+        return;
+      }
+      if (!Object.keys(changes).length) { setSaving(false); onDone?.({ success: true, files: [], coverOnly: true }); onClose(); return; }
+    }
     const r = await window.ipcRenderer.invoke('tags:edit', { paths: files.map(f => f.path), changes });
     setSaving(false);
     onDone?.(r);
@@ -65,6 +87,17 @@ const MetadataDialog = ({ files, onClose, onDone }) => {
     >
       {!values ? <div className="lyr-empty"><span className="ring" />Reading tags…</div> : (
         <div className="meta-form">
+          <div className="meta-cover">
+            {newCover ? <Cover src={newCover.thumb} /> : <Cover file={files[0]} />}
+            <div className="meta-cover-side">
+              <small>{newCover ? `${newCover.name} · ${newCover.width} × ${newCover.height} · saved when you press Save` : 'Album cover'}</small>
+              <div className="btn-row">
+                <button className="btn-ghost sm" onClick={upload}><Icon name="plus" />Upload picture…</button>
+                {onEditCover && <button className="btn-ghost sm" onClick={() => onEditCover(files)}><Icon name="search" />Search online…</button>}
+              </div>
+              {coverError && <small className="cov-problem">{coverError}</small>}
+            </div>
+          </div>
           {FIELDS.filter(f => !(many && f.single)).map(f => (
             <div key={f.key} className={f.small ? 'small' : ''}>
               <Field label={f.label} hint={f.hint}>

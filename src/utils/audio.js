@@ -23,7 +23,43 @@ export const formatBytes = (bytes) => {
   return `${(bytes / 1024 ** i).toFixed(i >= 3 ? 1 : 0)} ${units[i]}`;
 };
 
-export const coverUrl = (file) => (file?.path ? `media://${encodeURIComponent(file.path)}` : file?.cover || null);
+// A cover that was just saved gets a new address (the old one stays in the browser's image cache);
+// a cover found online but not saved yet shows for its album until it is saved or dropped.
+const coverRevisions = new Map();
+const coverPreviews = new Map();
+const coversChanged = () => window.dispatchEvent(new Event('telecloud:covers'));
+export const bumpCovers = (paths) => { const r = Date.now(); (paths || []).forEach(p => { coverRevisions.set(p, r); coverPreviews.delete(p); }); coversChanged(); };
+export const setCoverPreview = (paths, url) => { coverPreviews.clear(); (paths || []).forEach(p => coverPreviews.set(p, url)); coversChanged(); };
+export const clearCoverPreview = () => { if (coverPreviews.size) { coverPreviews.clear(); coversChanged(); } };
+export const coverUrl = (file) => {
+  if (!file?.path) return file?.cover || null;
+  const preview = coverPreviews.get(file.path);
+  if (preview) return preview;
+  const rev = coverRevisions.get(file.path);
+  return `media://${encodeURIComponent(file.path)}${rev ? `?r=${rev}` : ''}`;
+};
+const firstCredit = (a) => (a || '').split(/,|;|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+/i)[0].trim();
+const folderOf = (p) => p.replace(/[\\/][^\\/]*$/, '');
+const hasAlbum = (f) => { const a = f?.metadata?.album; return !!a && a !== 'Unknown Album'; };
+/** Every track a cover applies to: the album (including copies elsewhere), or just the given tracks when they span albums */
+export const coverTargets = (files, all) => {
+  if (!files?.length) return [];
+  const album = files[0].metadata?.album;
+  if (!hasAlbum(files[0]) || files.some(f => f.metadata?.album !== album)) return files;
+  const artists = new Set(files.map(f => firstCredit(f.metadata?.artist).toLowerCase()));
+  const folders = new Set(files.map(f => folderOf(f.path)));
+  const extra = (all || []).filter(f => f.metadata?.album === album && (folders.has(folderOf(f.path)) || artists.has(firstCredit(f.metadata?.artist).toLowerCase())));
+  return [...new Map([...files, ...extra].map(f => [f.path, f])).values()];
+};
+/** Album and main artist to search for ("Various" albums search by name only) */
+export const albumQuery = (files) => {
+  const first = files?.[0];
+  if (!first) return { album: '', artist: '' };
+  const counts = new Map();
+  files.forEach(f => { const a = firstCredit(f.metadata?.artist); if (a && a !== 'Unknown Artist') counts.set(a, (counts.get(a) || 0) + 1); });
+  const [top, n] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0] || ['', 0];
+  return { album: hasAlbum(first) ? first.metadata.album : '', artist: n * 2 > files.length ? top : '' };
+};
 
 const LOSSLESS_EXT = new Set(['flac', 'wav', 'aiff', 'aif', 'alac', 'ape', 'wv', 'tta']);
 const DSD_EXT = new Set(['dsf', 'dff']);
@@ -131,3 +167,55 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
   }
   return { steps, bitPerfect, verdict, quality: q, deviceName, exclusive, outSpec };
 };
+
+// ---- Duplicate tracks: the same album in two folders must not play or list every song twice
+
+const dupKey = (f) => {
+  const m = f?.metadata || {};
+  return [m.title || f?.name || '', m.album || '', m.disc || 1, m.track || 0].join('\u0000').toLowerCase();
+};
+// which copy to keep: a file on this computer, then the better quality
+const copyRank = (f) => {
+  const q = qualityOf(f);
+  const local = (f.storage_type || 'local') !== 'cloud' && !f.path?.startsWith('tc://');
+  return (local ? 4e9 : 0) + (q.tier === 'hires' ? 2e9 : q.tier === 'lossless' ? 1e9 : 0) + (q.bits || 0) * 1e6 + (q.rate || 0) + (f.metadata?.bitrate || 0) / 1e3;
+};
+
+/**
+ * Finds extra copies: same title, album, disc and track number, and a length within 2 s.
+ * Returns path of each extra copy → the copy that is kept. `prefer` wins (the track you clicked).
+ */
+export function findDuplicates(files, prefer) {
+  const groups = new Map();
+  for (const f of files) {
+    if (!f?.path) continue;
+    const k = dupKey(f);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(f);
+  }
+  const extra = new Map();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const ranked = [...group].sort((a, b) => (b.path === prefer) - (a.path === prefer) || copyRank(b) - copyRank(a));
+    const kept = [];
+    for (const f of ranked) {
+      const twin = kept.find(k => Math.abs((k.metadata?.duration || 0) - (f.metadata?.duration || 0)) <= 2);
+      if (twin) extra.set(f.path, twin.path); else kept.push(f);
+    }
+  }
+  return extra;
+}
+
+/** The list without extra copies, order kept */
+export function dedupeTracks(files, prefer) {
+  const extra = findDuplicates(files, prefer);
+  return extra.size ? files.filter(f => !extra.has(f.path)) : files;
+}
+
+/** Album order: disc, then track number, then name (a missing disc number counts as disc 1) */
+export const sortAlbumTracks = (songs) => [...songs].sort((a, b) => {
+  const da = a.metadata?.disc || 1, db = b.metadata?.disc || 1;
+  if (da !== db) return da - db;
+  const ta = a.metadata?.track || 0, tb = b.metadata?.track || 0;
+  return ta !== tb ? ta - tb : (a.name || '').localeCompare(b.name || '');
+});

@@ -327,8 +327,8 @@ async function downloadSmall({ storage, messageId, iv }) {
 }
 
 /** Upload the track's album cover once per storage; remember which cover the track uses */
-async function ensureCover(libraryPath, storage) {
-  const cj = await covers.coverJpeg(libraryPath);
+async function ensureCover(libraryPath, storage, given) {
+  const cj = given || await covers.coverJpeg(libraryPath);
   if (!cj) return null;
   store.library.setCover(libraryPath, cj.key);
   const local = covers.cloudCoverFile(cj.key);
@@ -402,6 +402,44 @@ async function writeManifest(storageId) {
  * file itself is re-uploaded by the file watcher when its bytes changed.
  */
 let indexTimer = null;
+/**
+ * Delete replaced covers from the chat, unless a track still uses them. Tracks in the index that
+ * this library doesn't have count too: their cover is only known from the last manifest.
+ */
+async function dropReplacedCovers(s, keys) {
+  const replaced = [...new Set(keys)].map(k => store.covers.get(s.id, k)).filter(Boolean);
+  if (!replaced.length) return;
+  const manifest = await loadManifest(s);
+  const known = new Map((manifest?.tracks || []).map(t => [t.id, t.cover]));
+  const inUse = new Set(store.index.all(s.id).map(e => store.library.byMessage(s.peer_id, e.message_id)?.cloud_cover || known.get(e.message_id)));
+  const unused = replaced.filter(c => !inUse.has(c.cover_key));
+  if (!unused.length) return;
+  await worker.call('deleteMessages', { peer: store.toPeer(s), ids: unused.map(c => c.message_id) });
+  unused.forEach(c => store.covers.remove(s.id, c.cover_key));
+}
+
+/** A cover was chosen in the app: put the new picture in TeleCloud and the index, and drop the old one */
+async function coversChanged(paths, previous = []) {
+  const rows = (paths || []).map(p => store.library.row(p)).filter(r => r?.telegram_message_id);
+  if (!rows.length || !cm().isAuthenticated()) return;
+  await ensureConnected();
+  const touched = new Map();
+  for (const row of rows) {
+    const s = store.storages.byPeer(row.telegram_channel_id);
+    if (!s) continue;
+    touched.set(s.id, s);
+    if (fs.existsSync(row.path)) await ensureCover(row.path, s);
+    else if (row.cloud_cover) {
+      const buffer = await covers.readIfExists(covers.cloudCoverFile(row.cloud_cover));
+      if (buffer) await ensureCover(row.path, s, { key: row.cloud_cover, buffer });
+    }
+  }
+  for (const s of touched.values()) {
+    await dropReplacedCovers(s, previous).catch(err => console.warn('[TeleCloud] old cover not removed:', err.message));
+  }
+  indexChanged(paths);
+}
+
 function indexChanged(paths) {
   for (const p of paths || []) {
     const row = store.library.row(p);
@@ -1100,4 +1138,4 @@ function cleanupTeleCloudSync() {
   worker.stop();
 }
 
-module.exports = { setupTeleCloudSyncHandlers, cleanupTeleCloudSync, indexChanged, _internals: { cacheTrack, refreshIndex, restore, startRunner, enforceCacheLimit, store, options, setOptions } };
+module.exports = { setupTeleCloudSyncHandlers, cleanupTeleCloudSync, indexChanged, coversChanged, _internals: { cacheTrack, refreshIndex, restore, startRunner, enforceCacheLimit, store, options, setOptions } };

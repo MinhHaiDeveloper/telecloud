@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -23,6 +23,7 @@ require('./spectrum.js');
 require('./autoeq.js');
 require('./stats.js');
 require('./lyrics.js');
+require('./coverSearch.js');
 require('./tagEdit.js');
 require('./lastfm.js');
 require('./updater.js');
@@ -33,6 +34,11 @@ let currentlyWatchedKey = null; // Folder list the watcher was started with
 const covers = require('./covers');
 
 const isDev = !app.isPackaged;
+
+// Settings → General → Performance: run on the high-performance GPU (laptops with two GPUs often
+// give Electron apps the integrated one, which can't keep up with 144–240 Hz screens). Applies at start.
+try { if (readSettings().highPerformanceGpu) app.commandLine.appendSwitch('force_high_performance_gpu'); } catch { /* defaults */ }
+ipcMain.handle('app:relaunch', () => { app.relaunch(); app.exit(0); });
 
 // Temporary download target for cloud tracks; the renderer only chooses the file name
 ipcMain.handle('get-temp-path', async (event, filename) => {
@@ -92,10 +98,24 @@ ipcMain.handle('clear-database-and-cache', async () => {
   }
 });
 
+// No File / Edit / View menu: the app draws its own title bar with window buttons
+Menu.setApplicationMenu(null);
+
+// Custom title bar buttons (the window is frameless)
+const winOf = (e) => BrowserWindow.fromWebContents(e.sender);
+ipcMain.handle('window:minimize', (e) => { winOf(e)?.minimize(); });
+ipcMain.handle('window:toggle-maximize', (e) => { const w = winOf(e); if (!w) return false; if (w.isMaximized()) w.unmaximize(); else w.maximize(); return w.isMaximized(); });
+ipcMain.handle('window:close', (e) => { winOf(e)?.close(); });
+ipcMain.handle('window:state', (e) => { const w = winOf(e); return { maximized: !!w?.isMaximized(), fullscreen: !!w?.isFullScreen(), focused: !!w?.isFocused() }; });
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
+    minWidth: 960,
+    minHeight: 600,
+    frame: false,
+    backgroundColor: '#121214', // no white flash before the page paints
     icon: path.join(__dirname, isDev ? '../public/icon.png' : '../dist/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -104,6 +124,9 @@ function createWindow() {
       sandbox: true,
     },
   });
+
+  const sendState = () => { if (!win.isDestroyed()) win.webContents.send('window:state', { maximized: win.isMaximized(), fullscreen: win.isFullScreen(), focused: win.isFocused() }); };
+  ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'focus', 'blur', 'restore'].forEach(ev => win.on(ev, sendState));
 
   // The app never opens its own windows or navigates away; external links go through 'open-external'
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -143,20 +166,33 @@ app.whenReady().then(async () => {
   const typeOf = (buf) => (buf[0] === 0x89 ? 'image/png' : buf[0] === 0x52 ? 'image/webp' : 'image/jpeg');
   const imageResponse = (buf) => new Response(buf, { headers: { 'Content-Type': typeOf(buf) } });
 
-  // media://<encoded track path> serves cover art for library tracks only
+  /** The picture shown for a track, or null */
+  const artFor = async (songPath) => {
+    const row = database.getFileByPath(songPath);
+    const stored = row?.cloud_cover ? await covers.readIfExists(covers.cloudCoverFile(row.cloud_cover)) : null;
+    const original = isInLibrary(songPath) && fs.existsSync(songPath);
+    // cloud-only: the album cover in TeleCloud comes first, even with a cached copy of the audio
+    // (that copy's embedded art may be older than a cover chosen since)
+    if (!original && stored) return stored;
+    const candidates = [];
+    if (row?.cache_path && isInAppStorage(row.cache_path)) candidates.push(row.cache_path);
+    if (original) candidates.push(songPath);
+    const source = candidates.find(p => fs.existsSync(p));
+    return (source ? await covers.coverForFile(source) : null) || stored;
+  };
+  ipcMain.handle('covers:has', async (e, { path: p }) => {
+    const art = await artFor(p).catch(() => null);
+    if (!art) return false;
+    // art that can't be drawn (a damaged tag) counts as no cover; WebP and GIF only the page can draw
+    const riff = art.toString('latin1', 0, 4) === 'RIFF' || art.toString('latin1', 0, 3) === 'GIF';
+    return riff || !nativeImage.createFromBuffer(art).isEmpty();
+  });
+
+  // media://<encoded track path>[?r=revision] serves cover art for library tracks only
   protocol.handle('media', async (request) => {
     try {
-      const songPath = decodeURIComponent(request.url.slice('media://'.length));
-      const row = database.getFileByPath(songPath);
-      const candidates = [];
-      if (row?.cache_path && isInAppStorage(row.cache_path)) candidates.push(row.cache_path);
-      if (isInLibrary(songPath)) candidates.push(songPath);
-      const source = candidates.find(p => fs.existsSync(p));
-      const art = source ? await covers.coverForFile(source) : null;
-      if (art) return imageResponse(art);
-      // cloud-only track (or a file without art): the album cover stored in TeleCloud
-      const cloudArt = row?.cloud_cover ? await covers.readIfExists(covers.cloudCoverFile(row.cloud_cover)) : null;
-      return cloudArt ? imageResponse(cloudArt) : new Response(null, { status: 404 });
+      const art = await artFor(decodeURIComponent(request.url.slice('media://'.length).split('?')[0]));
+      return art ? imageResponse(art) : new Response(null, { status: 404 });
     } catch (err) {
       console.error('[media://] Cover extraction error:', err.message);
       return new Response(null, { status: 404 });

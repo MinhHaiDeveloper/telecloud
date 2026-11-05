@@ -23,6 +23,16 @@ const Sidebar = ({
 }) => {
   const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
   const deviceRef = useRef(null);
+  // The menu is placed with fixed coordinates: the sidebar clips its overflow (and is only 72px wide collapsed)
+  const [menuPos, setMenuPos] = useState(null);
+  const toggleDeviceMenu = () => {
+    const card = deviceRef.current?.querySelector('.device-card');
+    if (card) {
+      const r = card.getBoundingClientRect();
+      setMenuPos({ left: r.left, bottom: window.innerHeight - r.top + 8, width: Math.max(r.width, 260) });
+    }
+    setDeviceMenuOpen(o => !o);
+  };
   const activeKey = currentView === 'playlists' && selectedPlaylistId ? `pl:${selectedPlaylistId}` : currentView;
   const navRef = useSlidingIndicator('y', `${activeKey}|${isCollapsed}|${playlists.length}`, 6);
 
@@ -102,7 +112,7 @@ const Sidebar = ({
       {/* Output device: shows the live signal state and switches devices */}
       <div className="device-wrap" ref={deviceRef}>
         {deviceMenuOpen && (
-          <div className="menu device-menu">
+          <div className="menu device-menu" style={menuPos ? { position: 'fixed', zIndex: 1200, left: menuPos.left, bottom: menuPos.bottom, width: menuPos.width, right: 'auto', top: 'auto' } : undefined}>
             <div className="menu-title">Output device</div>
             <button className={`menu-item ${selectedDevice === '-1' ? 'on' : ''}`} onClick={() => { onDeviceChange('-1'); setDeviceMenuOpen(false); }}>
               <Icon name="monitor" />System default (shared)
@@ -114,7 +124,7 @@ const Sidebar = ({
             ))}
           </div>
         )}
-        <button className="device-card" onClick={() => setDeviceMenuOpen(o => !o)} title={signal?.deviceName}>
+        <button className="device-card" onClick={toggleDeviceMenu} title={signal?.deviceName}>
           <div className="device-top">
             <div className="device-icon"><Icon name="speaker" /></div>
             <div className="device-info">

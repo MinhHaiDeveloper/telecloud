@@ -1,13 +1,15 @@
 /* ===== App frame ===== */
 .app {
-  height: 100vh;
+  height: calc(100vh - var(--titlebar-h));
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--right-w);
   grid-template-rows: minmax(0, 1fr) var(--player-h);
   grid-template-areas: "side main right" "player player player";
   background: var(--bg-app);
   color: var(--text);
-  overflow: hidden;
+  /* clip, not hidden: a hidden box can still be scrolled by the browser when something inside gets
+     focus (e.g. a settings toggle), which pushed the whole layout up and left a black band below */
+  overflow: clip;
   transition: grid-template-columns .3s var(--ease-out);
 }
 .app.no-right { grid-template-columns: var(--sidebar-w) minmax(0, 1fr) 0; }
@@ -96,7 +98,7 @@
 .sidebar {
   grid-area: side;
   display: flex; flex-direction: column;
-  padding: 22px 0 16px;
+  padding: 8px 0 16px; /* the title bar above gives the top space */
   border-right: 1px solid var(--border);
   overflow-y: auto; overflow-x: hidden;
   position: relative;
@@ -171,7 +173,7 @@
 .side-collapsed .sidebar .device-info,
 .side-collapsed .sidebar .device-meta { display: none; }
 .side-collapsed .sidebar .nav-item,
-.side-collapsed .sidebar .create-pl { justify-content: center; padding: 11px 0; }
+.side-collapsed .sidebar .create-pl { justify-content: center; padding: 11px 0; width: 100%; }
 .side-collapsed .sidebar .logo { flex-direction: column; padding: 0 0 18px; }
 .side-collapsed .sidebar .collapse-btn { margin: 8px 0 0; transform: rotate(180deg); }
 .side-collapsed .sidebar .device-wrap { margin: auto 10px 0; }
@@ -179,7 +181,7 @@
 .side-collapsed .sidebar .device-menu { right: auto; width: 260px; }
 
 /* ===== Topbar ===== */
-.topbar { display: flex; align-items: center; gap: 14px; padding: 20px 28px 18px; }
+.topbar { display: flex; align-items: center; gap: 14px; padding: 6px 28px 18px; }
 .search {
   flex: 1; max-width: 440px; min-width: 160px;
   display: flex; align-items: center; gap: 10px;
@@ -265,15 +267,15 @@
 .fmt-legend { font-size: 11px; color: var(--text-3); text-align: right; line-height: 1.5; }
 
 /* ===== Track list ===== */
-.track-list { --cols: 40px minmax(0, 2.2fr) minmax(0, 1.4fr) 110px 120px 64px 76px; container-type: inline-size; }
+.track-list { --cols: 40px minmax(0, 2.2fr) minmax(0, 1.4fr) 110px 120px 60px 64px 76px; container-type: inline-size; }
 /* Columns follow the list's own width (it can sit in a narrow split pane) */
 @container (max-width: 760px) {
-  .track-head, .track-row { --cols: 36px minmax(0, 1fr) 110px 120px 56px 64px; }
+  .track-head, .track-row { --cols: 36px minmax(0, 1fr) 110px 120px 56px 56px 64px; }
   .c-album { display: none; }
 }
 @container (max-width: 560px) {
   .track-head, .track-row { --cols: 32px minmax(0, 1fr) 104px 52px 64px; }
-  .c-album, .c-src { display: none; }
+  .c-album, .c-src, .c-plays { display: none; }
 }
 .track-head, .track-row {
   display: grid; grid-template-columns: var(--cols); align-items: center; gap: 10px;
@@ -332,7 +334,7 @@
   grid-area: right;
   border-left: 1px solid var(--border);
   overflow-y: auto; overflow-x: hidden;
-  padding: 22px 20px;
+  padding: 8px 20px 22px;
   display: flex; flex-direction: column;
   min-width: 0;
 }
@@ -569,11 +571,63 @@
   .sidebar .txt, .sidebar .nav-label, .sidebar .count, .sidebar .logo-text,
   .sidebar .create-pl span, .sidebar .device-info, .sidebar .device-meta, .sidebar .collapse-btn { display: none; }
   .sidebar .nav-item, .sidebar .create-pl { justify-content: center; padding: 11px 0; }
+  .sidebar .create-pl { width: 100%; }
   .sidebar .logo { justify-content: center; padding: 0 0 22px; }
   .sidebar .device-wrap { margin: auto 10px 0; }
   .sidebar .device-card { padding: 10px; display: grid; place-items: center; }
   .sidebar .device-menu { right: auto; width: 260px; }
   .hero, .bottom-row { grid-template-columns: 1fr; }
-  .player { grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; }
-  .p-seek, .p-right .hide-sm { display: none; }
+  /* the window's smallest size: keep the seek bar, drop the volume slider and extras */
+  .player { grid-template-columns: minmax(0, 1fr) minmax(260px, 1.5fr) auto; gap: 14px; padding: 0 16px; }
+  .p-right .hide-sm { display: none; }
 }
+
+/* ===== Title bar (frameless window) ===== */
+.titlebar {
+  position: relative; z-index: 6000; height: var(--titlebar-h);
+  display: flex; align-items: stretch; justify-content: space-between;
+  background: var(--bg-app); color: var(--text-2);
+  -webkit-app-region: drag; user-select: none;
+  transition: color .2s;
+}
+.titlebar.blurred { color: var(--text-3); }
+.tb-title { display: flex; align-items: center; gap: 7px; padding-left: 24px; min-width: 0; font-size: 12px; }
+.tb-title .ico { width: 13px; height: 13px; color: var(--accent); flex-shrink: 0; }
+.titlebar.blurred .tb-title .ico { color: var(--text-3); }
+.tb-mark { width: 16px; height: 16px; border-radius: 5px; display: grid; place-items: center; flex-shrink: 0;
+  background: linear-gradient(135deg, #FF8A3D, #FF5A4E 55%, #F0306E); color: #fff; }
+.tb-mark .ico { width: 13px; height: 13px; }
+.titlebar.blurred .tb-mark { filter: saturate(.4) opacity(.7); }
+.tb-name { font-weight: 700; color: var(--text); }
+.titlebar.blurred .tb-name { color: var(--text-2); }
+.tb-sub { color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-buttons { display: flex; -webkit-app-region: no-drag; }
+.tb-btn {
+  width: 46px; height: 100%; display: grid; place-items: center; color: var(--text-2);
+  transition: background .15s, color .15s !important;
+}
+.tb-btn:active:not(:disabled) { transform: none !important; }
+.tb-btn svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.1; }
+.tb-btn:hover { background: var(--surface-hover); color: var(--text); }
+.tb-btn:active { background: var(--surface-2); }
+.tb-btn.close:hover { background: #c42b1c; color: #fff; }
+.tb-btn.close:active { background: #a62416; color: #fff; }
+.titlebar.blurred .tb-btn { color: var(--text-3); }
+/* overlays start under the title bar, so the window can still be moved and closed */
+.modal-backdrop { top: var(--titlebar-h); }
+
+/* cover-only full screen: the title bar fades away too, and comes back under the pointer */
+html.np-cover-only .titlebar { opacity: 0; transition: opacity .4s var(--ease-out); }
+html.np-cover-only .titlebar:hover { opacity: 1; }
+/* Plays column: an accent pill, so a track's play count reads at a glance */
+.c-plays { display: flex; justify-content: center; }
+.t-plays {
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px 3px 7px; border-radius: 99px;
+  font: 700 12px var(--mono); color: var(--accent); background: var(--accent-soft); white-space: nowrap; line-height: 1.2;
+}
+.t-plays .ico { width: 9px; height: 9px; stroke-width: 0; }
+.track-row.playing .t-plays { background: var(--accent); color: var(--on-accent); }
+.fps-meter { position: fixed; top: calc(var(--titlebar-h) + 8px); right: 12px; z-index: 5500; pointer-events: none;
+  padding: 4px 9px; border-radius: 8px; font-size: 11.5px; background: rgba(0, 0, 0, .55); color: #fff; }
+.fps-meter b { color: #3fcf8e; }
+.fps-meter span { opacity: .7; }

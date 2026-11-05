@@ -1,4 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useContext, useMemo } from 'react';
+import SongActions from './songActions';
+import { splitArtists } from './MetaLinks';
 import SongList from './SongList';
 import Cover from './Cover';
 import Icon from './Icon';
@@ -14,6 +16,7 @@ const HighlightText = ({ text, highlight }) => {
 
 const SearchView = ({ searchQuery, musicFiles, playlists, onNavClick, setSelectedAlbum, setSearchQuery, onOpenPlaylist, songListProps }) => {
   const q = searchQuery.trim().toLowerCase();
+  const { openArtist, countUnique } = useContext(SongActions);
 
   const results = useMemo(() => {
     const has = (s) => (s || '').toLowerCase().includes(q);
@@ -22,14 +25,15 @@ const SearchView = ({ searchQuery, musicFiles, playlists, onNavClick, setSelecte
     const artistMap = new Map();
     const albumMap = new Map();
     musicFiles.forEach(f => {
-      const artist = f.metadata?.artist || 'Unknown Artist';
+      const artistNames = splitArtists(f.metadata?.artist || 'Unknown Artist');
       const album = f.metadata?.album || 'Unknown Album';
-      if (has(artist)) {
+      artistNames.forEach(artist => {
+        if (!has(artist)) return;
         if (!artistMap.has(artist)) artistMap.set(artist, { name: artist, file: f, songs: [] });
         artistMap.get(artist).songs.push(f);
-      }
-      if (has(album) || has(artist)) {
-        if (!albumMap.has(album)) albumMap.set(album, { name: album, artist, file: f, songs: [], cover: f.path ? `media://${encodeURIComponent(f.path)}` : f.cover });
+      });
+      if (has(album) || artistNames.some(has)) {
+        if (!albumMap.has(album)) albumMap.set(album, { name: album, artist: f.metadata?.artist || 'Unknown Artist', file: f, songs: [], cover: f.path ? `media://${encodeURIComponent(f.path)}` : f.cover });
         albumMap.get(album).songs.push(f);
       }
     });
@@ -80,10 +84,10 @@ const SearchView = ({ searchQuery, musicFiles, playlists, onNavClick, setSelecte
           <div className="section-head"><span>Artists & playlists</span></div>
           <div className="h-scroll" style={{ gridAutoColumns: 130 }}>
             {results.artists.slice(0, 20).map(a => (
-              <button key={`a-${a.name}`} className="tile round" onClick={() => { setSearchQuery(''); onNavClick('artists'); }}>
+              <button key={`a-${a.name}`} className="tile round" onClick={() => { setSearchQuery(''); openArtist?.(a.name); }}>
                 <Cover file={a.file} />
                 <b><HighlightText text={a.name} highlight={q} /></b>
-                <span>Artist · {a.songs.length} tracks</span>
+                <span>Artist · {countUnique ? countUnique(a.songs) : a.songs.length} tracks</span>
               </button>
             ))}
             {results.playlists.map(p => (

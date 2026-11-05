@@ -157,4 +157,4 @@ ipcMain.handle('lastfm:now-playing', wrap(async (t) => ({ sent: await nowPlaying
 ipcMain.handle('lastfm:scrobble-now', wrap(async () => { const r = await scrobblePending(); notify(); return r; }));
 ipcMain.handle('lastfm:artist', wrap(async (name) => ({ info: await artistInfo(name) })));
 
-module.exports = { scrobblePending, artistInfo, status, sign };
+module.exports = { scrobblePending, artistInfo, status, sign, call };

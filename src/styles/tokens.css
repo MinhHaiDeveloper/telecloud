@@ -6,6 +6,7 @@
   --sidebar-w: 232px;
   --right-w: 300px;
   --player-h: 84px;
+  --titlebar-h: 32px;
   --font: 'Manrope Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
   --spring: cubic-bezier(.34, 1.56, .64, 1);
@@ -95,7 +96,7 @@
 
 /* ===== Base ===== */
 *, *::before, *::after { box-sizing: border-box; }
-html, body, #root { height: 100%; margin: 0; }
+html, body, #root { height: 100%; margin: 0; overflow: clip; }
 body {
   font-family: var(--font);
   font-size: 14px;

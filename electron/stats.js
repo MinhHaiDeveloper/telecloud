@@ -47,7 +47,33 @@ function addPlay(p) {
   return play;
 }
 
-const playCounts = () => Object.fromEntries(db().prepare('SELECT path, COUNT(*) n FROM plays GROUP BY path').all().map(r => [r.path, r.n]));
+/**
+ * Plays are kept by file path. A file that was moved or renamed comes back with a new path, so plays
+ * whose path is no longer in the library are re-attached to the library track with the same title,
+ * artist and album (and a length within 2 s). Cheap: only orphaned plays are looked at.
+ */
+function relink() {
+  const d = db();
+  const orphans = d.prepare('SELECT DISTINCT path, title, artist, album, duration_ms FROM plays WHERE path NOT IN (SELECT path FROM music_files)').all();
+  if (!orphans.length) return 0;
+  const find = d.prepare(`SELECT path FROM music_files
+    WHERE lower(title) = lower(@title) AND lower(ifnull(artist, '')) = lower(ifnull(@artist, '')) AND lower(ifnull(album, '')) = lower(ifnull(@album, ''))
+      AND (@dur = 0 OR abs(ifnull(duration, 0) * 1000 - @dur) <= 2000)
+    ORDER BY (name = @base) DESC, created_at DESC LIMIT 1`);
+  const move = d.prepare('UPDATE plays SET path = ? WHERE path = ?');
+  let n = 0;
+  d.transaction(() => {
+    for (const o of orphans) {
+      if (!o.title) continue;
+      // same tags, and preferably the same file name (two tracks of an album can share a title)
+      const hit = find.get({ title: o.title, artist: o.artist, album: o.album, dur: o.duration_ms || 0, base: require('path').basename(o.path) });
+      if (hit) n += move.run(hit.path, o.path).changes;
+    }
+  })();
+  return n;
+}
+
+const playCounts = () => relink() >= 0 && Object.fromEntries(db().prepare('SELECT path, COUNT(*) n FROM plays GROUP BY path').all().map(r => [r.path, r.n]));
 
 const splitArtists = (s) => (s || '').split(/,|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+/i).map(a => a.trim()).filter(Boolean);
 
@@ -56,6 +82,7 @@ const splitArtists = (s) => (s || '').split(/,|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+
  * (hour / day / month), top tracks / artists / albums, listening by quality and by hour of day.
  */
 function summary({ from, to, bucket = 'day' }) {
+  relink();
   const rows = db().prepare('SELECT * FROM plays WHERE played_at >= ? AND played_at < ? ORDER BY played_at').all(from, to);
   const totals = { plays: rows.length, ms: 0, tracks: new Set(), artists: new Set(), albums: new Set() };
   const series = new Map();
@@ -96,4 +123,4 @@ ipcMain.handle('stats:add-play', (e, p) => addPlay(p));
 ipcMain.handle('stats:counts', () => playCounts());
 ipcMain.handle('stats:summary', (e, q) => summary(q || {}));
 
-module.exports = { addPlay, playCounts, summary, onPlay: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, db, counts };
+module.exports = { addPlay, playCounts, summary, relink, onPlay: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, db, counts };

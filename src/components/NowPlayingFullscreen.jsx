@@ -3,6 +3,7 @@ import SongActions from './songActions';
 import Icon from './Icon';
 import MetaLinks from './MetaLinks';
 import LyricsNote from './LyricsNote';
+import CoverNote from './CoverNote';
 import Cover from './Cover';
 import LyricsView, { parseLyrics } from './LyricsView';
 import QueueList from './QueueList';
@@ -204,6 +205,7 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, onSeek, signal, queueF
           <div className="np-info np-fade">
             <h1 title={m.title || currentFile?.name}>{m.title || currentFile?.name || 'Nothing playing'}</h1>
             <div className="np-sub"><MetaLinks file={currentFile} /></div>
+            <CoverNote file={currentFile} />
             {currentFile && (
               <div className="np-badges">
                 <span className={`badge b-${q.tier} mono`}>{q.label}</span>

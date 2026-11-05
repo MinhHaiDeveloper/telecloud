@@ -30,8 +30,7 @@ coverage/
 # Local notes, demos and design drafts
 demo/
 design/
-telegram phases.md
-small_features.md
+plans/
 
 # Installers (published on GitHub Releases, too big for git)
 out/

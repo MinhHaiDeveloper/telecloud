@@ -1,6 +1,7 @@
-import React, { useMemo, useRef, useState, useLayoutEffect, useEffect } from 'react';
+import React, { useContext, useMemo, useRef, useState, useLayoutEffect, useEffect } from 'react';
 import Icon from './Icon';
 import Cover from './Cover';
+import SongActions from './songActions';
 import SongList from './SongList';
 import { qualityOf, storageOf, formatDuration, formatBytes } from '../utils/audio';
 
@@ -33,6 +34,7 @@ function useThrottled(value, ms) {
 }
 
 const Homepage = ({ musicFiles, recentPlayed = [], onPlay, onNavClick, setSelectedAlbum, syncStatus, syncProgress, songListProps }) => {
+  const ctx = useContext(SongActions);
   const settled = useThrottled(musicFiles, 2500);
   const albums = useMemo(() => groupAlbums(settled, 25), [settled]);
 
@@ -102,7 +104,7 @@ const Homepage = ({ musicFiles, recentPlayed = [], onPlay, onNavClick, setSelect
                   {latestStorage.includes('local') && <span className="badge b-local"><Icon name="monitor" />Local</span>}
                   {latestStorage.includes('cloud') && <span className="badge b-cloud"><Icon name="cloud" />Synced</span>}
                 </div>
-                <div className="hero-sub">{latest.artist} · {latest.songs.length} tracks</div>
+                <div className="hero-sub">{latest.artist} · {ctx.countUnique ? ctx.countUnique(latest.songs) : latest.songs.length} tracks</div>
                 <div className="hero-actions">
                   <button className="btn-primary" onClick={() => onPlay(latest.songs[0], 0, latest.songs)}><Icon name="play" filled />Play album</button>
                   <button className="icon-btn" title="Shuffle album" onClick={() => {

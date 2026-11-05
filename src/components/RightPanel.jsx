@@ -2,6 +2,7 @@ import React from 'react';
 import Icon from './Icon';
 import MetaLinks from './MetaLinks';
 import LyricsNote from './LyricsNote';
+import CoverNote from './CoverNote';
 import Cover from './Cover';
 import LyricsView from './LyricsView';
 import SignalPathSteps from './SignalPathSteps';
@@ -20,6 +21,7 @@ const RightPanel = ({
     <div className="np-artist">
       {currentFile ? <MetaLinks file={currentFile} /> : 'Pick a track from your library'}
     </div>
+    <CoverNote file={currentFile} />
 
     {currentFile && signal && (
       <div className="card signal">

@@ -33,6 +33,30 @@ const PlayerBar = ({
 
   const duration = currentFile?.metadata?.duration || 0;
   const pct = duration ? Math.min(100, (currentTime / duration) * 100) : 0;
+
+  // The player reports the position ~4 times a second; between reports the seek bar keeps moving
+  // on its own every frame (no React render), so it glides at any refresh rate (60, 144, 180 Hz…)
+  const seekRef = useRef(null);
+  const seeking = useRef(false);
+  const clock = useRef({ t: 0, at: 0 });
+  useEffect(() => { clock.current = { t: currentTime || 0, at: performance.now() }; }, [currentTime]);
+  useEffect(() => {
+    if (!isPlaying || !duration) return undefined;
+    let raf = 0;
+    const frame = () => {
+      const el = seekRef.current;
+      if (el && !seeking.current) {
+        const c = clock.current;
+        // never run more than half a second ahead of the last report (a stall or a slow stream)
+        const t = Math.min(duration, c.t + Math.min(0.5, (performance.now() - c.at) / 1000));
+        el.value = String(t);
+        el.style.setProperty('--pct', `${(t / duration) * 100}%`);
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [isPlaying, duration]);
   // TeleCloud stream: what is already downloaded, drawn behind the played part
   const buffer = stream && !stream.complete && stream.ranges?.length
     ? `linear-gradient(to right, ${stream.ranges.map(([a, b]) => `transparent ${a * 100}%, var(--buffered) ${a * 100}% ${b * 100}%, transparent ${b * 100}%`).join(', ')})`
@@ -75,10 +99,14 @@ const PlayerBar = ({
         <div className="p-seek">
           <span className="mono">{formatTime(currentTime)}</span>
           <input
-            type="range" className={`range ${buffer ? 'buffered' : ''}`} min="0" max={duration || 100} step="1"
+            ref={seekRef}
+            type="range" className={`range ${buffer ? 'buffered' : ''}`} min="0" max={duration || 100} step="any"
             value={Math.min(currentTime || 0, duration || 100)}
             style={{ '--pct': `${pct}%`, ...(buffer ? { '--buffer': buffer } : {}) }}
-            onChange={(e) => onSeek && onSeek(parseInt(e.target.value, 10))}
+            onPointerDown={() => { seeking.current = true; }}
+            onPointerUp={() => { seeking.current = false; }}
+            onPointerCancel={() => { seeking.current = false; }}
+            onChange={(e) => onSeek && onSeek(Math.floor(parseFloat(e.target.value) * 10) / 10)}
             disabled={!currentFile}
             aria-label="Seek"
           />

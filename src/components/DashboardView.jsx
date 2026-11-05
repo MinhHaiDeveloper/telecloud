@@ -112,12 +112,18 @@ const DashboardView = ({ musicFiles, onPlay }) => {
 
   useEffect(() => {
     let alive = true;
-    window.ipcRenderer.invoke('stats:summary', { from: win.from, to: win.to, bucket: win.bucket }).then(r => {
+    let t = null;
+    const load = () => window.ipcRenderer.invoke('stats:summary', { from: win.from, to: win.to, bucket: win.bucket }).then(r => {
       if (!alive) return;
       setData(r);
       if (r?.first && r.first !== first) setFirst(r.first);
     }).catch(() => {});
-    return () => { alive = false; };
+    // new plays, or tracks that moved on disk (their plays are re-attached on the next read)
+    const again = () => { clearTimeout(t); t = setTimeout(load, 500); };
+    load();
+    window.ipcRenderer.on('stats:changed', again);
+    window.addEventListener('telecloud:library-changed', again);
+    return () => { alive = false; clearTimeout(t); window.ipcRenderer.removeListener?.('stats:changed', again); window.removeEventListener('telecloud:library-changed', again); };
   }, [win]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const byPath = useMemo(() => new Map(musicFiles.map(f => [f.path, f])), [musicFiles]);

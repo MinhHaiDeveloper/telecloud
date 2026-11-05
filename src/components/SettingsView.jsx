@@ -2,8 +2,11 @@ import React, { useState, useEffect } from 'react';
 import TeleCloudSyncSettings from './TeleCloudSyncSettings';
 import Icon from './Icon';
 import LyricsSettings from './LyricsSettings';
+import CoverSettings from './CoverSettings';
 import LastfmSettings from './LastfmSettings';
 import UpdateStatus from './UpdateStatus';
+import DuplicatesSettings from './DuplicatesSettings';
+import PerformanceSettings from './PerformanceSettings';
 import { Toggle, Segmented, Select, SettingRow, Callout, Dialog, alertDialog } from './ui';
 import useSlidingIndicator from '../hooks/useSlidingIndicator';
 import pkg from '../../package.json';
@@ -250,7 +253,9 @@ const SettingsView = ({
             </div>
           </section>
           <LyricsSettings />
+          <CoverSettings />
           <LastfmSettings />
+          <PerformanceSettings />
           </>
         );
 
@@ -294,6 +299,7 @@ const SettingsView = ({
                 </SettingRow>
               </div>
             </section>
+            <DuplicatesSettings />
           </>
         );
 
