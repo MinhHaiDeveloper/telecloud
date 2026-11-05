@@ -804,3 +804,12 @@ html.np-cover-only .app.np-mode .np-body { padding-bottom: 0; }
 .meta-cover .cover { width: 72px; height: 72px; border-radius: 10px; overflow: hidden; flex: none; }
 .meta-cover-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .meta-cover-side small { font-size: 12px; color: var(--text-2); overflow-wrap: anywhere; }
+
+/* Library header: how plays are counted */
+.src-help.plays-help { width: 300px; left: auto; right: -60px; }
+.plays-help-row { font-size: 12.5px; line-height: 1.45; color: var(--text-2); }
+.plays-help-row + .plays-help-row { margin-top: 8px; }
+/* .src-head sets its own display, so the list's "hide these columns" rule has to be repeated for it */
+@container (max-width: 560px) {
+  .track-head .src-head, .track-row .c-src, .track-row .c-plays { display: none; }
+}

@@ -16,7 +16,14 @@ export const useDetailScroll = (detailKey) => {
     if (!view) return undefined;
     const onScroll = () => { if (prevKey.current == null) gridScroll.current = view.scrollTop; };
     view.addEventListener('scroll', onScroll, { passive: true });
-    return () => view.removeEventListener('scroll', onScroll);
+    // the scroll event waits for the next frame, so a quick click can get there first
+    view.addEventListener('click', onScroll, true);
+    view.addEventListener('keydown', onScroll, true);
+    return () => {
+      view.removeEventListener('scroll', onScroll);
+      view.removeEventListener('click', onScroll, true);
+      view.removeEventListener('keydown', onScroll, true);
+    };
   }, []);
   useLayoutEffect(() => {
     const view = document.querySelector('.view');

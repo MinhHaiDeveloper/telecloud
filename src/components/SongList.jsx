@@ -4,7 +4,7 @@ import Cover from './Cover';
 import SongActions from './songActions';
 import MetaLinks from './MetaLinks';
 import { formatTime, qualityOf, storageOf } from '../utils/audio';
-import { SOURCE_HELP, QUALITY_HELP } from '../utils/badges';
+import { SOURCE_HELP, QUALITY_HELP, PLAYS_HELP } from '../utils/badges';
 
 const SORTS = [
   { id: 'latest', label: 'Recently added' },
@@ -64,8 +64,8 @@ const HelpRows = ({ rows }) => rows.map((r, i) => (
   </div>
 ));
 
-/** Small (i) next to the Source column: what Local / Cloud / Cached mean */
-const SourceInfo = () => {
+/** Small (i) in a column header that opens a short explanation */
+const HeaderInfo = ({ label, className = '', children }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -78,20 +78,35 @@ const SourceInfo = () => {
   }, [open]);
   return (
     <span className="src-info" ref={ref}>
-      <button className={`src-info-btn ${open ? 'on' : ''}`} onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }} aria-label="What do the source tags mean?" aria-expanded={open}>
+      <button className={`src-info-btn ${open ? 'on' : ''}`} onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }} aria-label={label} aria-expanded={open}>
         <Icon name="info" />
       </button>
       {open && (
-        <div className="src-help menu" role="dialog" aria-label="Tags">
-          <b>Source</b>
-          <HelpRows rows={SOURCE_HELP} />
-          <b>Quality</b>
-          <HelpRows rows={QUALITY_HELP} />
+        <div className={`src-help menu ${className}`} role="dialog" aria-label={label}>
+          {children}
         </div>
       )}
     </span>
   );
 };
+
+/** What Local / Cloud / Cached mean */
+const SourceInfo = () => (
+  <HeaderInfo label="What do the source tags mean?">
+    <b>Source</b>
+    <HelpRows rows={SOURCE_HELP} />
+    <b>Quality</b>
+    <HelpRows rows={QUALITY_HELP} />
+  </HeaderInfo>
+);
+
+/** When a listen counts as a play */
+const PlaysInfo = () => (
+  <HeaderInfo label="How are plays counted?" className="plays-help">
+    <b>Plays</b>
+    {PLAYS_HELP.map(text => <div className="plays-help-row" key={text}>{text}</div>)}
+  </HeaderInfo>
+);
 
 const titleOf = (f) => f.metadata?.title || f.name || '';
 const qualityRank = (f) => {
@@ -277,7 +292,7 @@ const SongList = ({
         <>
           <div className="track-head">
             <span className="t-num">#</span><span>Title</span><span className="c-album">Album</span>
-            <span>Quality</span><span className="c-src src-head">Source<SourceInfo /></span><span className="c-plays">Plays</span><span style={{ textAlign: 'right' }}>Time</span><span />
+            <span>Quality</span><span className="c-src src-head">Source<SourceInfo /></span><span className="c-plays src-head">Plays<PlaysInfo /></span><span style={{ textAlign: 'right' }}>Time</span><span />
           </div>
           <div className="track-rows" ref={rowsRef} style={{ paddingTop: start * ROW_H, height: items.length * ROW_H }}>
           {items.slice(start, end).map((item) => {

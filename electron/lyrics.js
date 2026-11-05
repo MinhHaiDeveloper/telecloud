@@ -15,6 +15,7 @@ const SOURCES = {
   lrclib: { label: 'LRCLIB', online: true },
   netease: { label: 'NetEase Cloud Music', online: true },
   qq: { label: 'QQ Music', online: true },
+  kugou: { label: 'Kugou', online: true },
   genius: { label: 'Genius', online: true, note: 'Plain lyrics only. Often blocks apps (403).' },
   musixmatch: { label: 'Musixmatch', online: true, note: 'Unofficial. Often returns placeholder text.' },
 };
@@ -22,7 +23,7 @@ const DEFAULTS = {
   search: true,                 // look online when a playing track has no lyrics
   autoSave: false,              // save the best result without asking
   saveTo: 'tag',                // 'tag' | 'lrc' | 'both'
-  order: ['tags', 'local', 'lrclib', 'netease', 'qq', 'genius', 'musixmatch'],
+  order: ['tags', 'local', 'lrclib', 'netease', 'qq', 'kugou', 'genius', 'musixmatch'],
   disabled: ['genius', 'musixmatch'], // available but not searched until turned on
 };
 
@@ -120,6 +121,20 @@ const providers = {
     }
     return out;
   },
+  async kugou(track) {
+    const q = new URLSearchParams({ ver: '1', man: 'yes', client: 'pc', keyword: `${firstArtist(track.artist)} - ${track.title}`, duration: track.duration ? String(Math.round(track.duration * 1000)) : '', hash: '' });
+    const r = await get(`https://lyrics.kugou.com/search?${q}`, { headers: { 'User-Agent': BROWSER_UA } });
+    const out = [];
+    for (const c of (r?.candidates || []).slice(0, 4)) {
+      const found = { title: c.song, artist: c.singer, duration: c.duration ? c.duration / 1000 : null };
+      const sc = score(track, found);
+      if (sc < 0.3) continue;
+      const l = await get(`https://lyrics.kugou.com/download?ver=1&client=pc&id=${c.id}&accesskey=${c.accesskey}&fmt=lrc&charset=utf8`, { headers: { 'User-Agent': BROWSER_UA } });
+      const text = l?.content ? Buffer.from(l.content, 'base64').toString('utf8') : '';
+      if (text.trim()) out.push({ source: 'kugou', ...found, lyrics: text, synced: isSynced(text), score: sc });
+    }
+    return out;
+  },
   async genius(track) {
     const r = await get(`https://genius.com/api/search/multi?per_page=5&q=${encodeURIComponent(`${track.title} ${firstArtist(track.artist)}`)}`, { headers: { 'User-Agent': BROWSER_UA } });
     const hits = (r?.response?.sections || []).filter(s => s.type === 'song').flatMap(s => s.hits || []).map(h => h.result).filter(Boolean);
@@ -159,6 +174,10 @@ const providers = {
  * Search the enabled sources in order. With `all`, every source is asked and all results are
  * returned (the "Search" dialog); otherwise it stops at the first good match (automatic search).
  */
+// A good match with timestamps beats a good match without: score 0.7 and up already means the
+// length is within 10 s, so it is the same recording.
+const goodSynced = (r) => (r.synced && r.score >= 0.7 ? 1 : 0);
+
 async function search(track, { all = false, sources } = {}) {
   const o = options();
   const list = sources || o.order.filter(id => !o.disabled.includes(id));
@@ -168,13 +187,15 @@ async function search(track, { all = false, sources } = {}) {
     try {
       // at least two real lines, and online results must plausibly be this song
       const found = (await providers[id](track)).filter(r => realLines(r.lyrics).length >= 2 && (!SOURCES[id].online || r.score >= 0.6));
-      found.sort((a, b) => b.score - a.score || Number(b.synced) - Number(a.synced));
+      found.sort((a, b) => goodSynced(b) - goodSynced(a) || b.score - a.score || Number(b.synced) - Number(a.synced));
       results.push(...found);
-      if (!all && found.some(r => r.score >= 0.7)) break;
+      // what is on this computer wins; online, keep looking while only unsynced lyrics were found
+      if (!all && found.some(r => r.score >= 0.7 && (r.synced || !SOURCES[id].online))) break;
     } catch (err) {
       errors[id] = err.name === 'AbortError' ? 'timed out' : err.message;
     }
   }
+  if (!all) results.sort((a, b) => goodSynced(b) - goodSynced(a)); // the sort keeps source order otherwise
   return { results, errors };
 }
 

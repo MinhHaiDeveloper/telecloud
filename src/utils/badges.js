@@ -7,6 +7,13 @@ export const SOURCE_HELP = [
   { tags: [['b-cloud', 'Cloud'], ['b-cached', 'Cached']], text: 'Only in TeleCloud, but already downloaded to the cache: plays instantly and offline. The oldest cached tracks are removed when the cache is full.' },
 ];
 
+export const PLAYS_HELP = [
+  'A play counts once you have listened to half of the track, or 4 minutes if that comes first.',
+  'Tracks of 30 seconds or less are not counted, and parts you skip over are not listening time.',
+  'Each listen counts again, including on repeat. The number updates when the track ends or you move on.',
+  'The count stays with the track if you move or rename the file.',
+];
+
 export const QUALITY_HELP = [
   { tags: [['b-hires', 'FLAC 24/96']], text: 'Hi-Res: lossless above 16-bit or 48 kHz, or DSD.' },
   { tags: [['b-lossless', 'FLAC 16/44.1']], text: 'CD-quality lossless.' },
