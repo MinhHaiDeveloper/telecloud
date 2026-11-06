@@ -1,505 +1,254 @@
-# TeleCloud - Technical Documentation
+# TeleCloud: technical documentation
 
-> **📚 Developer & Technical Reference**
+For what the app does and how to use it, see the [main README](../README.md). This file is for people working on the code.
 
-This is the technical documentation for TeleCloud. If you're looking for general information about the project, features, and installation instructions, please see the [main README](../README.md).
+TeleCloud is a hi-res music player for Windows, built with Electron and React. mpv plays the audio, and the user's own Telegram account stores the backup. No server belongs to the project.
 
----
+## Tech stack
 
-## Overview
+| Part | Used for |
+|---|---|
+| Electron | Desktop shell, main process, background processes |
+| React and Vite | Interface in `src/` |
+| mpv (`mpv.exe`, included in the repo) | Playback, EQ filters, spectrum decoding |
+| `better-sqlite3` | Library, play history and TeleCloud tables |
+| `music-metadata` | Reading tags and cover art |
+| `node-taglib-sharp` | Writing tags and cover art |
+| `telegram` (GramJS) | Telegram access, in its own process |
+| `electron-updater` | Updates from GitHub Releases |
+| `electron-store` | Encrypted TeleCloud credentials and options |
 
-Telecloud is a feature-rich, Electron-based desktop application designed for seamless music streaming and library management. Built with a modern React and Vite frontend, it integrates high-fidelity playback capabilities, Tidal API support, and Telegram integration.
+## Getting started
 
-## Project Overview
-
-Telecloud is an audiophile-grade desktop music player that combines high-fidelity playback with modern streaming integration. Built on Electron and React, it leverages MPV for bit-perfect audio output while providing a sleek, feature-rich user interface.
-
-## Features
-
-### Core Playback
-- **MPV Integration** - Professional-grade audio engine with bit-perfect output
-- **Local File Playback** - Supports FLAC, ALAC, WAV, AIFF, APE, MP3, AAC, Opus, Vorbis, DSD (DSF/DFF)
-- **Telegram Integration** - Full cloud storage and streaming via Telegram channels (✅ COMPLETE)
-- **Queue Management** - Full queue control with add, remove, and reorder capabilities
-- **Playback Controls** - Play, pause, seek, volume control with IPC communication
-
-### Audio Quality
-- **Bit-Perfect Playback** - WASAPI support for unmodified audio output
-- **High-Resolution Audio** - Native support for 24/96, 24/192, 32/384, DSD64/128/256
-- **31-Band Parametric EQ** - Professional-grade equalizer with customizable frequencies
-- **Auto-EQ (Room Correction)** - Automated EQ calculation with target curve matching
-- **Real-Time Spectrum Analyzer** - FFT-based frequency analysis with visualization
-- **Signal Path Visualization** - Transparent display of audio processing chain
-- **Automatic Sample Rate Switching** - Seamless adaptation to source material
-- **Gapless Playback** - Uninterrupted transitions between tracks
-- **ReplayGain Support** - Track and album normalization modes
-- **Crossfade** - Configurable crossfade duration between tracks
-- **Audio Device Selection** - Support for multiple output devices with WASAPI exclusive mode
-- **Sample Rate Limiting** - Cap bit depth and sample rate for device compatibility
-
-### User Interface
-- **Dark/Light Theme** - Seamless theme switching with CSS variables
-- **Modern Navigation** - Intuitive sidebar with view management
-- **Advanced Search** - Filter across local library and Telegram sources
-- **Playlist Management** - Create, edit, and organize playlists
-- **Album/Artist Views** - Dedicated browsing interfaces
-- **Lyrics Display** - Synchronized lyrics when available
-- **Cover Art** - Embedded artwork extraction and display
-- **Keyboard Shortcuts** - Fully customizable shortcuts for all playback functions
-- **Custom Dropdowns** - Theme-adaptive UI components
-
-### Streaming Integration
-- **Tidal Browse** - OAuth integration for browsing Tidal's catalog
-- **Tidal Metadata** - Access to playlists, albums, tracks, and artist information
-- **Tidal Search** - Full-text search across Tidal's library
-
-### TeleCloud Sync Features
-- **Upload to Telegram** - Batch upload local files to private Telegram channels
-- **Cloud Playback** - Download-then-play model with temporary file management
-- **Library Restore** - Restore entire library from Telegram with placeholder paths
-- **Complete Metadata Extraction** - Cover art, lyrics, and technical specs from cloud files
-- **Smart Caching** - Database-backed cache_path tracking for instant subsequent playback
-- **Hybrid Storage** - Files can exist locally, in cloud, or both (storage_type field)
-- **Intelligent File Management** - Cloud-only deletion, temp file cleanup, React key props for UI updates
-
-### Technical Features
-- **Electron + React** - Native desktop application with modern web technologies
-- **Vite Build System** - Fast development with hot module replacement
-- **IPC Communication** - Secure main/renderer process communication
-- **SQLite Database** - Local database for metadata caching and cloud sync tracking
-- **Settings Persistence** - All configurations saved locally
-- **Error Handling** - Comprehensive logging and error recovery
-
-## Project Structure
-
-The codebase is organized into a standard Electron + Vite project structure:
-
-- **`/src/`**: Contains the React frontend code.
-  - **`/src/components/`**: Houses all UI components, including:
-    - Player controls (`PlayerBar.jsx`, `SongList.jsx`)
-    - Tidal specific views (`TidalAlbums.jsx`, `TidalLogin.jsx`, `TidalView.jsx`, etc.)
-    - Visualizers and audio tools (`EqSettingsView.jsx`, `SpectrumModal.jsx`, `SignalPathModal.jsx`)
-    - Navigation and layout (`Sidebar.jsx`, `Header.jsx`, `RightPanel.jsx`)
-  - **`/src/utils/`**: Helper functions and shared logic.
-- **`/electron/`**: Contains the Electron main process code (`main.js`) that manages the application lifecycle, native windows, and IPC communication with the frontend.
-- **`/dist/` & `/release/`**: Generated build output directories.
-
-## Core Modules
-
-- **React + Vite Frontend**: Ensures a snappy, responsive UI with fast hot-module replacement during development.
-- **Electron**: Wraps the web app in a native desktop shell, providing access to local file systems and system-level APIs.
-- **`mpv` & `fluent-ffmpeg`**: The backbone of the audio engine, handling playback of various formats and providing data for visualizers.
-- **`tidalapi-ts`**: Typescript client used for authenticating and fetching data from Tidal.
-- **`telegram` (GramJS)**: Client for interacting with the Telegram API, used for TeleCloud Sync features.
-- **`music-metadata`**: Metadata extraction library for audio files (tags, cover art, lyrics, technical specs).
-- **`better-sqlite3`**: High-performance SQLite database for metadata caching and cloud sync tracking.
-
-## TeleCloud Sync - Technical Implementation
-
-### Architecture Overview
-
-TeleCloud Sync implements a **download-then-play** model with intelligent caching:
-
-1. **Upload Phase**: Local files uploaded to private Telegram channels
-2. **Cloud Storage**: Files stored in Telegram with message_id tracking
-3. **Download Phase**: Files download to %TEMP% on first play
-4. **Metadata Extraction**: Complete metadata extracted after download
-5. **Caching**: Database tracks cache_path for instant subsequent access
-6. **Cleanup**: Temp files deleted on app close, metadata persists
-
-### Streaming Philosophy: Why Download-Then-Play?
-
-**TeleCloud does NOT use traditional streaming.** Instead, we download files to %TEMP% before playback. Here's why:
-
-**Security & Privacy:**
-- **No External Servers**: All data flows directly between your device and Telegram
-- **No Middleman**: We never route your music through third-party streaming servers
-- **Zero Tracking**: No analytics, no user behavior monitoring
-- **End-to-End**: Your Telegram session is yours - we don't have access to your account
-
-**Audio Quality:**
-- **Bit-Perfect Playback**: Can't achieve with real-time streaming buffering
-- **No Transcoding**: Files played exactly as stored (FLAC/ALAC remain lossless)
-- **No Compression**: Streaming typically requires on-the-fly compression
-- **Gapless Transitions**: Only possible with complete file access
-
-**Technical Benefits:**
-- **Metadata Extraction**: Requires full file access (cover art, lyrics, tags)
-- **MPV Integration**: MPV player needs seekable local files
-- **Instant Replay**: Cached files = instant subsequent playback
-- **Offline After First Play**: File stays in cache until app closes
-
-**Performance:**
-- First play: Download time (~30s for 30MB FLAC)
-- Subsequent plays: Instant (0s load time)
-- Better than streaming for repeated listening
-
-**Cache Management:**
-```
-Current: Temp files deleted based on windows cleanup (or you can clear it yourself)
-Coming Soon: Thinking of apply clear cache whens close app (cached data from cloud saved to path) and maybe manual clear in settings as well.
-```
-
-**Why Not Real Streaming?**
-- Would require proxy server → privacy concerns
-- Can't maintain bit-perfect audio quality
-- Telegram's chunked download is optimized for whole files
-- More complex = more failure points
-
-**The Bottom Line:**
-Download-then-play gives you the security of local files with the convenience of cloud storage, without compromising audio quality or your privacy.
-
-### Key Implementation Files
-
-- **`electron/telegramSync.js`** - Upload, restore, and channel management
-- **`electron/telegram.js`** - Telegram client initialization and auth
-- **`electron/database.js`** - SQLite database with cloud metadata tracking
-- **`electron/music.js`** - Metadata extraction (extract-and-cache-metadata handler)
-- **`electron/main.js`** - media:// protocol with cache_path resolution
-- **`src/App.jsx`** - Cloud playback logic in playMusic function
-- **`src/components/TeleCloudSyncSettings.jsx`** - UI for sync management
-- **`src/components/SongList.jsx`** - React key prop for cover art updates
-
-### Database Schema
-
-Cloud-related fields in the `music_files` table:
-
-```sql
-storage_type TEXT DEFAULT 'local',           -- 'local', 'cloud', 'both'
-telegram_message_id INTEGER,                 -- Message ID in Telegram channel
-telegram_channel_id TEXT,                    -- Channel/chat ID
-cache_path TEXT,                             -- Path to temp file in %TEMP%
-cloud_checksum TEXT,                         -- MD5 checksum for verification
-last_synced_at INTEGER                       -- Unix timestamp of last sync
-```
-
-### Download-Then-Play Data Flow
-
-```
-1. User clicks play on cloud file
-   └─> src/App.jsx: playMusic() detects storage_type='cloud'
-
-2. Check if already downloaded
-   └─> Query database for cache_path
-   └─> If cache_path exists and file present → Play immediately
-   └─> If not → Proceed to download
-
-3. Download from Telegram
-   └─> electron/telegram.js: downloadFile(message_id)
-   └─> Save to: %TEMP%/telecloud_[timestamp]_[filename]
-   └─> Return temp file path
-
-4. Extract metadata
-   └─> electron/music.js: extract-and-cache-metadata IPC handler
-   └─> Parse file with music-metadata library
-   └─> Extract: bitrate, sample rate, bit depth, duration, lyrics
-   └─> Update database with cache_path and complete metadata
-
-5. Play file
-   └─> electron/player.js: Play temp file via MPV
-   └─> Cover art accessible via media:// protocol
-
-6. Update UI
-   └─> Update React state with new metadata and cache_path
-   └─> React key prop forces image reload: key={file.path + file.cache_path}
-```
-
-### Metadata Extraction Process
-
-When a cloud file is first played, `extract-and-cache-metadata` extracts:
-
-**Technical Metadata:**
-- Bitrate (kbps)
-- Sample Rate (Hz)
-- Bit Depth (bits per sample)
-- Duration (seconds)
-
-**Tags:**
-- Title, Artist, Album
-- Year, Genre, Track/Disc numbers
-
-**Embedded Content:**
-- **Cover Art**: Not extracted to database, accessed via media:// protocol
-- **Lyrics**: Extracted from LYRICS, UNSYNCEDLYRICS, UNSYNCED LYRICS, USLT tags
-
-**Implementation:**
-```javascript
-// electron/music.js - extract-and-cache-metadata handler
-const parsed = await mm.parseFile(tempFilePath, { duration: true, skipCovers: false });
-
-// Extract lyrics
-let lyricsStr = '';
-if (parsed.common.lyrics && parsed.common.lyrics.length > 0) {
-  // Handle LYRICS tag
-}
-if (!lyricsStr && parsed.native) {
-  // Fallback to UNSYNCEDLYRICS, USLT, etc.
-}
-
-// Store in database
-database.insertOrUpdateFile({ /* metadata */ });
-database.updateCloudMetadata(originalPath, { cache_path: tempFilePath });
-```
-
-### Cover Art Strategy (media:// Protocol)
-
-Instead of storing covers in the database, TeleCloud uses a custom protocol:
-
-**Protocol Handler** (`electron/main.js`):
-```javascript
-protocol.handle('media', async (request) => {
-  const songPath = decodeURIComponent(request.url.slice('media://'.length));
-  
-  // Smart path resolution
-  const dbFile = database.getFileByPath(songPath);
-  if (dbFile?.cache_path && fs.existsSync(dbFile.cache_path)) {
-    actualFilePath = dbFile.cache_path; // Use temp file
-  } else {
-    actualFilePath = songPath; // Use original path
-  }
-  
-  // Extract and return cover
-  const parsed = await mm.parseFile(actualFilePath);
-  return new Response(parsed.common.picture[0].data);
-});
-```
-
-**Benefits:**
-- No database bloat from large cover images
-- On-demand extraction only when needed
-- Works for both local and cloud files
-- Automatic fallback to cache_path for cloud files
-
-### File Management Strategy
-
-**Cloud-Only Files:**
-- Path: Placeholder like `restored/Artist - Album/Track.flac`
-- Disk: File doesn't exist locally (storage_type='cloud')
-- Deletion: Remove from database only, skip disk deletion
-
-**Temp Files:**
-- Location: `%TEMP%/telecloud_[timestamp]_[filename]`
-- Lifetime: Deleted on app close via cleanup routine
-- Metadata: Persists in database even after temp deletion
-
-**Hybrid Files:**
-- storage_type='both': File exists locally AND in cloud
-- Deletion: Remove from disk, update storage_type to 'cloud'
-
-**React UI Updates:**
-```javascript
-// Force image reload when cache_path changes
-<img
-  key={file.path + (file.cache_path || '')}
-  src={`media://${encodeURIComponent(file.path)}`}
-/>
-```
-
-When cache_path changes from `null` → temp path, the key changes, forcing React to remount the img element and reload the cover.
-
-### Error Handling
-
-**Download Failures:**
-- Telegram API errors logged and displayed to user
-- Entity resolution for channels/messages
-- Retry mechanism for network failures
-
-**Metadata Extraction Failures:**
-- Graceful degradation to minimal metadata
-- Errors logged but don't block playback
-- Cover art 404s silenced for expected cloud file cases
-
-**Database Consistency:**
-- Transactions for batch operations
-- Foreign key constraints for data integrity
-- Automatic cleanup of orphaned records
-
-### Performance Optimizations
-
-1. **Database Indexing**: Indexes on path, telegram_message_id for fast lookups
-2. **Batch Operations**: insertOrUpdateFilesBatch for bulk updates
-3. **Incremental UI Updates**: React state updates only for affected files
-4. **Lazy Loading**: Cover art extracted only when visible
-5. **Temp File Reuse**: cache_path checked before re-downloading
-
-### Security Considerations
-
-- Telegram session stored encrypted via credentialManager
-- API credentials in .env file (not committed)
-- Temp files isolated per session with unique timestamps
-- No sensitive data in file paths or database plaintext
-
----
-
-## Setup and Installation
-
-### Prerequisites
-- [Node.js](https://nodejs.org/) (v16 or higher recommended)
-- Git
-- **mpv Media Player** (Required for audio playback and WASAPI support)
-
-### Installation Steps
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/your-username/telecloud.git
-   cd telecloud
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Set up mpv binaries (Windows)**
-   For the audio engine (and WASAPI bit-perfect playback) to function, you need to place the `mpv` executable files in the root folder of this project:
-   - Download the latest Windows 64-bit build of `mpv` (e.g., from the [mpv.io installation page](https://mpv.io/installation/)).
-   - Extract the archive and copy `mpv.exe` and `mpv.com` directly into the root `telecloud` folder.
-
-4. **Environment Setup**
-   Ensure you have a `.env` file in the root directory configured with your necessary API keys (e.g., for Telegram or Tidal development if required).
-
-5. **Run the Development Server**
-   Start both the Vite development server and the Electron app simultaneously:
-   ```bash
-   npm run dev
-   ```
-
-## Building for Production
-
-To package the application for distribution:
+You need Node.js (currently developed on v24) and Windows 10 or 11, 64-bit.
 
 ```bash
-npm run build
-```
-This will compile the frontend and use `electron-builder` to create an executable file in the build/release directory.
-
----
-
-## Building Windows Installer
-
-### Prerequisites for Building
-
-Before creating the distribution package, ensure you have:
-- Completed the developer installation steps above
-- MPV binaries (`mpv.exe` and `mpv.com`) in the project root directory
-- All dependencies installed (`npm install`)
-
-### Step 1: Configure electron-builder
-
-Add the following configuration to your `package.json` file (if not already present):
-
-```json
-{
-  "build": {
-    "appId": "com.telecloud.app",
-    "productName": "TeleCloud",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "dist-electron/**/*",
-      "dist/**/*",
-      "electron/**/*",
-      "node_modules/**/*",
-      "package.json",
-      "mpv.exe",
-      "mpv.com"
-    ],
-    "extraResources": [
-      {
-        "from": "mpv.exe",
-        "to": "mpv.exe"
-      },
-      {
-        "from": "mpv.com",
-        "to": "mpv.com"
-      }
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": ["x64"]
-        }
-      ],
-      "icon": "public/icon.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "TeleCloud"
-    }
-  }
-}
+git clone https://github.com/MinhHaiDeveloper/telecloud.git
+cd telecloud
+npm install
+npm run dev
 ```
 
-### Step 2: Build the Application
+`npm run dev` starts Vite on port 3000 and opens Electron on it.
 
-Run the build command:
+Every user enters their own Telegram app keys in the app, so no keys are needed to build it. Last.fm is the exception: it reads the app's key from `electron/lastfm-key.json`, or from `LASTFM_API_KEY` and `LASTFM_API_SECRET`. That file is not in git. Without it the app works, but Last.fm stays unavailable.
+
+## Project layout
+
+```
+electron/            main process
+  telecloud/         Telegram backup, streaming, restore
+src/
+  components/        React components
+  hooks/             useEq, useSlidingIndicator
+  utils/             logic with no interface
+  styles/            tokens.css, app.css, components.css
+scripts/release.js   build one channel into beta/ or release/
+```
+
+### Main process (`electron/`)
+
+| File | Responsibility |
+|---|---|
+| `main.js` | Startup, window, `media://` protocol, folder watching |
+| `preload.js` | The only bridge to the page, with allowlists of channels |
+| `paths.js` | Decides which paths may be read, played, written or deleted |
+| `database.js` | `music_files` table, migrations |
+| `music.js` | Scanning, syncing with the database, JSON stores |
+| `tags.js`, `tagPool.js`, `tagWorker.js` | Reading tags on worker threads |
+| `tagEdit.js` | Writing tags from Edit info |
+| `inferTags.js` | Filling in missing tags from the file name and folders |
+| `fileWrite.js` | Plain-language write errors, writing to read-only files on request |
+| `player.js` | mpv over JSON IPC, EQ chain, crossfade, output devices |
+| `covers.js` | Finding and caching cover art |
+| `coverSearch.js` | Online cover sources, saving covers |
+| `lyrics.js` | Lyrics sources and saving |
+| `stats.js` | Play history, play counts, Dashboard data |
+| `lastfm.js` | Scrobbling and artist biographies |
+| `discord.js` | Discord status over its local pipe |
+| `autoeq.js` | Headphone measurements and target curves |
+| `spectrum.js`, `spectrumCore.js` | Spectrogram and lossless check |
+| `watcher.js` | Native folder watching, followed by a normal refresh |
+| `updater.js` | Update checks and installation |
+| `logger.js`, `logExport.js` | Log files and the log export |
+| `credentialManager.js` | Encrypting Telegram credentials with Windows DPAPI |
+
+### TeleCloud (`electron/telecloud/`)
+
+| File | Responsibility |
+|---|---|
+| `service.js` | Sign-in, backup queue, cache, restore, storages, index |
+| `store.js` | TeleCloud tables |
+| `workerClient.js` | Starts the worker and passes calls to it |
+| `worker.js` | Everything that talks to Telegram, in a separate process |
+| `stream.js` | Local HTTP server that streams cloud tracks to mpv |
+| `crypto.js` | Client-side encryption |
+| `caption.js` | The text stored with each message in Telegram |
+
+### Interface (`src/`)
+
+`App.jsx` holds the shared state: library, playback, queue, navigation. Views get what they need as props or through the `SongActions` context in `components/songActions.js`.
+
+| File | Responsibility |
+|---|---|
+| `utils/albums.js` | Which tracks form an album and who owns it. Every page uses it |
+| `utils/audio.js` | Formatting, quality labels, signal path, duplicates, cover addresses |
+| `utils/autoEqMath.js` | Filter responses, AutoEQ, Squiglink and Audacity formats |
+| `utils/appearance.js` | Full-screen look, saved in `localStorage` |
+| `utils/whatsNew.js` | Release notes shown in the app |
+| `utils/badges.js` | Text for the Source, Quality and Plays help |
+| `components/ui.jsx` | Shared controls, dialogs, `useDetailScroll` |
+
+## How it works
+
+### Security boundary
+
+The page runs with `contextIsolation`, `sandbox` and no `nodeIntegration`. It reaches the main process only through `window.ipcRenderer` in `preload.js`.
+
+- A new IPC channel must be added to `INVOKE_CHANNELS` or `EVENT_CHANNELS`, otherwise the call is refused.
+- Any handler that takes a path from the page must check it with `paths.js`.
+
+### Library
+
+`syncLibrary` in `music.js` compares the music folders with the database by path, size and modified time. Only new or changed files are read, on worker threads, and the results reach the page in batches.
+
+A backed-up track whose file disappears becomes cloud-only. Tracks in a folder that can't be read, such as an unplugged drive, are kept. A backed-up file whose bytes change is uploaded again.
+
+Older libraries gain `album_artist` from `backfillAlbumArtists`, which runs once in the background and changes only that column.
+
+### Albums and artists
+
+`albumIndex` in `utils/albums.js` groups tracks like this:
+
+- The same name and overlapping album artists make one album, however many guests the tracks have.
+- The same name with different album artists makes separate albums.
+- Without an album artist tag, tracks in one folder stay together, and across folders they join when the main artist matches.
+
+An album without the tag belongs to an artist who is on more than half of its tracks. Otherwise it shows as Various Artists.
+
+`inferTags.js` fills in missing title, artist, album, track, disc and year when a row goes to the page. These values are for display and are never written to the file. The `metadata.inferred` field lists which ones they are.
+
+### Playback
+
+`player.js` runs one mpv process and controls it over a named pipe. Exclusive WASAPI gives bit-perfect output, with volume fixed at 100. Each EQ band is a filter in the mpv `lavfi` chain.
+
+Extra copies of a track are removed from the queue when playback starts, in `playMusic`.
+
+### Covers
+
+`media://<encoded path>[?r=revision]` serves artwork for library tracks. Lookup goes through `artFor` in `main.js`:
+
+- **File on this computer:** embedded art, then a picture in the folder such as `cover.jpg`.
+- **Cloud-only track:** the stored TeleCloud cover first, then the cached copy's art.
+
+Results are cached in `cover-cache` at up to 600 px. After a save, `bumpCovers` gives the affected tracks a new address, so the browser doesn't keep showing the old picture.
+
+Saving goes to `cover.jpg`, to the tags, or both. If a folder holds another album, the cover goes to the tags instead. Embedded art has priority over `cover.jpg`, so replacing a cover also replaces the embedded one. Files that change this way are backed up again.
+
+### TeleCloud
+
+Telegram work runs in a `utilityProcess` (`worker.js`), so the interface stays smooth. The worker receives `{ id, method, params }` and answers with a result or an error; progress arrives as events.
+
+**Upload.** Files move in 512 KB parts and are never held whole in memory. The same audio already in a storage is linked rather than uploaded twice.
+
+**Encryption.** There is one random master key per user, shown as a recovery key. Audio uses AES-256-CTR, so any byte range can be decrypted on its own. Captions use AES-256-GCM, so a wrong key or tampering is detected.
+
+**Streaming.** `stream.js` serves each cloud track from `127.0.0.1` at a secret address, and mpv reads it with byte-range requests. Seeking works, and the bytes are exactly the uploaded file. Blocks are cached on disk and become a normal cached file once complete and verified.
+
+**Index.** The manifest (`library.tcm`) holds tags, lyrics and cover references. It is pinned in the chat and rewritten after changes. Restore on another computer reads it, and falls back to the captions if it can't.
+
+**Caption prefixes in Telegram:** `tc1:` for audio, `tcm1:` for the manifest, `tcc1:` for covers. They also tell TeleCloud's messages apart from the user's own.
+
+### Discord
+
+`discord.js` talks to the Discord desktop app over its local pipe, using the application ID in that file. It is off by default. The cover is a public picture from the online sources, otherwise the `telecloud` art asset. Updates go out at most once every 4 seconds. The app never uploads files for this.
+
+### Logs
+
+`logger.js` is started first in `main.js` and records everything sent to `console`, plus window errors, crashes, the worker, scan threads and mpv warnings.
+
+- Files are in `logs/YYYY-MM-DD.log`. Limits: 14 days, 50 MB in total, 15 MB per day. Repeated lines are folded.
+- `redact` removes secrets before writing, and `logExport.js` runs it again on export. Credentials are registered with `addSecrets` when they are loaded.
+- The export also hides music names unless the user includes them. `system.txt` lists settings only from the `SAFE_SETTINGS` allowlist.
+
+When adding a log line, don't log credentials, captions or track names. Paths are fine, because the export hides them.
+
+## Data on disk
+
+Everything is in `%APPDATA%\telecloud`.
+
+| Location | Contents |
+|---|---|
+| `music-library.db` | SQLite database |
+| `settings.json` and other stores in `music.js` | Settings, playlists, favourites |
+| `lyrics-settings.json`, `cover-settings.json`, `discord-settings.json` | Options of each feature |
+| `telecloud-sync.json` | Telegram credentials and options |
+| `lastfm.json` | Last.fm account, with the session key encrypted |
+| `audio-cache/` | Downloaded cloud tracks |
+| `cover-cache/` | Cover cache and TeleCloud covers |
+| `telecloud/` | Cached manifests |
+| `logs/` | Log files |
+
+Database tables:
+
+| Table | Holds |
+|---|---|
+| `music_files` | One row per track: tags, `album_artist`, audio details, `storage_type` (`local`, `cloud`, `both`), `telegram_message_id`, `telegram_channel_id`, `cache_path`, `cloud_checksum`, `cloud_cover` |
+| `plays` | Listening history. Title, artist and album are kept with each play |
+| `storages` | Telegram chats used as storage, up to 5 |
+| `cloud_index` | One row per file message: checksum, size, IV, track info |
+| `upload_queue` | Backups waiting, running or failed; survives restarts |
+| `cloud_covers` | Which cover is in which storage |
+| `sync_state` | Older per-file sync details |
+
+A cloud-only track restored on another computer has a path like `tc://<chat>/<message>`.
+
+## Building
 
 ```bash
-npm run build
+npm run build:beta
 ```
 
-This will:
-1. Build the React frontend with Vite
-2. Package the Electron app with electron-builder
-3. Create a Windows installer in the `dist` folder
+```bash
+npm run build:release
+```
 
-### Step 3: Locate the Installer
+`build:beta` needs a pre-release version such as `1.0.0-beta.12` in `package.json`, and `build:release` needs a plain one. Each version builds once: the script stops if its folder already exists. The result goes to `beta/telecloud-<version>/` or `release/telecloud-<version>/`.
 
-After building, you'll find the installer at:
-- **Installer**: `dist/TeleCloud Setup x.x.x.exe` (NSIS installer)
-- **Unpacked**: `dist/win-unpacked/` (portable version)
+If `build:beta` fails with `EPERM` on `win-unpacked.tmp`, another program is holding the folder. The cause hasn't been pinned down. Building outside the project works:
 
-### Distribution Notes
+```bash
+npx vite build
+```
 
-**What gets included:**
-- TeleCloud application
-- MPV player (bundled)
-- All Node.js dependencies
-- Electron runtime
+```bash
+npx electron-builder --win --publish never "-c.directories.output=C:\some\other\folder"
+```
 
-**Installer features:**
-- Custom installation directory selection
-- Desktop and Start Menu shortcuts
-- Automatic uninstaller
-- Windows registry integration
+Then copy the installer, its `.blockmap` and `latest.yml` to the `beta/` folder yourself.
 
-**File size:** Expect the installer to be ~200-300MB due to:
-- Electron runtime (~150MB)
-- Node modules with native bindings
-- MPV player (~30MB)
-- Application code and assets
+### Releasing
 
-### Troubleshooting Build Issues
+1. Set the new version in `package.json`, and add its notes at the top of `RELEASES` in `src/utils/whatsNew.js`.
+2. Build, then commit and **push before creating the release**, so the tag points at the right commit.
+3. Create the GitHub release with the tag `v<version>`, and tick pre-release for a beta.
+4. Upload the `.exe`, the `.blockmap` and `latest.yml`. Auto-update needs all three.
 
-**Issue: MPV files not found**
-- Solution: Ensure `mpv.exe` and `mpv.com` are in the project root
+Beta installs also receive pre-releases; stable installs only receive releases.
 
-**Issue: Native modules fail**
-- Solution: Run `npm run rebuild` or `electron-rebuild` before building
+## Testing hooks
 
-**Issue: Build fails on Windows**
-- Solution: Install Windows Build Tools: `npm install --global windows-build-tools`
+There is no test suite in the repo. These environment variables let a script run the real app without touching real devices or services:
 
-**Issue: Installer too large**
-- Solution: Review included files, exclude dev dependencies in production
-
-### Testing the Installer
-
-Before distributing:
-1. Install on a clean Windows machine (no Node.js/dev tools)
-2. Test all features: playback, Telegram login, Tidal integration
-3. Verify MPV integration works correctly
-4. Check file associations and shortcuts
-5. Test uninstaller
-
----
+| Variable | Effect |
+|---|---|
+| `TELECLOUD_MPV_AO` | Audio output for mpv, for example `null` for silence |
+| `TELECLOUD_DISCORD_PIPE` | Pipe to use instead of the real Discord |
+| `TELECLOUD_FAKE_CLIENT` | Module to use instead of the real Telegram client |
+| `TELECLOUD_IN_PROCESS` | Runs the TeleCloud worker in the same process |
+| `TELECLOUD_MANIFEST_EVERY` | How many tracks between index saves during a backup |
+| `LASTFM_API_URL`, `LASTFM_AUTH_URL` | Addresses to use instead of Last.fm |
 
 ## License
 
-ISC
+[GPL-3.0](../LICENSE)
