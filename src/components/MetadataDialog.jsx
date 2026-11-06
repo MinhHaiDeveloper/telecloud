@@ -53,21 +53,24 @@ const MetadataDialog = ({ files, onClose, onDone }) => {
     return () => { alive = false; };
   }, [files]);
 
-  const save = async () => {
+  const [readOnly, setReadOnly] = useState(0); // files that refused only because they are read-only
+  const save = async (allowReadOnly = false) => {
     const changes = Object.fromEntries(Object.keys(touched).map(k => [k, values[k] === MIXED ? '' : values[k]]));
     if (!Object.keys(changes).length && !newCover) { onClose(); return; }
     setSaving(true);
     if (newCover) {
-      const c = await window.ipcRenderer.invoke('covers:save', { paths: coverTargets(files, allFiles).map(f => f.path), image: { file: newCover.file } });
+      const c = await window.ipcRenderer.invoke('covers:save', { paths: coverTargets(files, allFiles).map(f => f.path), image: { file: newCover.file }, allowReadOnly });
       if (!c?.success || c.errors?.length) {
         setSaving(false);
+        setReadOnly(c?.errors?.filter(e => e.readOnly).length || 0);
         setCoverError(c?.error || `${c.errors.length} ${c.errors.length === 1 ? 'file' : 'files'} could not be changed: ${c.errors[0].error}`);
         return;
       }
       if (!Object.keys(changes).length) { setSaving(false); onDone?.({ success: true, files: [], coverOnly: true }); onClose(); return; }
     }
-    const r = await window.ipcRenderer.invoke('tags:edit', { paths: files.map(f => f.path), changes });
+    const r = await window.ipcRenderer.invoke('tags:edit', { paths: files.map(f => f.path), changes, allowReadOnly });
     setSaving(false);
+    setReadOnly(r?.errors?.filter(e => e.readOnly).length || 0);
     onDone?.(r);
     if (r?.success && !r.errors?.length) onClose();
   };
@@ -81,7 +84,8 @@ const MetadataDialog = ({ files, onClose, onDone }) => {
       actions={(
         <>
           <button className="btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" onClick={save} disabled={!values || saving}>{saving ? 'Saving…' : 'Save'}</button>
+          {readOnly > 0 && <button className="btn-ghost" onClick={() => save(true)} disabled={saving} title="Writes the changes, then makes the files read-only again">Write to read-only {readOnly === 1 ? 'file' : `${readOnly} files`}</button>}
+          <button className="btn-primary" onClick={() => save()} disabled={!values || saving}>{saving ? 'Saving…' : 'Save'}</button>
         </>
       )}
     >

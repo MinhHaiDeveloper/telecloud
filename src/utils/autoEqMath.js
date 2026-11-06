@@ -170,6 +170,129 @@ export function formatEqText(bands, preamp) {
   return lines.join('\n') + '\n';
 }
 
+// ---------- Audacity / graphic curves ----------
+
+// The points Audacity's Graphic EQ preset uses (the same in the files people share)
+export const AUDACITY_FREQUENCIES = [
+  10, 11.7, 13.6, 15.9, 18.5, 21.6, 25.2, 29.4, 34.3, 40, 46.6, 54.4, 63.4, 74, 86.3, 100.7, 117.5, 137, 159.8, 186.4,
+  217.5, 253.6, 295.9, 345.1, 402.6, 469.6, 547.7, 638.9, 745.3, 869.3, 1014, 1182.8, 1379.7, 1609.3, 1877.2, 2189.7,
+  2554.2, 2979.4, 3475.3, 4053.8, 4728.5, 5515.6, 6433.7, 7504.7, 8753.9, 10211, 11910.7, 13893.3, 16205.9, 18903.4,
+];
+
+const num = (s) => parseFloat(String(s).replace(',', '.'));
+
+/**
+ * A graphic EQ curve from text, or null when the text isn't one:
+ *  - Audacity preset: GraphicEq:f0="10" … v0="0.17" …  (or FilterCurve:)
+ *  - Audacity's exported curves: <point f="10" d="0.17"/>
+ *  - EqualizerAPO: GraphicEQ: 20 -1.2; 31 0.4; …
+ */
+export function parseGraphicCurve(text) {
+  const t = String(text);
+  const points = [];
+  if (/\bf0\s*=\s*"/.test(t) && /\bv0\s*=\s*"/.test(t)) {
+    const vals = new Map([...t.matchAll(/\bv(\d+)\s*=\s*"([^"]*)"/g)].map(m => [m[1], num(m[2])]));
+    for (const m of t.matchAll(/\bf(\d+)\s*=\s*"([^"]*)"/g)) points.push({ x: num(m[2]), y: vals.get(m[1]) });
+  } else if (/<point\b/i.test(t)) {
+    for (const m of t.matchAll(/<point\b[^>]*?\bf\s*=\s*"([^"]*)"[^>]*?\bd\s*=\s*"([^"]*)"/gi)) points.push({ x: num(m[1]), y: num(m[2]) });
+  } else {
+    const m = /GraphicEQ\s*:\s*([^\r\n]*)/i.exec(t);
+    if (!m) return null;
+    for (const pair of m[1].split(';')) {
+      const [f, g] = pair.trim().split(/\s+/);
+      points.push({ x: num(f), y: num(g) });
+    }
+  }
+  const byFreq = new Map();
+  points.forEach(p => { if (Number.isFinite(p.x) && p.x > 0 && Number.isFinite(p.y)) byFreq.set(p.x, p.y); });
+  const out = [...byFreq.entries()].map(([x, y]) => ({ x, y })).sort((a, b) => a.x - b.x);
+  return out.length >= 2 ? out : null;
+}
+
+/** Solve A x = b (small, dense) with partial pivoting */
+function solve(A, b) {
+  const n = b.length;
+  const M = A.map((row, i) => [...row, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = c + 1; r < n; r++) {
+      const k = M[r][c] / M[c][c];
+      for (let j = c; j <= n; j++) M[r][j] -= k * M[c][j];
+    }
+  }
+  const x = new Array(n).fill(0);
+  for (let r = n - 1; r >= 0; r--) {
+    let s = M[r][n];
+    for (let j = r + 1; j < n; j++) s -= M[r][j] * x[j];
+    x[r] = s / M[r][r];
+  }
+  return x;
+}
+
+/**
+ * Parametric bands that follow a graphic curve. The app's EQ is made of filters, so a curve with
+ * more points than bands is approximated: bands stay where the curve changes most, and their gains
+ * are solved together. `maxError` says how close it got, in dB, across 20 Hz–20 kHz.
+ */
+export function fitCurve(points, maxBands = MAX_BANDS) {
+  const lo = Math.max(20, points[0].x);
+  const hi = Math.min(20000, points[points.length - 1].x);
+  let kept = points.filter(p => p.x >= 20 && p.x <= 20000);
+  if (kept.length < 2) {
+    kept = Array.from({ length: maxBands }, (_, i) => ({ x: 20 * Math.pow(1000, i / (maxBands - 1)), y: 0 }));
+  }
+  // drop the points that a straight line between their neighbours explains best
+  while (kept.length > maxBands) {
+    let drop = 1, least = Infinity;
+    for (let i = 1; i < kept.length - 1; i++) {
+      const a = kept[i - 1], b = kept[i], c = kept[i + 1];
+      const t = Math.log(b.x / a.x) / Math.log(c.x / a.x);
+      const miss = Math.abs(b.y - (a.y + t * (c.y - a.y)));
+      if (miss < least) { least = miss; drop = i; }
+    }
+    kept.splice(drop, 1);
+  }
+  const qFor = (i) => {
+    const below = kept[Math.max(0, i - 1)].x, above = kept[Math.min(kept.length - 1, i + 1)].x;
+    const octaves = Math.log2(above / below) / (i === 0 || i === kept.length - 1 ? 1 : 2);
+    const span = Math.pow(2, Math.max(octaves * 1.5, 0.05));
+    return Number(Math.min(10, Math.sqrt(span) / (span - 1)).toFixed(2));
+  };
+  const freqs = logGrid(600, 20, 20000);
+  const want = resample(points, freqs);
+  const bands = kept.map((p, i) => ({ type: 'Peak', freq: Number(p.x.toFixed(p.x < 100 ? 1 : 0)), q: qFor(i), gain: 0 }));
+
+  const unit = bands.map(b => bandResponse({ ...b, gain: 1 }, freqs));
+  const n = bands.length;
+  const AtA = bands.map((_, i) => bands.map((__, j) => {
+    let s = i === j ? 1e-3 : 0; // a little damping keeps neighbours from fighting each other
+    for (let k = 0; k < freqs.length; k++) s += unit[i][k] * unit[j][k];
+    return s;
+  }));
+  // filters don't add up perfectly at higher gains: solve, measure what is left, solve again
+  for (let pass = 0; pass < 4; pass++) {
+    const now = totalResponse(bands, freqs);
+    const Atb = unit.map(u => { let s = 0; for (let k = 0; k < freqs.length; k++) s += u[k] * (want[k] - now[k]); return s; });
+    const d = solve(AtA, Atb);
+    for (let i = 0; i < n; i++) bands[i].gain = Math.max(-GAIN_LIMIT, Math.min(GAIN_LIMIT, bands[i].gain + d[i]));
+  }
+  bands.forEach(b => { b.gain = Number(b.gain.toFixed(2)); });
+  const got = totalResponse(bands, freqs);
+  let maxError = 0;
+  for (let k = 0; k < freqs.length; k++) if (freqs[k] >= lo && freqs[k] <= hi) maxError = Math.max(maxError, Math.abs(got[k] - want[k]));
+  return { bands, preamp: autoPreamp(bands), maxError };
+}
+
+/** The current EQ as an Audacity Graphic EQ preset. The preamp goes into the curve: it has no other place. */
+export function formatAudacityText(bands, preamp) {
+  const gains = totalResponse(bands, AUDACITY_FREQUENCIES);
+  const f = AUDACITY_FREQUENCIES.map((x, i) => `f${i}="${x}"`).join(' ');
+  const v = AUDACITY_FREQUENCIES.map((x, i) => `v${i}="${Number((gains[i] + (preamp || 0)).toFixed(3))}"`).join(' ');
+  return `GraphicEq:${f} FilterLength="8191" InterpolateLin="0" InterpolationMethod="B-spline" ${v} \n`;
+}
+
 // ---------- AutoEQ ----------
 
 /**

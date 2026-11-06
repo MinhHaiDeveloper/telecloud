@@ -31,6 +31,9 @@ import TitleBar from './components/TitleBar';
 import FpsMeter from './components/FpsMeter';
 import LyricsDialog from './components/LyricsDialog';
 import MetadataDialog from './components/MetadataDialog';
+import { WhatsNewDialog } from './components/WhatsNew';
+import { notesToShow } from './utils/whatsNew';
+import pkg from '../package.json';
 import CoverDialog from './components/CoverDialog';
 import { useUpdateStatus } from './components/UpdateStatus';
 
@@ -262,6 +265,38 @@ function App() {
     })();
     return () => { alive = false; };
   }, [currentFile?.path]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ---- What's new: once, the first time this version opens after an update
+  const [whatsNew, setWhatsNew] = useState(null);
+  useEffect(() => {
+    window.ipcRenderer.invoke('load-store', 'settings').then(async (s) => {
+      const settings = s && !Array.isArray(s) ? s : {};
+      const notes = notesToShow(settings.lastSeenVersion, pkg.version, !!settings.musicFolderList?.length);
+      if (notes.length) setWhatsNew(notes);
+      if (settings.lastSeenVersion !== pkg.version) {
+        const fresh = (await window.ipcRenderer.invoke('load-store', 'settings')) || {};
+        await window.ipcRenderer.invoke('save-store', 'settings', { ...(Array.isArray(fresh) ? {} : fresh), lastSeenVersion: pkg.version });
+      }
+    }).catch(() => {});
+  }, []);
+
+  // ---- Discord status: tell the main process what is playing; seeks show up as a jump in time
+  const discordSent = useRef({ path: null, pos: 0, at: 0 });
+  const sendDiscord = (file, playing, position) => {
+    discordSent.current = { path: file?.path || null, pos: position, at: performance.now(), playing };
+    const m = file?.metadata;
+    window.ipcRenderer.invoke('discord:update', {
+      track: file ? { path: file.path, title: m?.title || file.name, artist: m?.artist, album: m?.album, albumArtist: m?.albumArtist, duration: m?.duration || 0 } : null,
+      playing, position,
+    }).catch(() => {});
+  };
+  useEffect(() => { sendDiscord(currentFile, isPlaying, currentTime); }, [currentFile?.path, currentFile?.metadata?.title, currentFile?.metadata?.artist, currentFile?.metadata?.album, isPlaying]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const d = discordSent.current;
+    if (!currentFile || d.path !== currentFile.path) return;
+    const expected = d.pos + (d.playing ? (performance.now() - d.at) / 1000 : 0);
+    if (Math.abs(currentTime - expected) > 2.5) sendDiscord(currentFile, isPlaying, currentTime);
+  }, [currentTime]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ---- Album covers: the dialog, and a cover found online for the playing album (shown before it is saved)
   const [coverFiles, setCoverFiles] = useState(null);
   const [coverFound, setCoverFound] = useState(null); // { paths, label, image }
@@ -1503,6 +1538,8 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
           }}
         />
       )}
+
+      {whatsNew && <WhatsNewDialog releases={whatsNew} onClose={() => setWhatsNew(null)} />}
 
       {coverFiles && (
         <CoverDialog

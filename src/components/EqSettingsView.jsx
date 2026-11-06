@@ -1,8 +1,9 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import EqGraph from './EqGraph';
 import Icon from './Icon';
-import { Toggle, Segmented, Select, Callout, Dialog, BackButton, alertDialog } from './ui';
+import { Toggle, Segmented, Select, Callout, Dialog, BackButton, MoreMenu, alertDialog } from './ui';
 import {
+  parseGraphicCurve, fitCurve, formatAudacityText,
   DEFAULT_Q, MAX_BANDS, GAIN_LIMIT, flatBands, autoEq, autoPreamp, parseEqText, formatEqText, parseCurveText,
 } from '../utils/autoEqMath';
 import { AUTOEQ_DEFAULTS } from '../hooks/useEq';
@@ -154,6 +155,7 @@ const EqSettingsView = ({ onBack, eq }) => {
   const [targets, setTargets] = useState([]);
   const [targetLoading, setTargetLoading] = useState(false);
   const [lastFit, setLastFit] = useState(null);
+  const [importNote, setImportNote] = useState(null);
   const [showGuide, setShowGuide] = useState(false);
   const params = { ...AUTOEQ_DEFAULTS, ...auto.params };
 
@@ -206,9 +208,10 @@ const EqSettingsView = ({ onBack, eq }) => {
 
   const setPreampCommit = (v) => { setPreamp(v); commit(`Preamp ${v} dB`, { bands, preamp: v }); };
 
-  const exportEq = () => {
-    const name = auto.measurement ? `${auto.measurement.name} ParametricEQ` : 'TeleCloud ParametricEQ';
-    const blob = new Blob([formatEqText(bands, preamp)], { type: 'text/plain' });
+  const exportEq = (format) => {
+    const base = auto.measurement ? auto.measurement.name : 'TeleCloud';
+    const name = format === 'audacity' ? `${base} Audacity GraphicEQ` : `${base} ParametricEQ`;
+    const blob = new Blob([format === 'audacity' ? formatAudacityText(bands, preamp) : formatEqText(bands, preamp)], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -221,8 +224,18 @@ const EqSettingsView = ({ onBack, eq }) => {
     const file = await readTextFile(e);
     if (!file) return;
     const parsed = parseEqText(file.text);
+    setImportNote(null);
     if (!parsed.bands.length) {
-      alertDialog({ title: 'Could not read that file', message: 'Expected a Squiglink / EqualizerAPO text file with a "Preamp:" line and "Filter 1: ON PK Fc … Hz Gain … dB Q …" lines.', tone: 'danger' });
+      // not filters: maybe a graphic curve (Audacity, EqualizerAPO GraphicEQ)
+      const curve = parseGraphicCurve(file.text);
+      if (!curve) {
+        alertDialog({ title: 'Could not read that file', message: 'Expected a Squiglink / EqualizerAPO text file with "Filter 1: ON PK Fc … Hz Gain … dB Q …" lines, or an Audacity / GraphicEQ curve.', tone: 'danger' });
+        return;
+      }
+      const fit = fitCurve(curve);
+      apply({ bands: fit.bands, preamp: fit.preamp }, `Imported “${file.name}”`);
+      setImportNote(`“${file.name}” has ${curve.length} curve points, so it was turned into ${fit.bands.length} bands that stay within ${Math.max(fit.maxError, 0.01).toFixed(2)} dB of it.`);
+      setSelected(null);
       return;
     }
     apply(parsed, `Imported “${file.name}”`);
@@ -290,17 +303,25 @@ const EqSettingsView = ({ onBack, eq }) => {
         <div className="end">
           <button className="icon-btn" onClick={undo} disabled={history.index <= 0} title="Undo (Ctrl+Z)"><Icon name="undo" /></button>
           <button className="icon-btn" onClick={redo} disabled={history.index >= history.stack.length - 1} title="Redo (Ctrl+Y)"><Icon name="redo" /></button>
-          <label className="btn-ghost pressable" title="Import a Squiglink / EqualizerAPO .txt">
+          <label className="btn-ghost pressable" title="Import a Squiglink, EqualizerAPO or Audacity file">
             <Icon name="upload" />Import
-            <input type="file" accept=".txt" onChange={importEq} hidden />
+            <input type="file" accept=".txt,.xml" onChange={importEq} hidden />
           </label>
-          <button className="btn-ghost" onClick={exportEq} title="Export as Squiglink / EqualizerAPO .txt"><Icon name="download" />Export</button>
+          <MoreMenu
+            title="Export"
+            trigger={<><Icon name="download" />Export</>}
+            items={[
+              { label: 'Squiglink / EqualizerAPO', icon: 'download', onClick: () => exportEq('squiglink') },
+              { label: 'Audacity Graphic EQ', icon: 'download', onClick: () => exportEq('audacity') },
+            ]}
+          />
           <button className="btn-ghost" onClick={reset}><Icon name="refresh" />Reset</button>
           <button className="icon-btn" onClick={() => setShowGuide(true)} title="Guide"><Icon name="info" /></button>
           <Toggle checked={enabled} onChange={setEnabled} label={enabled ? 'EQ on' : 'EQ off'} />
         </div>
       </div>
 
+      {importNote && <Callout tone="info">{importNote} <button className="link-btn" onClick={() => setImportNote(null)}>OK</button></Callout>}
       {clipping && <Callout tone="warn">The EQ boosts up to {peak.toFixed(1)} dB but the preamp is {preamp} dB, so loud passages can clip. <button className="link-btn" onClick={() => setPreampCommit(-peak)}>Set preamp to {(-peak).toFixed(1)} dB</button></Callout>}
 
       <div className={`eq-layout ${collapsed ? 'collapsed' : ''}`}>
@@ -426,6 +447,7 @@ const EqSettingsView = ({ onBack, eq }) => {
         <h4>Files and history</h4>
         <ul>
           <li>Import / Export use the Squiglink text format, which EqualizerAPO, Peace and Wavelet also read.</li>
+          <li>Import also reads Audacity and GraphicEQ curves, and Export can write an Audacity Graphic EQ preset. Curves become up to 31 bands, so they are a close match rather than an exact one.</li>
           <li>Every change is kept in History: click an entry, or use Ctrl+Z / Ctrl+Y.</li>
         </ul>
         <div style={{ marginTop: 12 }}><Callout tone="info">Default layout: 31 bands at ISO 1/3-octave centres, Q {DEFAULT_Q}.</Callout></div>

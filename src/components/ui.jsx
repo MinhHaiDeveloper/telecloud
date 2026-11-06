@@ -96,14 +96,16 @@ export const Select = ({ value, options, onChange, variant, icon, align = 'left'
 };
 
 /** Overflow (⋯) menu. items: [{ label, icon, onClick, danger, sep }] */
-export const MoreMenu = ({ items, title = 'More' }) => {
+export const MoreMenu = ({ items, title = 'More', trigger }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const close = useCallback(() => setOpen(false), []);
   useClickOutside(open, ref, close);
   return (
     <div style={{ position: 'relative' }} ref={ref}>
-      <button className={`icon-btn ${open ? 'on' : ''}`} onClick={() => setOpen(o => !o)} title={title}><Icon name="more" /></button>
+      {trigger
+        ? <button className="btn-ghost" onClick={() => setOpen(o => !o)} title={title}>{trigger}</button>
+        : <button className={`icon-btn ${open ? 'on' : ''}`} onClick={() => setOpen(o => !o)} title={title}><Icon name="more" /></button>}
       {open && (
         <div className="menu" style={{ right: 0, top: 'calc(100% + 6px)', width: 220 }}>
           {items.map((it, i) => it.sep

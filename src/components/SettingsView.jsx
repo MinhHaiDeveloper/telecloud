@@ -3,16 +3,20 @@ import TeleCloudSyncSettings from './TeleCloudSyncSettings';
 import Icon from './Icon';
 import LyricsSettings from './LyricsSettings';
 import CoverSettings from './CoverSettings';
+import DiscordSettings from './DiscordSettings';
+import { WhatsNewSection } from './WhatsNew';
 import LastfmSettings from './LastfmSettings';
 import UpdateStatus from './UpdateStatus';
 import DuplicatesSettings from './DuplicatesSettings';
 import PerformanceSettings from './PerformanceSettings';
+import AppearanceSettings from './AppearanceSettings';
 import { Toggle, Segmented, Select, SettingRow, Callout, Dialog, alertDialog } from './ui';
 import useSlidingIndicator from '../hooks/useSlidingIndicator';
 import pkg from '../../package.json';
 
 const TABS = [
   { id: 'general', label: 'General', icon: 'settings' },
+  { id: 'appearance', label: 'Appearance', icon: 'image' },
   { id: 'library', label: 'Library', icon: 'folder' },
   { id: 'playback', label: 'Playback', icon: 'speaker' },
   { id: 'eq', label: 'Equalizer', icon: 'eq' },
@@ -244,20 +248,16 @@ const SettingsView = ({
       case 'general':
         return (
           <>
-          <section className="set-section">
-            <h3>Appearance</h3>
-            <div className="card set-card">
-              <SettingRow icon={theme === 'dark' ? 'moon' : 'sun'} title="Theme" desc="Dark, or the warm vanilla light theme">
-                <Segmented value={theme} onChange={setTheme} options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }]} />
-              </SettingRow>
-            </div>
-          </section>
           <LyricsSettings />
           <CoverSettings />
+          <DiscordSettings />
           <LastfmSettings />
           <PerformanceSettings />
           </>
         );
+
+      case 'appearance':
+        return <AppearanceSettings theme={theme} setTheme={setTheme} />;
 
       case 'library':
         return (
@@ -425,6 +425,7 @@ const SettingsView = ({
       case 'about':
       default:
         return (
+          <>
           <section className="set-section">
             <h3>About</h3>
             <div className="card">
@@ -438,6 +439,8 @@ const SettingsView = ({
               <UpdateStatus />
             </div>
           </section>
+          <WhatsNewSection version={pkg.version} />
+          </>
         );
     }
   };

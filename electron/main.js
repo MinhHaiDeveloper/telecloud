@@ -24,6 +24,7 @@ require('./autoeq.js');
 require('./stats.js');
 require('./lyrics.js');
 require('./coverSearch.js');
+require('./discord.js');
 require('./tagEdit.js');
 require('./lastfm.js');
 require('./updater.js');

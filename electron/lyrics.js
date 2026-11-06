@@ -5,6 +5,7 @@ const { ipcMain, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const database = require('./database');
+const { describeWriteError } = require('./fileWrite');
 
 const UA = 'TeleCloud/1.0 (https://github.com/MinhHaiDeveloper/telecloud)';
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
@@ -224,7 +225,7 @@ ipcMain.handle('lyrics:options', () => ({ ...options(), sources: SOURCES }));
 ipcMain.handle('lyrics:set-options', (e, patch) => setOptions(patch || {}));
 ipcMain.handle('lyrics:search', async (e, { track, all, sources }) => search(track, { all, sources }));
 ipcMain.handle('lyrics:save', async (e, opts) => {
-  try { return { success: true, ...(await save(opts)) }; } catch (err) { return { success: false, error: err.message }; }
+  try { return { success: true, ...(await save(opts)) }; } catch (err) { return { success: false, error: describeWriteError(err, opts?.path).error }; }
 });
 
 module.exports = { search, save, options, isSynced, SOURCES };

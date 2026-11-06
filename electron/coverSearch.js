@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const database = require('./database');
 const covers = require('./covers');
+const { describeWriteError, withWritable } = require('./fileWrite');
 
 const UA = 'TeleCloud/1.0 (https://github.com/MinhHaiDeveloper/telecloud)';
 const IMAGE_EXT = /\.(jpe?g|png)$/i;
@@ -129,7 +130,7 @@ const providers = {
       return {
         source: 'itunes', ...found, year: (x.releaseDate || '').slice(0, 4), size: '1400 × 1400',
         thumb: x.artworkUrl100.replace('100x100bb', '400x400bb'),
-        image: { url: x.artworkUrl100.replace('100x100bb', '1400x1400bb') },
+        image: { url: x.artworkUrl100.replace('100x100bb', '1400x1400bb'), fallback: x.artworkUrl100.replace('100x100bb', '400x400bb') },
         score: score(q, found),
       };
     });
@@ -141,7 +142,7 @@ const providers = {
       const found = { album: x.title, artist: x.artist?.name };
       return {
         source: 'deezer', ...found, size: x.cover_xl ? '1000 × 1000' : '500 × 500',
-        thumb: x.cover_big || x.cover_xl, image: { url: x.cover_xl || x.cover_big }, score: score(q, found),
+        thumb: x.cover_big || x.cover_xl, image: { url: x.cover_xl || x.cover_big, fallback: x.cover_big }, score: score(q, found),
       };
     });
   },
@@ -150,13 +151,19 @@ const providers = {
     const parts = [];
     if (q.album) parts.push(`releasegroup:${quote(q.album)}`);
     if (q.artist) parts.push(`artist:${quote(q.artist)}`);
-    const r = await get(`https://musicbrainz.org/ws/2/release-group/?query=${encodeURIComponent(parts.join(' AND '))}&fmt=json&limit=6`);
+    const url = `https://musicbrainz.org/ws/2/release-group/?query=${encodeURIComponent(parts.join(' AND '))}&fmt=json&limit=6`;
+    // MusicBrainz allows one request a second and answers 503 past that: wait and ask once more
+    const r = await get(url).catch(async (err) => {
+      if (err.message !== 'HTTP 503') throw err;
+      await new Promise(done => setTimeout(done, 1500));
+      return get(url);
+    });
     const groups = (r['release-groups'] || []).map(x => {
       const found = { album: x.title, artist: (x['artist-credit'] || []).map(c => c.name).join(', ') };
       return {
         source: 'musicbrainz', ...found, year: (x['first-release-date'] || '').slice(0, 4),
         thumb: `https://coverartarchive.org/release-group/${x.id}/front-500`,
-        image: { url: `https://coverartarchive.org/release-group/${x.id}/front` },
+        image: { url: `https://coverartarchive.org/release-group/${x.id}/front`, fallback: `https://coverartarchive.org/release-group/${x.id}/front-500` },
         score: score(q, found),
       };
     }).filter(x => x.score > 0);
@@ -181,7 +188,7 @@ const providers = {
       const img = [...(a.image || [])].reverse().find(i => i['#text'])?.['#text'];
       if (!img || img.includes('2a96cbd8b46e442fc41c2b86b821562f')) continue; // Last.fm's "no picture" star
       const found = { album: a.name, artist: typeof a.artist === 'string' ? a.artist : a.artist?.name };
-      out.push({ source: 'lastfm', ...found, thumb: img, image: { url: img.replace(/\/i\/u\/[^/]+\//, '/i/u/') }, score: score(q, found) });
+      out.push({ source: 'lastfm', ...found, thumb: img, image: { url: img.replace(/\/i\/u\/[^/]+\//, '/i/u/ar0/'), fallback: img }, score: score(q, found) });
     }
     return out;
   },
@@ -224,14 +231,37 @@ async function search(q, { all = false, auto = false } = {}) {
   return out;
 }
 
+/** A public picture of the album for showing outside the app: the first good match online, if any */
+async function onlineCoverUrl(q) {
+  const o = options();
+  let failed = false;
+  for (const id of o.order.filter(x => SOURCES[x].online && !o.disabled.includes(x))) {
+    try {
+      const best = (await providers[id](q)).filter(r => r.score >= 0.7 && /^https:\/\//i.test(r.thumb)).sort((a, b) => b.score - a.score)[0];
+      if (best) return { url: best.thumb, failed: false };
+    } catch { failed = true; }
+  }
+  return { url: null, failed };
+}
+
 // ---------- saving
+async function download(url) {
+  if (!/^https?:\/\//i.test(url)) throw new Error('Bad image address');
+  const r = await get(url, { json: false, timeout: 25000 });
+  const buf = Buffer.from(await r.arrayBuffer());
+  if (buf.length > MAX_DOWNLOAD) throw new Error('The picture is too large');
+  return buf;
+}
+
 async function loadImage(image) {
   if (image?.url) {
-    if (!/^https?:\/\//i.test(image.url)) throw new Error('Bad image address');
-    const r = await get(image.url, { json: false, timeout: 25000 });
-    const buf = Buffer.from(await r.arrayBuffer());
-    if (buf.length > MAX_DOWNLOAD) throw new Error('The picture is too large');
-    return buf;
+    // the largest size isn't always there: the size shown in the results is
+    try {
+      return await download(image.url);
+    } catch (err) {
+      if (!image.fallback) throw err;
+      return download(image.fallback);
+    }
   }
   if (image?.track) return (await embeddedPicture(image.track)) || Promise.reject(new Error('That track has no picture'));
   if (image?.file) {
@@ -273,7 +303,7 @@ function folderHasOtherAlbum(dir, albums) {
   return rows.some(r => path.dirname(r.path) === dir && !albums.has(albumId(r)));
 }
 
-async function save({ paths, image, to, onlyMissing = false }) {
+async function save({ paths, image, to, onlyMissing = false, allowReadOnly = false }) {
   const where = to || options().saveTo;
   const jpeg = toJpeg(await loadImage(image));
   const previous = (paths || []).map(p => database.getFileByPath(p)?.cloud_cover).filter(Boolean);
@@ -307,9 +337,9 @@ async function save({ paths, image, to, onlyMissing = false }) {
     for (const p of list) {
       try {
         // embedded art wins over cover.jpg, so a replaced cover has to replace it there too
-        const wrote = writeTag(p, jpeg, wantTag ? { onlyMissing } : { onlyIfEmbedded: !onlyMissing, onlyMissing });
+        const wrote = withWritable(p, allowReadOnly, () => writeTag(p, jpeg, wantTag ? { onlyMissing } : { onlyIfEmbedded: !onlyMissing, onlyMissing }));
         if (wrote) { done.tag++; files.push(await upsertSingleFile(p)); }
-      } catch (err) { errors.push({ path: p, error: err.message }); }
+      } catch (err) { errors.push({ path: p, ...describeWriteError(err, p) }); }
     }
   }
 
@@ -365,4 +395,4 @@ ipcMain.handle('covers:save', wrap(save));
 ipcMain.handle('covers:embedded', async (e, { paths }) => embeddedCount(paths));
 ipcMain.handle('covers:pick', wrap(async (o, e) => ({ picked: await pick(e) })));
 
-module.exports = { search, save, options, SOURCES };
+module.exports = { search, save, options, SOURCES, onlineCoverUrl };

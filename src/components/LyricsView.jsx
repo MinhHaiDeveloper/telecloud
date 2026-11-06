@@ -28,8 +28,9 @@ export const parseLyrics = (lyrics) => {
  * Lyrics list that keeps the active line centred inside its own scroll container
  * (never scrolls the page around it). Clicking a synced line seeks to it.
  */
-const LyricsView = ({ lyrics, currentTime, onSeek, className = 'lyrics-scroll' }) => {
+const LyricsView = ({ lyrics, currentTime, onSeek, className = 'lyrics-scroll', scrollMs }) => {
   const scrollRef = useRef(null);
+  const moving = useRef(0); // the running glide (see below)
   const userScrollUntil = useRef(0);
   const parsed = useMemo(() => parseLyrics(lyrics), [lyrics]);
 
@@ -47,11 +48,27 @@ const LyricsView = ({ lyrics, currentTime, onSeek, className = 'lyrics-scroll' }
     const box = scrollRef.current;
     if (!box) return;
     // the track started over (repeat, seek to 0): go back to the first line and wait there
-    if (activeIndex < 0) { userScrollUntil.current = 0; box.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    if (activeIndex < 0) { userScrollUntil.current = 0; cancelAnimationFrame(moving.current); box.scrollTo({ top: 0, behavior: 'smooth' }); return; }
     if (Date.now() < userScrollUntil.current) return;
     const el = box.querySelector(`[data-index="${activeIndex}"]`);
-    if (el) box.scrollTo({ top: el.offsetTop - box.clientHeight / 2 + el.offsetHeight / 2, behavior: 'smooth' });
-  }, [activeIndex]);
+    if (!el) return;
+    const centre = () => el.offsetTop - box.clientHeight / 2 + el.offsetHeight / 2;
+    if (scrollMs === undefined) { box.scrollTo({ top: centre(), behavior: 'smooth' }); return; }
+    // Glide over a set time. The lines grow and shrink during it, so the target is measured every
+    // frame; both finish together and the line ends up exactly in the middle.
+    cancelAnimationFrame(moving.current);
+    const ms = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : scrollMs;
+    const from = box.scrollTop;
+    const start = performance.now();
+    const step = (now) => {
+      const t = ms ? Math.min(1, (now - start) / ms) : 1;
+      const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      box.scrollTop = from + (centre() - from) * eased;
+      if (t < 1 && Date.now() >= userScrollUntil.current) moving.current = requestAnimationFrame(step);
+    };
+    moving.current = requestAnimationFrame(step);
+  }, [activeIndex, scrollMs]);
+  useEffect(() => () => cancelAnimationFrame(moving.current), []);
 
   if (!parsed.lines.length) {
     return <div className="lyrics-empty">No lyrics for this track yet.</div>;

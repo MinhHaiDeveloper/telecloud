@@ -5,6 +5,7 @@ const { ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const database = require('./database');
+const { describeWriteError, withWritable } = require('./fileWrite');
 
 const FIELDS = ['title', 'artist', 'album', 'albumArtist', 'year', 'genre', 'track', 'disc'];
 const list = (s) => String(s || '').split(/\s*[;,]\s*/).map(x => x.trim()).filter(Boolean);
@@ -67,7 +68,7 @@ function writeRow(p, c) {
   if (set.length) database.initDatabase().prepare(`UPDATE music_files SET ${set.join(', ')} WHERE path = @path`).run({ ...v, path: p });
 }
 
-async function edit({ paths, changes }) {
+async function edit({ paths, changes, allowReadOnly = false }) {
   const c = Object.fromEntries(Object.entries(changes || {}).filter(([k]) => FIELDS.includes(k)));
   if (!Object.keys(c).length) return { files: [], errors: [] };
   const { upsertSingleFile, toFrontend } = require('./music');
@@ -77,7 +78,7 @@ async function edit({ paths, changes }) {
   for (const p of paths || []) {
     try {
       if (isLocal(p)) {
-        writeFile(p, c);
+        withWritable(p, allowReadOnly, () => writeFile(p, c));
         files.push(await upsertSingleFile(p));
       } else {
         writeRow(p, c);
@@ -86,7 +87,7 @@ async function edit({ paths, changes }) {
       const row = database.getFileByPath(p);
       if (row?.telegram_message_id) cloudPaths.push(p);
     } catch (err) {
-      errors.push({ path: p, error: err.message });
+      errors.push({ path: p, ...describeWriteError(err, p) });
     }
   }
   if (cloudPaths.length) { try { require('./telecloud/service').indexChanged(cloudPaths); } catch { /* TeleCloud not set up */ } }

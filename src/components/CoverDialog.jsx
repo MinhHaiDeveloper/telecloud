@@ -24,6 +24,7 @@ const CoverDialog = ({ files, onClose, onSaved }) => {
   const [saveTo, setSaveTo] = useState('file');
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState('');
+  const [readOnly, setReadOnly] = useState(0); // files that refused the tag only because they are read-only
   const [embedded, setEmbedded] = useState(0); // tracks holding a picture inside
   const paths = files.map(f => f.path);
   const anyLocal = files.some(f => !f.path.startsWith('tc://') && (f.storage_type || 'local') !== 'cloud');
@@ -48,15 +49,19 @@ const CoverDialog = ({ files, onClose, onSaved }) => {
     if (!r?.success) { setProblem(r?.error || 'Could not open that picture'); return; }
     if (r.picked) setPick({ image: { file: r.picked.file }, thumb: r.picked.thumb, label: r.picked.name, size: `${r.picked.width} × ${r.picked.height}` });
   };
-  const save = async () => {
+  const save = async (allowReadOnly = false) => {
     setSaving(true);
     setProblem('');
-    const r = await window.ipcRenderer.invoke('covers:save', { paths, image: pick.image, to: saveTo });
+    setReadOnly(0);
+    const r = await window.ipcRenderer.invoke('covers:save', { paths, image: pick.image, to: saveTo, allowReadOnly });
     setSaving(false);
     if (!r?.success) { setProblem(r?.error || 'Could not save the cover'); return; }
-    onSaved?.(r);
-    if (!r.errors?.length) onClose();
-    else setProblem(`${r.errors.length} ${r.errors.length === 1 ? 'file' : 'files'} could not be changed: ${r.errors[0].error}`);
+    if (r.file || r.tag || r.cloud) onSaved?.(r);
+    if (!r.errors?.length) { onClose(); return; }
+    const n = r.errors.length;
+    const blocked = r.errors.filter(e => e.readOnly).length;
+    setReadOnly(blocked);
+    setProblem(`${r.file ? 'cover.jpg was saved. ' : ''}${n} ${n === 1 ? 'file' : 'files'} could not be changed: ${blocked === n ? (n === 1 ? 'it is read-only.' : 'they are read-only.') : r.errors[0].error}`);
   };
   const labelOf = (id) => opts?.sources?.[id]?.label || id;
   const shown = results.filter(r => !broken.has(r.thumb));
@@ -77,7 +82,7 @@ const CoverDialog = ({ files, onClose, onSaved }) => {
       actions={(
         <>
           <button className="btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" onClick={save} disabled={!pick || saving}>{saving ? 'Saving…' : 'Save cover'}</button>
+          <button className="btn-primary" onClick={() => save()} disabled={!pick || saving}>{saving ? 'Saving…' : 'Save cover'}</button>
         </>
       )}
     >
@@ -96,6 +101,7 @@ const CoverDialog = ({ files, onClose, onSaved }) => {
             For {files.length} {files.length === 1 ? 'track' : 'tracks'}.{fileNote}
           </small>
           {problem && <small className="cov-problem">{problem}</small>}
+          {readOnly > 0 && pick && <button className="btn-ghost sm" onClick={() => save(true)} disabled={saving} title="Writes the cover into them, then makes them read-only again">Write to them anyway</button>}
         </div>
         <div className="cov-main">
           <form className="lyr-query" onSubmit={(e) => { e.preventDefault(); run({ album, artist }); }}>

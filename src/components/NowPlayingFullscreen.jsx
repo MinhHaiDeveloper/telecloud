@@ -8,6 +8,7 @@ import Cover from './Cover';
 import LyricsView, { parseLyrics } from './LyricsView';
 import QueueList from './QueueList';
 import { formatTime, qualityOf, formatBytes } from '../utils/audio';
+import { useAppearance } from '../utils/appearance';
 
 // Small artworks the big cover can fly from / back to
 const ORIGINS = {
@@ -93,6 +94,70 @@ function flyCover(big, small, direction, toRect) {
 }
 
 /**
+ * The cover rests on a point at its centre: where the mouse touches it, it leans down. Runs only
+ * while it is moving, so with the mouse elsewhere (or the option off) it costs nothing.
+ */
+function useCoverTilt(rootRef, active, strength) {
+  useEffect(() => {
+    if (!active || reducedMotion()) return undefined;
+    const target = { x: 0, y: 0 };
+    const now = { x: 0, y: 0 };
+    let frame = 0;
+    let last = 0;
+    const cover = () => rootRef.current?.querySelector('.np-cover');
+    const draw = (time) => {
+      frame = 0;
+      const el = cover();
+      if (!el) return;
+      const k = 1 - Math.exp(-(time - (last || time - 16)) / 90);
+      last = time;
+      now.x += (target.x - now.x) * k;
+      now.y += (target.y - now.y) * k;
+      const settled = Math.abs(target.x - now.x) < 0.02 && Math.abs(target.y - now.y) < 0.02;
+      if (settled && !target.x && !target.y) {
+        now.x = 0; now.y = 0; last = 0;
+        el.style.transform = '';
+        el.style.willChange = '';
+        return;
+      }
+      el.style.willChange = 'transform';
+      el.style.transform = `perspective(1100px) rotateX(${now.x.toFixed(3)}deg) rotateY(${now.y.toFixed(3)}deg)`;
+      if (settled) { last = 0; return; } // still until the mouse moves again
+      frame = requestAnimationFrame(draw);
+    };
+    const wake = () => { if (!frame) frame = requestAnimationFrame(draw); };
+    const move = (e) => {
+      const el = cover();
+      if (!el) return;
+      // measured from the layout, which ignores the turn: the area that reacts stays the flat
+      // cover's, so the edge can't flicker in and out as it leans away
+      const box = el.offsetParent?.getBoundingClientRect() || { left: 0, top: 0 };
+      const w = el.offsetWidth / 2;
+      const h = el.offsetHeight / 2;
+      const nx = (e.clientX - (box.left + el.offsetLeft + w)) / w;
+      const ny = (e.clientY - (box.top + el.offsetTop + h)) / h;
+      const over = Math.abs(nx) <= 1 && Math.abs(ny) <= 1;
+      const x = over ? -ny * strength : 0;
+      const y = over ? nx * strength : 0;
+      if (x === target.x && y === target.y) return;
+      target.x = x;
+      target.y = y;
+      wake();
+    };
+    const leave = () => { target.x = 0; target.y = 0; wake(); };
+    window.addEventListener('pointermove', move, { passive: true });
+    document.documentElement.addEventListener('pointerleave', leave);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      document.documentElement.removeEventListener('pointerleave', leave);
+      cancelAnimationFrame(frame);
+      const el = cover();
+      if (el) { el.style.transform = ''; el.style.willChange = ''; }
+    };
+  }, [rootRef, active, strength]);
+}
+
+/**
  * Full-window "now playing". Big artwork in the middle; the Lyrics / Queue buttons open a
  * side panel (50/50). With no panel open, the art is centred with details about the track.
  */
@@ -103,6 +168,8 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, onSeek, signal, queueF
   const rootRef = useRef(null);
   const { playCounts } = useContext(SongActions);
   const closingRef = useRef(false);
+  const look = useAppearance();
+  useCoverTilt(rootRef, look.coverTilt && phase === 'open', look.tiltStrength);
   // Cover only: everything else (top bar, text, panels, the player bar) fades away
   const [coverOnly, setCoverOnly] = useState(false);
   const [peek, setPeek] = useState(false); // the "show all" button while the mouse moves
@@ -136,6 +203,7 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, onSeek, signal, queueF
     // The player is about to grow back from its compact form, so measure where its mini
     // cover will end up (not where it is now) and let both animations run together
     const toRect = small && small.closest('.player') ? settledRect(small) : null;
+    if (big) big.style.transform = ''; // the flight starts from the flat cover
     onClosingStart?.();
     if (!big || !small || reducedMotion()) { onClose(); return; }
     flyCover(big, small, 'close', toRect).then(onClose);
@@ -224,7 +292,7 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, onSeek, signal, queueF
         <div className="np-panel np-fade">
           <div className="np-panel-inner">
             {panel === 'lyrics' && (hasLyrics
-              ? <><LyricsView lyrics={m.lyrics} currentTime={currentTime} onSeek={onSeek} className="np-lyrics" /><LyricsNote file={currentFile} /></>
+              ? <><LyricsView lyrics={m.lyrics} currentTime={currentTime} onSeek={onSeek} className="np-lyrics" scrollMs={look.lyricSpeed} /><LyricsNote file={currentFile} /></>
               : (
                 <div className="np-empty">
                   <Icon name="lyrics" />

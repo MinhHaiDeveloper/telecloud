@@ -488,7 +488,15 @@ input[type="number"].input::-webkit-inner-spin-button { opacity: .4; }
   position: relative; flex: 1; overflow-y: auto; padding: 28vh 32px 36vh;
   mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent);
 }
-.np-lyrics .lyric { font-size: 26px; font-weight: 800; padding: 7px 0; line-height: 1.25; }
+.np-lyrics .lyric {
+  font-size: var(--np-lyric-other, 26px); font-weight: 800; padding: 7px 0; line-height: 1.25;
+  text-align: var(--np-lyric-align, left);
+  transition: color var(--np-lyric-speed, 400ms), opacity var(--np-lyric-speed, 400ms), font-size var(--np-lyric-speed, 400ms) ease-in-out, transform var(--np-lyric-speed, 400ms) ease-in-out, text-shadow var(--np-lyric-speed, 400ms);
+}
+.np-lyrics .lyric.active { font-size: var(--np-lyric-current, 26px); }
+html.np-lyric-glow .np-lyrics .lyric.active { text-shadow: 0 0 22px color-mix(in srgb, var(--text) 55%, transparent), 0 0 6px color-mix(in srgb, var(--text) 35%, transparent); }
+html[style*="--np-lyric-align: center"] .np-lyrics .lyric { transform-origin: center center; }
+html[style*="--np-lyric-align: right"] .np-lyrics .lyric { transform-origin: right center; }
 .np-panel .lyrics-empty { margin: auto; font-size: 15px; font-weight: 600; font-style: normal; color: var(--text-2); }
 .np-queue { flex: 1; overflow-y: auto; padding: 18px 8px; display: flex; flex-direction: column; gap: 2px; }
 .np-queue .mini:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
@@ -816,3 +824,21 @@ html.np-cover-only .app.np-mode .np-body { padding-bottom: 0; }
 
 /* Artist page: albums they only appear on */
 .artist-appears { margin-top: 26px; }
+
+/* Settings -> Appearance */
+.appearance-slider { display: flex; align-items: center; gap: 12px; width: 240px; }
+.appearance-slider .range { flex: 1; min-width: 0; }
+.appearance-slider .mono { width: 62px; text-align: right; font-size: 12px; color: var(--text-2); flex: none; }
+.appearance-preview-wrap { padding: 0; overflow: hidden; }
+.np-lyrics.appearance-preview { flex: none; box-sizing: border-box; height: 240px; padding: 100px 28px; overflow: hidden; pointer-events: none; }
+
+/* Discord settings */
+.discord-text { width: 260px; }
+
+/* What's New */
+.whats-new-scroll { max-height: min(56vh, 460px); overflow-y: auto; padding-right: 4px; }
+.whats-new-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; line-height: 1.5; color: var(--text-2); }
+.whats-new-card { padding: 16px 18px; }
+.whats-new-more { margin-top: 12px; }
+.whats-new-scroll h4, .whats-new-card h4 { margin: 0 0 8px; font-size: 13px; font-weight: 800; }
+h4.whats-new-older { margin-top: 18px; }
