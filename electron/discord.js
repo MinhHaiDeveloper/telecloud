@@ -9,7 +9,8 @@ const crypto = require('crypto');
 
 const CLIENT_ID = '1568091864295415848';
 const LOGO = 'telecloud'; // art asset uploaded to the Discord application
-const DEFAULTS = { enabled: false, showPaused: true, onlineCover: true, statusText: '{track} by {artist}' };
+const DEFAULTS = { enabled: false, showPaused: true, onlineCover: true, showButton: true, statusText: '{track} by {artist}' };
+const BUTTON = { label: 'Get TeleCloud', url: 'https://telecloud-music.pages.dev/' };
 const MIN_GAP = 4000;  // Discord allows a few updates every 20 s; the newest state always wins
 const RETRY = 15000;   // look for Discord again this often while it isn't running
 
@@ -41,7 +42,10 @@ function buildActivity({ track, playing, position }, o, coverUrl, now = Date.now
     details: fit(track.title) || fit('Unknown track'),
     assets: { large_image: coverUrl && coverUrl.length <= 256 ? coverUrl : LOGO },
   };
-  if (!compat) a.name = fit(fill(o.statusText, { title: track.title, artist, album })) || 'TeleCloud';
+  if (!compat) {
+    a.name = fit(fill(o.statusText, { title: track.title, artist, album })) || 'TeleCloud';
+    if (o.showButton) a.buttons = [BUTTON];
+  }
   const state = playing ? artist : (artist ? `Paused · ${artist}` : 'Paused');
   if (fit(state)) a.state = fit(state);
   if (fit(album)) a.assets.large_text = fit(album);

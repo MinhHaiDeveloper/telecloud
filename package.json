@@ -1,6 +1,6 @@
 {
   "name": "telecloud",
-  "version": "1.0.0-beta.11",
+  "version": "1.0.0-beta.12",
   "description": "Hi-res music player with encrypted, unlimited backup to your own Telegram",
   "main": "electron/main.js",
   "scripts": {

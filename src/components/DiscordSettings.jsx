@@ -45,6 +45,9 @@ const DiscordSettings = () => {
         <SettingRow icon="image" title="Show the album cover" desc="Looks for the album on the online cover sources and shows their picture. Your files are never uploaded. Albums it can't find show the TeleCloud logo. Off: always the logo, and no search." muted={!o.enabled}>
           <Toggle checked={o.onlineCover} onChange={(v) => set({ onlineCover: v })} disabled={!o.enabled} />
         </SettingRow>
+        <SettingRow icon="download" title="Show a Get TeleCloud button" desc="A button on your status that opens the TeleCloud website. Others can click it." muted={!o.enabled}>
+          <Toggle checked={o.showButton} onChange={(v) => set({ showButton: v })} disabled={!o.enabled} />
+        </SettingRow>
         <SettingRow icon="lyrics" title="Status text" desc="You can use {track}, {artist} and {album}." muted={!o.enabled}>
           <input className="input discord-text" value={text} disabled={!o.enabled} placeholder={DEFAULT_TEXT} maxLength={120} aria-label="Status text" onChange={(e) => setText(e.target.value)} />
         </SettingRow>

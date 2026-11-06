@@ -161,7 +161,7 @@ Telegram work runs in a `utilityProcess` (`worker.js`), so the interface stays s
 
 ### Discord
 
-`discord.js` talks to the Discord desktop app over its local pipe, using the application ID in that file. It is off by default. The cover is a public picture from the online sources, otherwise the `telecloud` art asset. Updates go out at most once every 4 seconds. The app never uploads files for this.
+`discord.js` talks to the Discord desktop app over its local pipe, using the application ID in that file. It is off by default. The cover is a public picture from the online sources, otherwise the `telecloud` art asset. A **Get TeleCloud** button links to the website unless turned off. Updates go out at most once every 4 seconds. The app never uploads files for this.
 
 ### Logs
 

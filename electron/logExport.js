@@ -144,7 +144,7 @@ async function systemReport({ days, includeNames }) {
     add('Settings', JSON.stringify(safe));
     add('Download folder set', !!s.downloadFolder);
   } catch { /* not set */ }
-  for (const [name, file, keys] of [['Lyrics', 'lyrics-settings.json', ['search', 'autoSave', 'saveTo', 'order', 'disabled']], ['Covers', 'cover-settings.json', ['search', 'autoSave', 'saveTo', 'order', 'disabled']], ['Discord', 'discord-settings.json', ['enabled', 'showPaused', 'onlineCover']]]) {
+  for (const [name, file, keys] of [['Lyrics', 'lyrics-settings.json', ['search', 'autoSave', 'saveTo', 'order', 'disabled']], ['Covers', 'cover-settings.json', ['search', 'autoSave', 'saveTo', 'order', 'disabled']], ['Discord', 'discord-settings.json', ['enabled', 'showPaused', 'onlineCover', 'showButton']]]) {
     try {
       const s = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), file), 'utf8'));
       add(name, JSON.stringify(Object.fromEntries(keys.filter(k => k in s).map(k => [k, s[k]]))));
