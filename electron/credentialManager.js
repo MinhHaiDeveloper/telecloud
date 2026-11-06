@@ -83,7 +83,7 @@ class CredentialManager {
     getCredentials() {
         const encrypted = this.store.get('teleCloudSync');
         if (!encrypted) return null;
-        return {
+        const creds = {
             apiId: this.decrypt(encrypted.apiId),
             apiHash: this.decrypt(encrypted.apiHash),
             phoneNumber: encrypted.phoneNumber,
@@ -99,6 +99,9 @@ class CredentialManager {
             lastSync: encrypted.lastSync || null,
             musicFolders: encrypted.musicFolders || []
         };
+        // these must never reach the log, wherever they might turn up
+        require('./logger').addSecrets([creds.apiHash, creds.phoneNumber, creds.session, creds.masterKey]);
+        return creds;
     }
 
     updateCredentials(updates) {

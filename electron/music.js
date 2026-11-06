@@ -228,6 +228,7 @@ async function syncLibrary({ mode = 'refresh', onProgress, onBatch } = {}) {
   const total = files ? files.length : database.countFiles();
   const summary = { added, updated, removed: removed.length, unchanged, total, mode, cancelled, unavailable };
   progress({ stage: 'complete', current: total, total, message: cancelled ? `Stopped · ${describe(summary)}` : describe(summary) });
+  console.log(`[Library] Sync (${mode}): ${total} tracks. ${describe(summary)}`);
   return files ? { files, ...summary } : summary;
 }
 

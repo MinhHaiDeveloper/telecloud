@@ -3,12 +3,31 @@ const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const dotenv = require('dotenv');
+const logger = require('./logger');
+
+// First of all, so nothing from startup is missed
+logger.init(path.join(app.getPath('userData'), 'logs'));
+logger.write('INFO', 'app', `TeleCloud ${app.getVersion()} starting (Electron ${process.versions.electron}, ${process.platform} ${require('os').release()}, ${app.isPackaged ? 'installed' : 'development'})`);
+app.on('child-process-gone', (e, d) => { if (d.reason !== 'clean-exit') logger.write('ERROR', 'crash', `${d.type} process gone: ${d.reason} (exit ${d.exitCode})`); });
+app.on('render-process-gone', (e, wc, d) => { logger.write('ERROR', 'crash', `Window process gone: ${d.reason} (exit ${d.exitCode})`); logger.flush(); });
+app.on('web-contents-created', (e, wc) => {
+  wc.on('console-message', (d) => {
+    if (String(d.sourceId || '').startsWith('devtools://')) return; // the developer tools talking to themselves
+    const name = d.level;
+    const where = d.sourceId ? ` (${String(d.sourceId).replace(/^.*[\\/]/, '')}:${d.lineNumber})` : '';
+    if (name === 'error') logger.write('ERROR', 'window', `${d.message}${where}`);
+    else if (name === 'warning') logger.write('WARN', 'window', `${d.message}${where}`);
+    else logger.write('DEBUG', 'window', d.message);
+  });
+  wc.on('preload-error', (ev, p, err) => logger.write('ERROR', 'window', `Preload failed: ${err?.message}`));
+});
+app.on('before-quit', () => { logger.write('INFO', 'app', 'Quitting'); logger.flush(); });
 
 // Load .env from different locations in dev vs production
 const envPath = app.isPackaged
   ? path.join(process.resourcesPath, '.env')  // Production: resources/.env
   : path.join(__dirname, '..', '.env');        // Dev: project-root/.env
-dotenv.config({ path: envPath });
+dotenv.config({ path: envPath, quiet: true });
 
 // Cover cache directory
 const COVER_CACHE_DIR = path.join(app.getPath('userData'), 'cover-cache');
@@ -25,6 +44,7 @@ require('./stats.js');
 require('./lyrics.js');
 require('./coverSearch.js');
 require('./discord.js');
+require('./logExport.js');
 require('./tagEdit.js');
 require('./lastfm.js');
 require('./updater.js');

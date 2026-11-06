@@ -5,6 +5,7 @@ import LyricsSettings from './LyricsSettings';
 import CoverSettings from './CoverSettings';
 import DiscordSettings from './DiscordSettings';
 import { WhatsNewSection } from './WhatsNew';
+import LogsSettings from './LogsSettings';
 import LastfmSettings from './LastfmSettings';
 import UpdateStatus from './UpdateStatus';
 import DuplicatesSettings from './DuplicatesSettings';
@@ -440,6 +441,7 @@ const SettingsView = ({
             </div>
           </section>
           <WhatsNewSection version={pkg.version} />
+          <LogsSettings />
           </>
         );
     }

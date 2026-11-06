@@ -842,3 +842,7 @@ html.np-cover-only .app.np-mode .np-body { padding-bottom: 0; }
 .whats-new-more { margin-top: 12px; }
 .whats-new-scroll h4, .whats-new-card h4 { margin: 0 0 8px; font-size: 13px; font-weight: 800; }
 h4.whats-new-older { margin-top: 18px; }
+
+/* Settings -> About -> Logs */
+.logs-dates { display: flex; gap: 8px; }
+.logs-dates .input { width: 150px; }

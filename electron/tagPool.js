@@ -4,6 +4,7 @@
 const os = require('os');
 const path = require('path');
 const { parseTrack } = require('./tags');
+const logger = require('./logger');
 
 let Worker = null;
 try { ({ Worker } = require('worker_threads')); } catch { Worker = null; }
@@ -19,8 +20,11 @@ const waiting = new Map(); // id -> { resolve, reject, worker }
 let idleTimer = null;
 
 function spawn() {
-  const w = new Worker(path.join(__dirname, 'tagWorker.js'));
+  // a thread's console doesn't pass through this one's: take its output for the log
+  const w = new Worker(path.join(__dirname, 'tagWorker.js'), { stdout: true, stderr: true });
   w.unref();
+  w.stdout.on('data', logger.stream('DEBUG', 'scan'));
+  w.stderr.on('data', logger.stream('WARN', 'scan'));
   w.on('message', ({ id, results }) => {
     const job = waiting.get(id);
     if (!job) return;

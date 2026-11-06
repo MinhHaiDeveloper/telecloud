@@ -2,6 +2,13 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.0.0-beta.11',
+    items: [
+      'Report problems more easily: Settings > About > Logs saves a log to send along. It stays on your computer until you send it yourself.',
+      'Music names are hidden in the saved log unless you choose to include them. Keys, passwords and your Telegram session are never included.',
+    ],
+  },
+  {
     version: '1.0.0-beta.10',
     items: [
       'Discord status: show what you are listening to, with the album cover. Turn it on in Settings > General.',

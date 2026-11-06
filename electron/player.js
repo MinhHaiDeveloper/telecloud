@@ -127,6 +127,11 @@ function handleMessage(msg) {
       resyncLiveEq();
       break;
 
+    case 'log-message':
+      // mpv's own warnings and errors, for the log file only
+      console.warn(`[mpv] ${msg.prefix}: ${String(msg.text || '').trim()}`);
+      break;
+
     case 'end-file':
       if (nextEntryId && msg.playlist_entry_id === nextEntryId && msg.reason === 'error') {
         // The preloaded track can't be opened; let the current one finish and report it then
@@ -136,6 +141,7 @@ function handleMessage(msg) {
       }
       if (msg.playlist_entry_id !== currentEntryId) break;
       if (msg.reason === 'error') {
+        console.warn(`[Player] Could not play (${msg.file_error || 'unknown error'})`);
         send('playback-error', { error: msg.file_error || 'Could not play this file' });
       } else if (msg.reason === 'eof' && !nextEntryId) {
         send('track-ended');
@@ -211,7 +217,9 @@ function startMpv() {
   let stderrTail = '';
   proc.stderr.on('data', d => { stderrTail = (stderrTail + d.toString()).slice(-2000); });
   proc.on('exit', (code) => {
-    console.error(`[Player] mpv exited (${code})`, stderrTail.slice(-400));
+    // no exit code means it was stopped from outside, as on every normal quit: not an error
+    if (code) console.error(`[Player] mpv exited (${code})`, stderrTail.slice(-400));
+    else console.log('[Player] mpv stopped');
     proc = null;
     sock = null;
     readyPromise = null;
@@ -225,6 +233,7 @@ function startMpv() {
   });
 
   readyPromise = connect().then(async () => {
+    await command(['request_log_messages', 'warn']).catch(() => {});
     await command(['observe_property', 1, 'time-pos']);
     await command(['observe_property', 2, 'pause']);
     await command(['observe_property', 3, 'audio-out-params']);
@@ -457,6 +466,7 @@ ipcMain.handle('get-audio-devices', () => new Promise((resolve) => {
 }));
 
 ipcMain.handle('play-audio', async (event, { filePath, deviceId, startPaused } = {}) => {
+  console.log(`[Player] Play ${filePath}`);
   checkPlayable(filePath);
   await startMpv();
   if (deviceId !== undefined && String(deviceId) !== currentDevice) await setDeviceInternal(String(deviceId));

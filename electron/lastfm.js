@@ -11,7 +11,10 @@ const API = process.env.LASTFM_API_URL || 'https://ws.audioscrobbler.com/2.0/';
 const AUTH_URL = process.env.LASTFM_AUTH_URL || 'https://www.last.fm/api/auth/';
 function appKey() {
   if (process.env.LASTFM_API_KEY && process.env.LASTFM_API_SECRET) return { apiKey: process.env.LASTFM_API_KEY, secret: process.env.LASTFM_API_SECRET };
-  try { const k = JSON.parse(fs.readFileSync(path.join(__dirname, 'lastfm-key.json'), 'utf8')); if (k.apiKey && k.secret) return k; } catch { /* not configured */ }
+  try {
+    const k = JSON.parse(fs.readFileSync(path.join(__dirname, 'lastfm-key.json'), 'utf8'));
+    if (k.apiKey && k.secret) { require('./logger').addSecrets([k.apiKey, k.secret]); return k; }
+  } catch { /* not configured */ }
   return null;
 }
 
@@ -20,7 +23,12 @@ const accountFile = () => path.join(app.getPath('userData'), 'lastfm.json');
 const enc = (s) => (safeStorage.isEncryptionAvailable() ? `enc:${safeStorage.encryptString(s).toString('base64')}` : s);
 const dec = (s) => (s && s.startsWith('enc:') ? safeStorage.decryptString(Buffer.from(s.slice(4), 'base64')) : s);
 function account() {
-  try { const a = JSON.parse(fs.readFileSync(accountFile(), 'utf8')); return { ...a, sk: dec(a.sk) }; } catch { return null; }
+  try {
+    const a = JSON.parse(fs.readFileSync(accountFile(), 'utf8'));
+    const sk = dec(a.sk);
+    require('./logger').addSecrets([sk]);
+    return { ...a, sk };
+  } catch { return null; }
 }
 function saveAccount(a) {
   if (!a) { fs.rmSync(accountFile(), { force: true }); return; }

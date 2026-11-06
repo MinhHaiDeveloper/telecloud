@@ -154,6 +154,7 @@ async function uploadOne(item) {
   const storage = store.storages.get(item.storage_id) || defaultStorage();
   const size = fs.statSync(item.path).size;
   store.queue.set(item.path, 'uploading', { size });
+  console.log(`[TeleCloud] Backing up ${item.path} (${(size / 1048576).toFixed(1)} MB${row.telegram_message_id ? ', replacing its old copy' : ''})`);
   queueSnapshot.active = { path: item.path, name: row.title || path.basename(item.path), size, bytes: 0, done: 0, speed: 0, t: Date.now(), stage: 'checking' };
   pushQueue();
 
@@ -179,6 +180,7 @@ async function uploadOne(item) {
   const existing = store.index.bySha(storage.id, sha256) || store.index.byShaAnywhere(sha256);
   if (existing) {
     await done(existing.message_id, store.storages.get(existing.storage_id) || storage);
+    console.log(`[TeleCloud] Already backed up, linked: ${item.path}`);
     return 'linked';
   }
 
@@ -200,6 +202,7 @@ async function uploadOne(item) {
     });
     store.index.put(storage.id, { messageId: res.messageId, sha256, size, name, iv, info, date: Date.now() });
     await done(res.messageId);
+    console.log(`[TeleCloud] Backed up ${item.path}`);
     return 'uploaded';
   } finally {
     worker.call('forget', { jobId: activeJob.id }).catch(() => {});
@@ -244,6 +247,7 @@ function startRunner() {
         } catch (err) {
           if (err.message === 'CANCELLED') { store.queue.set(item.path, 'queued'); break; }
           if (err.floodWait) {
+            console.warn(`[TeleCloud] Telegram asked to wait ${err.floodWait} s`);
             // Telegram asked us to slow down for longer than the client waits by itself
             store.queue.set(item.path, 'queued');
             queueSnapshot.active = { ...(queueSnapshot.active || {}), stage: 'waiting', waitUntil: Date.now() + err.floodWait * 1000 };
@@ -252,6 +256,7 @@ function startRunner() {
             continue;
           }
           const attempts = (item.attempts || 0) + 1;
+          console.error(`[TeleCloud] Backup failed (attempt ${attempts} of ${MAX_ATTEMPTS}): ${item.path}: ${err.message}`);
           store.queue.set(item.path, attempts >= MAX_ATTEMPTS ? 'error' : 'queued', { error: err.message, attempt: true });
           if (attempts < MAX_ATTEMPTS) await new Promise(r => setTimeout(r, 2000 * attempts));
         }
@@ -396,6 +401,7 @@ async function writeManifest(storageId) {
   const old = s.manifest_id;
   store.storages.setManifest(s.id, id, iv);
   await saveManifestCache(s.id, id, data);
+  console.log(`[TeleCloud] Index saved: ${tracks.length} ${tracks.length === 1 ? 'track' : 'tracks'}, ${data.covers.length} ${data.covers.length === 1 ? 'cover' : 'covers'}`);
   if (old && old !== id) await worker.call('deleteMessages', { peer: store.toPeer(s), ids: [old] }).catch(() => {});
   return { id, tracks: tracks.length };
 }
@@ -564,6 +570,7 @@ async function cacheTrack(libraryPath) {
     }
     const storage = store.storages.byPeer(row.telegram_channel_id);
     if (!storage) throw new Error('The Telegram chat for this track is not connected');
+    console.log(`[TeleCloud] Downloading to the cache: ${libraryPath}`);
     await ensureConnected();
     let entry = store.index.get(storage.id, row.telegram_message_id);
     if (!entry) { await refreshIndex(storage); entry = store.index.get(storage.id, row.telegram_message_id); }
@@ -698,6 +705,7 @@ async function restore() {
     }
   }
   pushTracks([...added, ...changed]);
+  console.log(`[TeleCloud] Restore: ${restored} added, ${updated} updated, ${skipped} already here, ${coversFetched} covers${needKey ? `, ${needKey} need the recovery key` : ''}`);
   return { restoredCount: restored, skippedCount: skipped, updatedCount: updated, needKey, covers: coversFetched };
 }
 

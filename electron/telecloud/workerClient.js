@@ -3,6 +3,7 @@
 
 const path = require('path');
 const { EventEmitter } = require('events');
+const logger = require('../logger');
 
 const events = new EventEmitter();
 let child = null;
@@ -18,7 +19,10 @@ function start() {
     return;
   }
   const { utilityProcess } = require('electron');
-  child = utilityProcess.fork(path.join(__dirname, 'worker.js'), [], { serviceName: 'TeleCloud', stdio: 'inherit' });
+  child = utilityProcess.fork(path.join(__dirname, 'worker.js'), [], { serviceName: 'TeleCloud', stdio: 'pipe' });
+  // the Telegram library is chatty: its normal output only with detailed logging on
+  child.stdout?.on('data', logger.stream('DEBUG', 'telecloud'));
+  child.stderr?.on('data', logger.stream('WARN', 'telecloud'));
   child.on('message', (msg) => {
     if (msg && msg.event) { events.emit(msg.event, msg.data); return; }
     const p = msg && pending.get(msg.id);
@@ -30,7 +34,8 @@ function start() {
       p.reject(err);
     } else p.resolve(msg.result);
   });
-  child.on('exit', () => {
+  child.on('exit', (code) => {
+    if (code) logger.write('WARN', 'telecloud', `Worker stopped (exit ${code})`);
     child = null;
     for (const p of pending.values()) p.reject(new Error('TeleCloud worker stopped'));
     pending.clear();
