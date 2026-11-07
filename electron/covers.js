@@ -16,6 +16,16 @@ const pending = new Map();
 const readIfExists = (file) => fsp.readFile(file).catch(() => null);
 const isJpeg = (buf) => buf && buf[0] === 0xff && buf[1] === 0xd8;
 
+// A file can hold several pictures. An "Artist" one is about the performer, never the album's cover.
+const isArtistPictureType = (type) => /^(artist|lead artist|band)/i.test(type || '');
+// (selectCover fails on an empty list, so "none" has to stay undefined)
+const coverPictures = (pictures) => {
+  const list = (pictures || []).filter(p => !isArtistPictureType(p.type));
+  return list.length ? list : undefined;
+};
+/** The same test on a picture read by node-taglib-sharp: LeadArtist 7, Artist 8, Band 10 */
+const isArtistTagPicture = (p) => [7, 8, 10].includes(p?.type);
+
 /** Shrink to 600 px and store; concurrent requests for the same image share one resize */
 function cacheCover(cacheFile, data) {
   if (pending.has(cacheFile)) return pending.get(cacheFile);
@@ -46,7 +56,7 @@ async function coverForFile(source) {
 
   const mm = await import('music-metadata');
   const meta = await mm.parseFile(source, { duration: false, skipCovers: false, skipPostHeaders: true });
-  const embedded = mm.selectCover(meta.common.picture)?.data;
+  const embedded = mm.selectCover(coverPictures(meta.common.picture))?.data;
   if (embedded) return cacheCover(cacheFile, Buffer.from(embedded));
 
   // Folder art is shared by the whole album: cache it once under the image's own key
@@ -75,4 +85,4 @@ async function coverJpeg(source) {
 
 const cloudCoverFile = (key) => path.join(coverDir(), `cloud-${String(key).replace(/[^0-9a-f]/g, '')}.jpg`);
 
-module.exports = { coverForFile, coverJpeg, cloudCoverFile, coverDir, readIfExists, clearMissing: () => noCover.clear() };
+module.exports = { isArtistPictureType, isArtistTagPicture, coverPictures, coverForFile, coverJpeg, cloudCoverFile, coverDir, readIfExists, clearMissing: () => noCover.clear() };

@@ -3,6 +3,7 @@ import SongActions from './songActions';
 import { albumIndex, albumArtistsOf, artistsOf, trackCount } from '../utils/albums';
 import SongList from './SongList';
 import Cover from './Cover';
+import ArtistPicture from './ArtistPicture';
 import Icon from './Icon';
 
 // Highlight matched text
@@ -80,7 +81,7 @@ const SearchView = ({ searchQuery, musicFiles, playlists, onNavClick, setSelecte
           <div className="h-scroll" style={{ gridAutoColumns: 130 }}>
             {results.artists.slice(0, 20).map(a => (
               <button key={`a-${a.name}`} className="tile round" onClick={() => { setSearchQuery(''); openArtist?.(a.name); }}>
-                <Cover file={a.file} />
+                <ArtistPicture name={a.name} file={a.file} />
                 <b><HighlightText text={a.name} highlight={q} /></b>
                 <span>Artist · {trackCount(countUnique ? countUnique(a.songs) : a.songs.length)}</span>
               </button>

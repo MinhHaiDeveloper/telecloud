@@ -149,7 +149,7 @@ async function systemReport({ days, includeNames }) {
     const eq = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'eq.json'), 'utf8'));
     add('Equalizer', JSON.stringify({ enabled: !!eq.enabled, bands: eq.bands?.length || 0, separatePerOutput: !!eq.perDevice, outputsWithTheirOwn: Object.keys(eq.profiles || {}).length }));
   } catch { add('Equalizer', 'defaults'); }
-  for (const [name, file, keys] of [['Lyrics', 'lyrics-settings.json', ['search', 'autoSave', 'saveTo', 'order', 'disabled']], ['Covers', 'cover-settings.json', ['search', 'autoSave', 'saveTo', 'order', 'disabled']], ['Discord', 'discord-settings.json', ['enabled', 'showPaused', 'onlineCover', 'showButton']]]) {
+  for (const [name, file, keys] of [['Lyrics', 'lyrics-settings.json', ['search', 'autoSave', 'saveTo', 'order', 'disabled']], ['Covers', 'cover-settings.json', ['search', 'autoSave', 'saveTo', 'order', 'disabled']], ['Artist pictures', 'artist-picture-settings.json', ['search', 'autoSave', 'order', 'disabled']], ['Discord', 'discord-settings.json', ['enabled', 'showPaused', 'onlineCover', 'showButton']]]) {
     try {
       const s = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), file), 'utf8'));
       add(name, JSON.stringify(Object.fromEntries(keys.filter(k => k in s).map(k => [k, s[k]]))));

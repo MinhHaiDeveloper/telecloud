@@ -82,7 +82,7 @@ const thumbOf = (buf, side = 320) => {
 async function embeddedPicture(file) {
   const mm = await import('music-metadata');
   const meta = await mm.parseFile(file, { duration: false, skipCovers: false, skipPostHeaders: true });
-  const data = mm.selectCover(meta.common.picture)?.data;
+  const data = mm.selectCover(covers.coverPictures(meta.common.picture))?.data;
   return data ? Buffer.from(data) : null;
 }
 
@@ -286,10 +286,13 @@ function writeTag(file, jpeg, { onlyMissing = false, onlyIfEmbedded = false } = 
   const { File, Picture, PictureType, ByteVector } = require('node-taglib-sharp');
   const f = File.createFromPath(file);
   try {
-    const had = (f.tag.pictures || []).length > 0;
+    // an Artist picture is not a cover: it doesn't count as one, and it stays
+    const all = f.tag.pictures || [];
+    const artist = all.filter(covers.isArtistTagPicture);
+    const had = all.length > artist.length;
     if ((onlyMissing && had) || (onlyIfEmbedded && !had)) return false;
     const pic = Picture.fromFullData(ByteVector.fromByteArray(jpeg), PictureType.FrontCover, 'image/jpeg', '');
-    f.tag.pictures = [pic];
+    f.tag.pictures = [pic, ...artist];
     f.save();
     return true;
   } finally { f.dispose(); }
@@ -369,7 +372,7 @@ async function embeddedCount(paths) {
   for (const p of (paths || []).filter(isLocal)) {
     try {
       const f = File.createFromPath(p);
-      try { if ((f.tag.pictures || []).length) n++; } finally { f.dispose(); }
+      try { if ((f.tag.pictures || []).some(p => !covers.isArtistTagPicture(p))) n++; } finally { f.dispose(); }
     } catch { /* unreadable: the save reports it */ }
   }
   return n;

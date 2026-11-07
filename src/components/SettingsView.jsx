@@ -3,6 +3,7 @@ import TeleCloudSyncSettings from './TeleCloudSyncSettings';
 import Icon from './Icon';
 import LyricsSettings from './LyricsSettings';
 import CoverSettings from './CoverSettings';
+import ArtistPictureSettings from './ArtistPictureSettings';
 import DiscordSettings from './DiscordSettings';
 import { WhatsNewSection } from './WhatsNew';
 import LogsSettings from './LogsSettings';
@@ -251,6 +252,7 @@ const SettingsView = ({
           <>
           <LyricsSettings />
           <CoverSettings />
+          <ArtistPictureSettings />
           <DiscordSettings />
           <LastfmSettings />
           <PerformanceSettings />

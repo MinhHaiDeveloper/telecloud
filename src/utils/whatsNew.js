@@ -2,6 +2,15 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.0.0-beta.14',
+    items: [
+      'Artist pictures: find one on Last.fm or Deezer, or upload your own, from the Artist picture button on an artist page. It is saved in the tags of their tracks, where other players can read it too.',
+      'Various Artists and Unknown Artist now have their own place at the top of the Artists page, showing their albums one by one.',
+      'Two compilations with the same name, such as Greatest Hits, stay two albums unless their disc numbers show they belong together.',
+      'Saving an album cover now keeps an artist picture already in the file.',
+    ],
+  },
+  {
     version: '1.0.0-beta.13',
     items: [
       'Eight new themes: Matcha, Sakura, Hojicha, Yozakura, Tube Amp, Ube, Abyss and OLED. Choose one in Settings > Appearance.',

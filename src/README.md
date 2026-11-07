@@ -118,6 +118,8 @@ Older libraries gain `album_artist` from `backfillAlbumArtists`, which runs once
 
 ### Albums and artists
 
+`Various Artists` and `Unknown Artist` are labels, not artists (`artistLabel`). They are pinned first on the Artists page, hold the albums nobody is named on, show a grid of those covers, and never get a search or a bio.
+
 `albumIndex` in `utils/albums.js` groups tracks like this:
 
 - The same name and overlapping album artists make one album, however many guests the tracks have.
@@ -154,6 +156,10 @@ A theme is a block of CSS tokens on `[data-theme]`: Dark and Vanilla in `styles/
 Results are cached in `cover-cache` at up to 600 px. After a save, `bumpCovers` gives the affected tracks a new address, so the browser doesn't keep showing the old picture.
 
 Saving goes to `cover.jpg`, to the tags, or both. If a folder holds another album, the cover goes to the tags instead. Embedded art has priority over `cover.jpg`, so replacing a cover also replaces the embedded one. Files that change this way are backed up again.
+
+### Artist pictures
+
+`artistImages.js` works like the cover search: an ordered list of sources and results to pick from. Last.fm's API only returns a placeholder, so that source reads the artist's public page. A saved picture goes into the tags of the artist's own tracks as an `Artist` picture (ID3 type 8), beside the front cover. A copy in `artist-images` lets the pages show it without reading the files, and is the only copy for cloud-only tracks. A track counts as an artist's own only if it belongs to them alone, so a picture is never written into a shared track. M4A and other formats without picture labels are skipped, because the picture would become a second cover there. `Various Artists` and `Unknown Artist` are never searched.
 
 ### TeleCloud
 

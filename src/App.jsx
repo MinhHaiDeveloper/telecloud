@@ -20,7 +20,7 @@ import Modal from './components/Modal'; // Import the new Modal component
 import { albumIndex } from './utils/albums';
 import { isTheme, themeKind } from './utils/themes';
 import useCoverAccent from './hooks/useCoverAccent';
-import { computeSignalPath, matchesSource, storageOf, qualityOf, findDuplicates, dedupeTracks, coverTargets, albumQuery, bumpCovers, setCoverPreview, clearCoverPreview } from './utils/audio';
+import { computeSignalPath, matchesSource, storageOf, qualityOf, findDuplicates, dedupeTracks, coverTargets, albumQuery, bumpCovers, bumpArtist, setCoverPreview, clearCoverPreview } from './utils/audio';
 import { DialogHost, confirmDialog, alertDialog, Progress } from './components/ui';
 import useEq from './hooks/useEq';
 import StorageDialog from './components/StorageDialog';
@@ -318,7 +318,12 @@ function App() {
       setCoverFound(f => (f && paths.some(p => f.paths.includes(p)) ? null : f));
     };
     window.ipcRenderer.on('covers:saved', onSaved);
-    return () => window.ipcRenderer.removeListener?.('covers:saved', onSaved);
+    const onArtist = (e, { name }) => bumpArtist(name);
+    window.ipcRenderer.on('artists:saved', onArtist);
+    return () => {
+      window.ipcRenderer.removeListener?.('covers:saved', onSaved);
+      window.ipcRenderer.removeListener?.('artists:saved', onArtist);
+    };
   }, []);
   useEffect(() => {
     const f = currentFile;

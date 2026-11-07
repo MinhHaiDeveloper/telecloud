@@ -29,6 +29,16 @@ export const formatBytes = (bytes) => {
 const coverRevisions = new Map();
 const coverPreviews = new Map();
 const coversChanged = () => window.dispatchEvent(new Event('telecloud:covers'));
+const artistRevisions = new Map();
+/** Same scheme as covers. The name is part of the address, so the page can't reach anything else. */
+export const artistImageUrl = (name) => {
+  const rev = artistRevisions.get(name);
+  return `media://${encodeURIComponent(`artist:${name}`)}${rev ? `?r=${rev}` : ''}`;
+};
+export const bumpArtist = (name) => {
+  artistRevisions.set(name, Date.now());
+  window.dispatchEvent(new CustomEvent('telecloud:artists', { detail: name }));
+};
 export const bumpCovers = (paths) => { const r = Date.now(); (paths || []).forEach(p => { coverRevisions.set(p, r); coverPreviews.delete(p); }); coversChanged(); };
 export const setCoverPreview = (paths, url) => { coverPreviews.clear(); (paths || []).forEach(p => coverPreviews.set(p, url)); coversChanged(); };
 export const clearCoverPreview = () => { if (coverPreviews.size) { coverPreviews.clear(); coversChanged(); } };

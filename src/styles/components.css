@@ -865,3 +865,10 @@ h4.whats-new-older { margin-top: 18px; }
 /* The ring around covers; a blurred backdrop is not a cover */
 .cover::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--cover-ring); pointer-events: none; }
 .cover.np-bg::after, .hero-bg .cover::after, .lyrics-overlay .bg .cover::after { display: none; }
+
+/* Artist page: a picture found online, before it is saved */
+.artist-note { margin-top: 10px; padding: 0; justify-content: flex-start; }
+
+/* One ring around the whole grid of covers, not four */
+.mosaic .cover::after { display: none; }
+.tile.round .mosaic .cover { border-radius: 0; }

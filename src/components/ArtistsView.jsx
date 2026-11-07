@@ -1,12 +1,14 @@
-import React, { useContext, useMemo, useState } from 'react';
+import React, { useContext, useMemo, useState, useEffect } from 'react';
 import SongList from './SongList';
 import ArtistBio from './ArtistBio';
 import Cover from './Cover';
+import ArtistPicture from './ArtistPicture';
+import ArtistPictureDialog from './ArtistPictureDialog';
 import Icon from './Icon';
 import { Select, BackButton, Segmented, useDetailScroll } from './ui';
 import SongActions from './songActions';
 import { formatDuration, sortAlbumTracks } from '../utils/audio';
-import { albumIndex, artistsOf, trackCount } from '../utils/albums';
+import { albumIndex, artistLabel, artistsOf, trackCount, UNKNOWN_ARTIST, VARIOUS_ARTISTS } from '../utils/albums';
 
 const SORTS = [
   { value: 'name', label: 'Name A → Z' },
@@ -16,6 +18,16 @@ const SORTS = [
 
 const noThe = (s) => s.toLowerCase().replace(/^the /, '');
 
+/** Many albums under one label: a grid of their covers. Two or three repeat, so it stays a square. */
+const LabelPicture = ({ albums, className = '' }) => {
+  if (albums.length < 2) return <Cover file={albums[0]?.file} className={className} />;
+  return (
+    <div className={`cover ${className}`}>
+      <div className="mosaic">{[0, 1, 2, 3].map(i => <Cover key={i} file={albums[i % albums.length].file} />)}</div>
+    </div>
+  );
+};
+
 const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavorite, onAddPlaylist, favorites, onCheckSpectrum, onDeleteSong, onDownloadSong, selectedArtist, setSelectedArtist, artistTab, setArtistTab }) => {
   const ctx = useContext(SongActions);
   // App owns the open artist (so a click on an artist name anywhere can open it); local state as a fallback
@@ -23,7 +35,41 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
   const selectedName = setSelectedArtist ? selectedArtist : localName;
   const setSelectedName = setSelectedArtist || setLocalName;
   const [sortBy, setSortBy] = useState('name');
+  const [labelTab, setLabelTab] = useState('albums');
   useDetailScroll(selectedName ?? null);
+
+  // Opening an artist without a picture: look for one, like a playing track without a cover
+  const [pictureOpen, setPictureOpen] = useState(false);
+  const [hasPicture, setHasPicture] = useState(false);
+  const [found, setFound] = useState(null); // { name, thumb, image, label }: shown, not saved yet
+  useEffect(() => {
+    setFound(null);
+    setHasPicture(false);
+    setLabelTab('albums');
+    if (!selectedName || artistLabel(selectedName)) return undefined; // a search would return somebody else's face
+    let alive = true;
+    (async () => {
+      const has = await window.ipcRenderer.invoke('artists:has', { name: selectedName }).catch(() => false);
+      if (!alive) return;
+      setHasPicture(has);
+      if (has) return;
+      const o = await window.ipcRenderer.invoke('artists:options').catch(() => null);
+      if (!o?.search || !alive) return;
+      const r = await window.ipcRenderer.invoke('artists:search', { query: { artist: selectedName }, auto: true }).catch(() => null);
+      // only a picture under exactly this name: a wrong face is worse than an album cover
+      const best = r?.results?.find(x => x.score >= 0.9);
+      if (!alive || !best) return;
+      if (o.autoSave) {
+        const saved = await window.ipcRenderer.invoke('artists:save', { name: selectedName, image: best.image, onlyMissing: true }).catch(() => null);
+        if (alive && saved?.success) setHasPicture(true);
+      } else setFound({ name: selectedName, thumb: best.thumb, image: best.image, label: o.sources?.[best.source]?.label || best.source });
+    })();
+    return () => { alive = false; };
+  }, [selectedName]);
+  const saveFound = async () => {
+    const r = await window.ipcRenderer.invoke('artists:save', { name: found.name, image: found.image }).catch(() => null);
+    if (r?.success && !r.errors?.length) { setFound(null); setHasPicture(true); } else setPictureOpen(true);
+  };
 
   const artists = useMemo(() => {
     const map = new Map();
@@ -41,20 +87,29 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
         if (!low.has(name.toLowerCase())) { low.set(name.toLowerCase(), name); map.set(name, { name, file: album.file, songs: [...album.songs] }); }
       });
     });
-    const list = [...map.values()];
+    const list = [...map.values()].filter(a => !artistLabel(a.name));
     switch (sortBy) {
-      case 'name-desc': return list.sort((a, b) => noThe(b.name).localeCompare(noThe(a.name)));
-      case 'tracks': return list.sort((a, b) => b.songs.length - a.songs.length);
-      default: return list.sort((a, b) => noThe(a.name).localeCompare(noThe(b.name)));
+      case 'name-desc': list.sort((a, b) => noThe(b.name).localeCompare(noThe(a.name))); break;
+      case 'tracks': list.sort((a, b) => b.songs.length - a.songs.length); break;
+      default: list.sort((a, b) => noThe(a.name).localeCompare(noThe(b.name)));
     }
+    // the two labels come first, holding the albums nobody is named on
+    const albums = albumIndex(musicFiles).list;
+    const labels = [VARIOUS_ARTISTS, UNKNOWN_ARTIST].map((name) => {
+      const own = albums.filter(a => artistLabel(a.artist) === name).sort((a, b) => b.year - a.year || noThe(a.name).localeCompare(noThe(b.name)));
+      return own.length ? { name, label: true, albums: own, file: own[0].file, songs: own.flatMap(a => a.songs) } : null;
+    }).filter(Boolean);
+    return [...labels, ...list];
   }, [musicFiles, sortBy]);
 
-  const selected = selectedName ? artists.find(a => a.name === selectedName) : null;
+  // a track can say "VA" or "Various": they all open the one page
+  const wanted = selectedName ? (artistLabel(selectedName) || selectedName) : null;
+  const selected = wanted ? artists.find(a => a.name === wanted) : null;
   // the grid shows album artists by default; pages of everyone else stay reachable from their tracks
   const shown = useMemo(() => {
     if (ctx.artistFilter === 'all') return artists;
     const owners = new Set(albumIndex(musicFiles).list.flatMap(a => [...a.owners]));
-    return artists.filter(a => owners.has(a.name.toLowerCase()));
+    return artists.filter(a => a.label || owners.has(a.name.toLowerCase()));
   }, [artists, ctx.artistFilter, musicFiles]);
 
   if (selected) {
@@ -66,8 +121,8 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
     idx.list.forEach(a => { if (a.owners.has(who)) touched.add(a); });
     const newest = (a, b) => b.year - a.year || noThe(a.name).localeCompare(noThe(b.name));
     const view = (a) => { const list = sortAlbumTracks(ctx.dedupe ? ctx.dedupe(a.songs) : a.songs); return { ...a, songs: list }; };
-    const ownAlbums = [...touched].filter(a => a.owners.has(who)).sort(newest).map(view);
-    const appearsOn = [...touched].filter(a => !a.owners.has(who)).sort(newest).map(view);
+    const ownAlbums = (selected.label ? selected.albums : [...touched].filter(a => a.owners.has(who)).sort(newest)).map(view);
+    const appearsOn = selected.label ? [] : [...touched].filter(a => !a.owners.has(who)).sort(newest).map(view);
     const albumCount = ownAlbums.length + appearsOn.length;
     const tile = (album) => (
       <div key={album.key} className="tile pressable" role="button" tabIndex={0} onClick={() => ctx.openAlbum?.(album, selected.name)} onKeyDown={(e) => e.key === 'Enter' && ctx.openAlbum?.(album, selected.name)}>
@@ -79,7 +134,8 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
         <span>{album.year ? `${album.year} · ` : ''}{album.songs.length} {album.songs.length === 1 ? 'track' : 'tracks'}</span>
       </div>
     );
-    const tab = artistTab === 'albums' ? 'albums' : 'songs';
+    // a label is about its albums; which tab it is on has no bearing on the real artists
+    const tab = selected.label ? labelTab : artistTab === 'albums' ? 'albums' : 'songs';
     const total = songs.reduce((s, f) => s + (f.metadata?.duration || 0), 0);
     return (
       <>
@@ -88,20 +144,37 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
           <span className="sub">Artists</span>
         </div>
         <div className="detail-head">
-          <Cover file={selected.file} className="round" />
+          {selected.label ? <LabelPicture albums={selected.albums} className="round" /> : <ArtistPicture name={selected.name} file={selected.file} preview={found?.thumb} className="round" />}
           <div className="info">
-            <span className="eyebrow">Artist</span>
+            <span className="eyebrow">{!selected.label ? 'Artist' : selected.name === VARIOUS_ARTISTS ? 'Albums by many artists' : 'Albums without an artist'}</span>
             <h2>{selected.name}</h2>
             <div className="meta">{albumCount} {albumCount === 1 ? 'album' : 'albums'} · {trackCount(songs.length)} · {formatDuration(total)}</div>
             <div className="btn-row">
               <button className="btn-primary" onClick={() => onPlay(songs[0], 0, songs)}><Icon name="play" filled />Play</button>
               <button className="btn-ghost" onClick={() => { const s = [...songs].sort(() => Math.random() - 0.5); onPlay(s[0], 0, s); }}><Icon name="shuffle" />Shuffle</button>
+              {!selected.label && <button className="btn-ghost" onClick={() => setPictureOpen(true)}><Icon name="image" />Artist picture…</button>}
             </div>
+            {found && (
+              <div className="lyrics-note found artist-note">
+                <span>Picture from {found.label} · not saved</span>
+                <button className="btn-ghost sm" onClick={saveFound}><Icon name="check" />Save</button>
+                <button className="btn-ghost sm" onClick={() => setPictureOpen(true)}><Icon name="search" />Other results</button>
+              </div>
+            )}
           </div>
         </div>
-        <ArtistBio name={selected.name} known={new Set(artists.map(a => a.name))} />
+        {pictureOpen && (
+          <ArtistPictureDialog
+            name={selected.name}
+            file={selected.file}
+            hasPicture={hasPicture}
+            onClose={() => setPictureOpen(false)}
+            onSaved={() => { window.ipcRenderer.invoke('artists:has', { name: selected.name }).then(setHasPicture); setFound(null); }}
+          />
+        )}
+        {!selected.label && <ArtistBio name={selected.name} known={new Set(artists.map(a => a.name))} />}
         <div className="artist-tabs">
-          <Segmented value={tab} onChange={setArtistTab} options={[{ value: 'songs', label: `Songs · ${songs.length.toLocaleString()}` }, { value: 'albums', label: `Albums · ${albumCount}` }]} />
+          <Segmented value={tab} onChange={selected.label ? setLabelTab : setArtistTab} options={[{ value: 'songs', label: `Songs · ${songs.length.toLocaleString()}` }, { value: 'albums', label: `Albums · ${albumCount}` }]} />
         </div>
         {tab === 'albums' ? (
           <>
@@ -136,7 +209,7 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
     <>
       <div className="page-head">
         <h2>Artists</h2>
-        <span className="sub">{shown.length.toLocaleString()} artists</span>
+        <span className="sub">{(() => { const n = shown.filter(a => !a.label).length; return `${n.toLocaleString()} ${n === 1 ? 'artist' : 'artists'}`; })()}</span>
         <div className="end">
           <Segmented
             size="sm"
@@ -147,7 +220,7 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
           <Select variant="ghost" icon="sort" align="right" value={sortBy} options={SORTS} onChange={setSortBy} />
         </div>
       </div>
-      {shown.length === 0 ? (
+      {shown.every(a => a.label) && (shown.length === 0 || artists.length > shown.length) && (
         <div className="empty">
           {artists.length === 0 ? 'No artists in your library yet.' : (
             <>
@@ -156,11 +229,18 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
             </>
           )}
         </div>
-      ) : (
+      )}
+      {shown.length > 0 && (
         <div className="tile-grid">
-          {shown.map(artist => (
+          {shown.map(artist => artist.label ? (
+            <div key={artist.name} className="tile round pressable artist-label" role="button" tabIndex={0} onClick={() => setSelectedName(artist.name)} onKeyDown={(e) => e.key === 'Enter' && setSelectedName(artist.name)}>
+              <div className="cover-wrap" style={{ width: '100%' }}><LabelPicture albums={artist.albums} /></div>
+              <b>{artist.name}</b>
+              <span>{artist.albums.length.toLocaleString()} {artist.albums.length === 1 ? 'album' : 'albums'}</span>
+            </div>
+          ) : (
             <div key={artist.name} className="tile round pressable" role="button" tabIndex={0} onClick={() => setSelectedName(artist.name)} onKeyDown={(e) => e.key === 'Enter' && setSelectedName(artist.name)}>
-              <div className="cover-wrap" style={{ width: '100%' }}><Cover file={artist.file} /></div>
+              <div className="cover-wrap" style={{ width: '100%' }}><ArtistPicture name={artist.name} file={artist.file} /></div>
               <b>{artist.name}</b>
               <span>{trackCount(ctx.countUnique ? ctx.countUnique(artist.songs) : artist.songs.length)}</span>
             </div>

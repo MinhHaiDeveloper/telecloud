@@ -44,6 +44,7 @@ require('./stats.js');
 require('./lyrics.js');
 require('./coverSearch.js');
 require('./discord.js');
+const artistImages = require('./artistImages.js');
 require('./logExport.js');
 require('./tagEdit.js');
 require('./lastfm.js');
@@ -220,7 +221,8 @@ app.whenReady().then(async () => {
   // media://<encoded track path>[?r=revision] serves cover art for library tracks only
   protocol.handle('media', async (request) => {
     try {
-      const art = await artFor(decodeURIComponent(request.url.slice('media://'.length).split('?')[0]));
+      const target = decodeURIComponent(request.url.slice('media://'.length).split('?')[0]);
+      const art = target.startsWith('artist:') ? await artistImages.pictureFor(target.slice('artist:'.length)) : await artFor(target);
       return art ? imageResponse(art) : new Response(null, { status: 404 });
     } catch (err) {
       console.error('[media://] Cover extraction error:', err.message);

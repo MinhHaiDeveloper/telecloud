@@ -3,11 +3,20 @@
 //  - Same name, different album artists: two albums (two "Greatest Hits").
 //  - No album artist tag: tracks in one folder stay together; across folders they join when the
 //    main artist matches. Partly tagged albums join the tagged part the same way.
+//  - Various Artists or no artist at all says nothing about who made it, so the same name isn't
+//    enough: two folders join only when their disc numbers show they are discs of one album.
 
 export const UNKNOWN_ALBUM = 'Unknown Album';
 export const UNKNOWN_ARTIST = 'Unknown Artist';
 export const VARIOUS_ARTISTS = 'Various Artists';
 const VARIOUS = /^(various( artists)?|va|v\.a\.?|compilations?)$/i;
+const UNKNOWN = /^unknown( artist)?$/i;
+/** "Various Artists" and "Unknown Artist" are labels for many artists, not somebody with a picture and a bio */
+export const artistLabel = (name) => {
+  const n = (name || '').trim();
+  if (VARIOUS.test(n)) return VARIOUS_ARTISTS;
+  return UNKNOWN.test(n) ? UNKNOWN_ARTIST : null;
+};
 
 const norm = (s) => (s || '').trim().toLowerCase();
 const folderOf = (p) => (!p || p.startsWith('tc://') ? '' : p.replace(/[\\/][^\\/]*$/, '').replace(/[\\/](?:cd|disc|disk)\s*[-_.]?\s*\d{1,2}$/i, '').toLowerCase());
@@ -25,15 +34,22 @@ export const artistsOf = (f) => {
 
 const overlap = (a, b) => { for (const x of a) if (b.has(x)) return true; return false; };
 
+const disjoint = (a, b) => { for (const x of a) if (b.has(x)) return false; return true; };
+/** Same album name, nobody named: is it still one album? A track with no folder (cloud-only) can't say otherwise. */
+const sameNamelessAlbum = (a, b) => (
+  !a.folder || !b.folder || a.folder === b.folder || (a.discs.size > 0 && b.discs.size > 0 && disjoint(a.discs, b.discs))
+);
+
 const shouldJoin = (a, b) => {
   const sameFolder = !!a.folder && a.folder === b.folder;
   const aTagged = a.owners.size > 0 || a.various;
   const bTagged = b.owners.size > 0 || b.various;
-  if (aTagged && bTagged) return overlap(a.owners, b.owners) || (a.various && b.various);
+  if (aTagged && bTagged) return overlap(a.owners, b.owners) || (a.various && b.various && sameNamelessAlbum(a, b));
   if (aTagged || bTagged) {
     const [tagged, plain] = aTagged ? [a, b] : [b, a];
     return sameFolder || overlap(tagged.owners, plain.mains);
   }
+  if (!a.mains.size && !b.mains.size) return sameNamelessAlbum(a, b);
   return sameFolder || overlap(a.mains, b.mains);
 };
 
@@ -49,11 +65,12 @@ function buildIndex(files) {
     const owners = aa.filter(x => !VARIOUS.test(x)).map(norm);
     const folder = folderOf(f.path);
     const k = `${norm(name)}\u0000${folder}\u0000${various ? '*' : [...owners].sort().join('|')}`;
-    if (!groups.has(k)) groups.set(k, { nameKey: norm(name), folder, various, owners: new Set(owners), mains: new Set(), files: [] });
+    if (!groups.has(k)) groups.set(k, { nameKey: norm(name), folder, various, owners: new Set(owners), mains: new Set(), discs: new Set(), files: [] });
     const g = groups.get(k);
     g.files.push({ f, name });
     const main = artistsOf(f)[0];
-    if (main) g.mains.add(norm(main));
+    if (main && !UNKNOWN.test(main)) g.mains.add(norm(main));
+    if (f.metadata?.disc > 0) g.discs.add(f.metadata.disc);
   }
 
   // join groups of the same album name
