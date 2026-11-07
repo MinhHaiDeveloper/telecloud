@@ -328,12 +328,12 @@ const SettingsView = ({
             <section className="set-section">
               <h3>Processing</h3>
               <div className="card set-card">
-                <SettingRow icon="volume" title="ReplayGain" desc="Normalize loudness from track or album tags. Not bit-perfect while on.">
+                <SettingRow icon="volume" title="ReplayGain" desc="Normalize loudness from track or album tags. Auto uses album gain while an album plays in order, and track gain on shuffle or mixed lists. Not bit-perfect while on.">
                   <Toggle checked={replayGainEnabled} onChange={setReplayGainEnabled} />
                 </SettingRow>
                 {replayGainEnabled && (
                   <div className="set-sub">
-                    <Segmented size="sm" value={replayGainMode} onChange={setReplayGainMode} options={[{ value: 'track', label: 'Track gain' }, { value: 'album', label: 'Album gain' }]} />
+                    <Segmented size="sm" value={replayGainMode} onChange={setReplayGainMode} options={[{ value: 'auto', label: 'Auto' }, { value: 'track', label: 'Track gain' }, { value: 'album', label: 'Album gain' }]} />
                   </div>
                 )}
 

@@ -4,6 +4,7 @@ import Cover from './Cover';
 import SongActions from './songActions';
 import MetaLinks from './MetaLinks';
 import { formatTime, qualityOf, storageOf } from '../utils/audio';
+import { Select } from './ui';
 import { SOURCE_HELP, QUALITY_HELP, PLAYS_HELP } from '../utils/badges';
 
 const SORTS = [
@@ -13,6 +14,8 @@ const SORTS = [
   { id: 'artist', label: 'Artist' },
   { id: 'album', label: 'Album' },
   { id: 'quality', label: 'Quality' },
+  { id: 'rate', label: 'Sample rate' },
+  { id: 'bits', label: 'Bit depth' },
   { id: 'plays', label: 'Most played' },
 ];
 
@@ -109,6 +112,19 @@ const PlaysInfo = () => (
 );
 
 const titleOf = (f) => f.metadata?.title || f.name || '';
+const isDsd = (q) => q.label.startsWith('DSD');
+const rateLabel = (hz) => `${Number((hz / 1000).toFixed(1))} kHz`;
+/** Which filter a track falls under. A track can match a kind ("hires") and a sample rate ("r96000"). */
+const qualityKeys = (f) => {
+  const q = qualityOf(f);
+  const keys = [q.tier];
+  if (isDsd(q)) keys.push('dsd');
+  else {
+    if (q.rate) keys.push(`r${q.rate}`);
+    if (q.bits) keys.push(`b${q.bits}`);
+  }
+  return keys;
+};
 const qualityRank = (f) => {
   const q = qualityOf(f);
   return (q.tier === 'hires' ? 2e9 : q.tier === 'lossless' ? 1e9 : 0) + (q.bits || 0) * 1e6 + (q.rate || 0);
@@ -161,8 +177,27 @@ const SongList = ({
     return () => { document.removeEventListener('mousedown', close); document.removeEventListener('scroll', closeOnScroll, true); };
   }, [menu, sortOpen]);
 
+  // Filter by quality (lists with the sort menu): only what this list actually has is offered
+  const [qualityFilter, setQualityFilter] = useState('all');
+  const qualityOptions = useMemo(() => {
+    if (!showSort) return [];
+    const counts = new Map();
+    musicFiles.forEach(f => qualityKeys(f).forEach(k => counts.set(k, (counts.get(k) || 0) + 1)));
+    const label = (name, key) => ({ value: key, label: name, hint: counts.get(key).toLocaleString() });
+    const out = [{ value: 'all', label: 'All quality', hint: musicFiles.length.toLocaleString() }];
+    [['hires', 'Hi-Res'], ['lossless', 'Lossless'], ['lossy', 'Lossy'], ['dsd', 'DSD']].forEach(([k, n]) => { if (counts.has(k)) out.push(label(n, k)); });
+    const numbered = (prefix, name) => [...counts.keys()].filter(k => k[0] === prefix).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))).forEach(k => out.push(label(name(Number(k.slice(1))), k)));
+    numbered('b', n => `${n}-bit`);
+    numbered('r', rateLabel);
+    // every track the same: there is nothing to filter
+    return [...counts.values()].some(n => n < musicFiles.length) ? out : [];
+  }, [musicFiles, showSort]);
+  // a choice this list no longer has (tracks removed, source changed) falls back to everything
+  const activeFilter = qualityOptions.some(o => o.value === qualityFilter) ? qualityFilter : 'all';
+  const shown = useMemo(() => (activeFilter === 'all' ? musicFiles : musicFiles.filter(f => qualityKeys(f).includes(activeFilter))), [musicFiles, activeFilter]);
+
   const sorted = useMemo(() => {
-    const list = [...musicFiles];
+    const list = [...shown];
     const noThe = (f) => titleOf(f).toLowerCase().replace(/^the /, '');
     switch (sortOption) {
       case 'name': return list.sort((a, b) => titleOf(a).localeCompare(titleOf(b)));
@@ -170,11 +205,13 @@ const SongList = ({
       case 'artist': return list.sort((a, b) => (a.metadata?.artist || 'Unknown').localeCompare(b.metadata?.artist || 'Unknown'));
       case 'album': return list.sort((a, b) => (a.metadata?.album || 'Unknown').localeCompare(b.metadata?.album || 'Unknown'));
       case 'quality': return list.sort((a, b) => qualityRank(b) - qualityRank(a));
+      case 'rate': return list.sort((a, b) => (qualityOf(b).rate || 0) - (qualityOf(a).rate || 0));
+      case 'bits': return list.sort((a, b) => (qualityOf(b).bits || 0) - (qualityOf(a).bits || 0));
       case 'plays': { const n = ctx.playCounts || {}; return list.sort((a, b) => (n[b.path] || 0) - (n[a.path] || 0)); }
       case 'latest': return list.reverse();
       default: return list;
     }
-  }, [musicFiles, sortOption, sortOption === 'plays' ? ctx.playCounts : null]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [shown, sortOption, sortOption === 'plays' ? ctx.playCounts : null]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // An album with several discs gets a "Disc N" header row before each disc (in track order only)
   const items = useMemo(() => {
@@ -263,10 +300,11 @@ const SongList = ({
         <div className="page-head">
           {title && <h2>{title}</h2>}
           {onInfoClick && <button className="icon-btn sm" onClick={onInfoClick} title="What do the badges mean?"><Icon name="info" /></button>}
-          <span className="sub">{subtitle ?? `${musicFiles.length.toLocaleString()} tracks`}</span>
+          <span className="sub">{activeFilter !== 'all' ? `${shown.length.toLocaleString()} of ${musicFiles.length.toLocaleString()} tracks` : subtitle ?? `${musicFiles.length.toLocaleString()} tracks`}</span>
           {headerActions}
           {showSort && (
             <div className="end" ref={sortRef}>
+              {qualityOptions.length > 0 && <Select variant="ghost" icon="eq" align="right" value={activeFilter} options={qualityOptions} onChange={setQualityFilter} />}
               <button className="btn-ghost" onClick={() => setSortOpen(o => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                 <Icon name="sort" style={{ width: 15, height: 15 }} />
                 {SORTS.find(s => s.id === sortOption)?.label || 'Default'}

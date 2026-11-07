@@ -209,6 +209,14 @@ app.whenReady().then(async () => {
     return riff || !nativeImage.createFromBuffer(art).isEmpty();
   });
 
+  // A tiny copy of the cover for "Follow the cover". WebP and GIF can't be read here: no colour for those.
+  ipcMain.handle('cover:thumb', async (event, p) => {
+    const art = await artFor(p).catch(() => null);
+    if (!art) return null;
+    const img = nativeImage.createFromBuffer(art);
+    return img.isEmpty() ? null : img.resize({ width: 32, height: 32, quality: 'good' }).toDataURL();
+  });
+
   // media://<encoded track path>[?r=revision] serves cover art for library tracks only
   protocol.handle('media', async (request) => {
     try {

@@ -102,6 +102,132 @@ async function refreshIndex(storage, { full = false } = {}) {
   return { scanned: msgs.length, ours, needKey };
 }
 
+// ---------- checking the backup ----------
+
+/**
+ * Compare the library and its index with what is really in each chat. Reads the list of messages
+ * only: nothing is downloaded or changed, so damage inside a file of the right size can't be seen.
+ */
+async function checkBackup() {
+  if (runner) throw new Error('A backup is running. Check again when it has finished.');
+  await ensureConnected();
+  const key = masterKey();
+  const db = store.db();
+  const totals = { tracks: 0, ok: 0, missing: 0, damaged: 0, unreadable: 0, extra: 0, indexOnly: 0, coversMissing: 0 };
+  const out = [];
+  for (const s of store.storages.all()) {
+    const msgs = await worker.call('listMessages', { peer: store.toPeer(s), minId: 0 });
+    const real = new Map();
+    let unreadable = 0;
+    for (const m of msgs) {
+      const c = parseCaption(m.caption, key);
+      // a file whose caption was edited away is still there: keep it, it just can't be identified
+      const bad = !!(c.ours && (c.needsKey || c.wrongKey));
+      if (bad) unreadable++;
+      real.set(m.id, { size: m.size, kind: c.ours ? c.kind : null, unreadable: bad, declared: c.data?.size });
+    }
+    const rows = db.prepare('SELECT path, title, name, size, telegram_message_id AS id, storage_type, cloud_cover, cache_path FROM music_files WHERE telegram_channel_id = ? AND telegram_message_id IS NOT NULL').all(String(s.peer_id));
+    const index = new Map(store.index.all(s.id).map(e => [e.message_id, e]));
+    let manifest = null;
+    let manifestState = 'ok';
+    if (!s.manifest_id) manifestState = rows.length ? 'missing' : 'ok';
+    else if (!real.has(s.manifest_id)) manifestState = 'missing from Telegram';
+    else {
+      try { manifest = await loadManifest(s); if (!manifest) manifestState = 'unreadable'; } catch { manifestState = 'unreadable'; }
+    }
+    const missing = [];
+    const damaged = [];
+    const linked = new Set();
+    let ok = 0;
+    for (const r of rows) {
+      linked.add(r.id);
+      const hasLocal = !r.path.startsWith('tc://') && fs.existsSync(r.path);
+      const cached = !hasLocal && !!r.cache_path && fs.existsSync(r.cache_path);
+      const item = { path: r.path, title: r.title || r.name || path.basename(r.path), hasLocal, cached, id: r.id, storageId: s.id };
+      const m = real.get(r.id);
+      if (!m) { missing.push(item); continue; }
+      // the size recorded when it was uploaded; a tag edit on this computer doesn't change the copy
+      const expected = index.get(r.id)?.size || m.declared;
+      if (expected && m.size !== expected) { damaged.push(item); continue; }
+      ok++;
+    }
+    const known = new Set([...linked, ...(manifest?.tracks || []).map(t => t.id)]);
+    let extra = 0;
+    for (const [id, m] of real) if (m.kind === 'track' && !m.unreadable && !known.has(id)) extra++;
+    const indexOnly = (manifest?.tracks || []).filter(t => !real.has(t.id) && !linked.has(t.id)).length;
+    const coverKeys = new Set(rows.map(r => r.cloud_cover).filter(Boolean));
+    const missingCovers = [...coverKeys].filter((k) => { const c = store.covers.get(s.id, k); return !c || !real.has(c.message_id); });
+    const coversMissing = missingCovers.length;
+    const manifestOk = manifestState === 'ok';
+    out.push({ id: s.id, title: s.title || 'Storage', missing, damaged, manifestOk, manifestState, unreadable, extra, indexOnly, coversMissing, missingCovers, ok });
+    totals.tracks += rows.length;
+    totals.ok += ok;
+    totals.missing += missing.length;
+    totals.damaged += damaged.length;
+    totals.unreadable += unreadable;
+    totals.extra += extra;
+    totals.indexOnly += indexOnly;
+    totals.coversMissing += coversMissing;
+  }
+  console.log(`[TeleCloud] Backup check: ${totals.tracks} tracks, ${totals.ok} fine, ${totals.missing} missing, ${totals.damaged} wrong size, ${totals.unreadable} unreadable, ${totals.coversMissing} covers missing, ${out.filter(s => !s.manifestOk).length} indexes to fix`);
+  return { storages: out, totals };
+}
+
+/** Upload a cover the chat lost, from the copy kept here or from a track's own file. False if neither exists. */
+async function restoreCover(storageId, key) {
+  const s = store.storages.get(storageId);
+  store.covers.remove(s.id, key);
+  const users = store.db().prepare('SELECT path FROM music_files WHERE telegram_channel_id = ? AND cloud_cover = ?').all(String(s.peer_id), key).map(r => r.path);
+  const buffer = await covers.readIfExists(covers.cloudCoverFile(key));
+  if (buffer && users.length) return !!await ensureCover(users[0], s, { key, buffer });
+  for (const p of users) {
+    if (fs.existsSync(p) && await ensureCover(p, s)) return true;
+  }
+  return false;
+}
+
+/** After a check: tracks still on this computer go back in the queue, lost covers go back, indexes that need it are saved */
+async function repairBackup({ paths }) {
+  if (runner) throw new Error('A backup is running. Try again when it has finished.');
+  await ensureConnected();
+  const report = await checkBackup();
+  const wanted = new Set(paths || []);
+  const byStorage = new Map();
+  const covers_ = { restored: 0, left: 0 };
+  for (const s of report.storages) {
+    for (const t of [...s.missing, ...s.damaged]) {
+      if (!t.hasLocal || !wanted.has(t.path)) continue;
+      const row = store.library.row(t.path);
+      if (!row) continue;
+      if (row.cache_path && isInAppStorage(row.cache_path)) await fs.promises.rm(row.cache_path, { force: true }).catch(() => {});
+      store.db().prepare("UPDATE music_files SET storage_type = 'local', telegram_message_id = NULL, telegram_channel_id = NULL, cloud_checksum = NULL, cloud_cover = NULL, cache_path = NULL, last_synced_at = NULL WHERE path = ?").run(t.path);
+      require('../database').deleteSyncState(t.path);
+      store.index.remove(s.id, [t.id]);
+      if (!byStorage.has(s.id)) byStorage.set(s.id, []);
+      byStorage.get(s.id).push(t.path);
+      manifestDirty.add(s.id);
+    }
+    // A wrong-size copy has to leave the chat: the next scan would index it again, and the upload
+    // would see the same hash and link back to it. A copy another track still uses stays.
+    const bad = [...new Set(s.damaged.filter(t => t.hasLocal && wanted.has(t.path)).map(t => t.id))]
+      .filter(id => store.library.linkCount(store.storages.get(s.id).peer_id, id) === 0);
+    if (bad.length) await worker.call('deleteMessages', { peer: store.toPeer(store.storages.get(s.id)), ids: bad });
+    if (!s.manifestOk || s.indexOnly) manifestDirty.add(s.id);
+    for (const key of s.missingCovers) {
+      if (await restoreCover(s.id, key)) covers_.restored++; else covers_.left++;
+      manifestDirty.add(s.id);
+    }
+  }
+  let queued = 0;
+  for (const [id, list] of byStorage) { store.queue.add(list, id); queued += list.length; }
+  pushTracks([...byStorage.values()].flat());
+  const index = manifestDirty.size > 0;
+  if (index) await writeDirtyManifests();
+  if (queued) { setOptions({ paused: false }); startRunner(); }
+  console.log(`[TeleCloud] Backup repair: ${queued} tracks queued again, ${covers_.restored} covers put back, ${covers_.left} covers without a copy${index ? ', index saved' : ''}`);
+  return { queued, index, covers: covers_.restored, coversLeft: covers_.left };
+}
+
 // ---------- backup queue ----------
 
 let runner = null;
@@ -1066,6 +1192,8 @@ function setupTeleCloudSyncHandlers() {
   handle('telecloud-sync:speed-test', async () => ({ success: true, ...(await speedTest()) }));
 
   handle('telecloud-sync:restore-from-cloud', async () => ({ success: true, ...(await restore()) }));
+  handle('telecloud-sync:check-backup', async () => ({ success: true, ...(await checkBackup()) }));
+  handle('telecloud-sync:check-repair', async (opts = {}) => ({ success: true, ...(await repairBackup({ paths: opts.paths })) }));
 
   // Only TeleCloud's own messages are deleted; the local library is kept (cloud links reset)
   handle('telecloud-sync:delete-all', async () => {

@@ -25,7 +25,7 @@
   --border: rgba(255, 255, 255, .06);
   --text: #f2f2f3;
   --text-2: #a4a4ab;
-  --text-3: #6c6c74;
+  --text-3: #81818a;
   --accent: #ff6a3d;
   --accent-2: #ff8a5c;
   --accent-soft: rgba(255, 106, 61, .14);
@@ -58,18 +58,18 @@
   --border: rgba(80, 60, 20, .10);
   --text: #2a2418;
   --text-2: #6b5f48;
-  --text-3: #9a8d72;
-  --accent: #d9541e;
+  --text-3: #766b54;
+  --accent: #ba481a;
   --accent-2: #e8703f;
-  --accent-soft: rgba(217, 84, 30, .12);
+  --accent-soft: rgba(186, 72, 26, .12);
   --on-accent: #fff;
-  --ok: #2f9a63;
+  --ok: #216b45;
   --ok-soft: rgba(47, 154, 99, .13);
-  --info: #3a72c4;
+  --info: #305fa3;
   --info-soft: rgba(58, 114, 196, .12);
-  --warn: #b7801a;
+  --warn: #7d5712;
   --warn-soft: rgba(183, 128, 26, .14);
-  --danger: #c93a3a;
+  --danger: #ad2f2f;
   --shadow: 0 20px 50px rgba(110, 85, 30, .18);
   --overlay: rgba(60, 45, 15, .35);
   --hero-grad: linear-gradient(135deg, #f3d9b8 0%, #f1e3c4 60%, #f6eedb 100%);
@@ -79,6 +79,10 @@
   --np-scrim: rgba(251, 246, 233, .55);
   --np-text-shadow: 0 1px 10px rgba(251, 246, 233, .6);
 }
+
+/* A hairline around every cover, so a black one doesn't melt into a dark page, or a white one into a light page */
+:root { --cover-ring: rgba(255, 255, 255, .12); }
+[data-theme="light"], [data-theme="matcha"], [data-theme="sakura"] { --cover-ring: rgba(60, 40, 10, .12); }
 
 /* Legacy names still used by inline styles in Settings / EQ / TeleCloud views */
 :root,

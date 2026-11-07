@@ -36,7 +36,7 @@
   padding: 3px 7px; border-radius: 6px; white-space: nowrap;
 }
 .badge .ico { width: 11px; height: 11px; stroke-width: 2.2; }
-.b-hires { background: var(--accent-soft); color: var(--accent); }
+.b-hires { background: color-mix(in srgb, var(--q-hires) 15%, transparent); color: var(--q-hires); }
 .b-lossless { background: var(--ok-soft); color: var(--ok); }
 .b-lossy, .b-local { background: var(--surface-2); color: var(--text-2); }
 .b-cloud { background: var(--info-soft); color: var(--info); }
@@ -368,7 +368,7 @@
   background: var(--text-2); transition: transform .3s var(--spring), background .2s;
 }
 .sp-step label input:checked { background: var(--accent); }
-.sp-step label input:checked::after { transform: translateX(11px); background: #fff; }
+.sp-step label input:checked::after { transform: translateX(11px); background: var(--on-accent); }
 
 /* Lyrics block in the right panel */
 .lyrics-block { margin-bottom: 18px; overflow: hidden; }
@@ -393,7 +393,7 @@
   transition: color .3s, transform .4s var(--spring), opacity .3s;
   transform-origin: left center;
 }
-.lyric.past { opacity: .55; }
+.lyric.past { opacity: .85; }
 .lyric.active { color: var(--text); transform: scale(1.04); }
 .lyrics-lines.plain .lyric { color: var(--text-2); }
 .lyrics-scroll .lyric { font-size: 14px; }

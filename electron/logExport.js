@@ -144,6 +144,11 @@ async function systemReport({ days, includeNames }) {
     add('Settings', JSON.stringify(safe));
     add('Download folder set', !!s.downloadFolder);
   } catch { /* not set */ }
+  add('Appearance', appearance ? JSON.stringify(appearance) : 'not reported');
+  try {
+    const eq = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'eq.json'), 'utf8'));
+    add('Equalizer', JSON.stringify({ enabled: !!eq.enabled, bands: eq.bands?.length || 0, separatePerOutput: !!eq.perDevice, outputsWithTheirOwn: Object.keys(eq.profiles || {}).length }));
+  } catch { add('Equalizer', 'defaults'); }
   for (const [name, file, keys] of [['Lyrics', 'lyrics-settings.json', ['search', 'autoSave', 'saveTo', 'order', 'disabled']], ['Covers', 'cover-settings.json', ['search', 'autoSave', 'saveTo', 'order', 'disabled']], ['Discord', 'discord-settings.json', ['enabled', 'showPaused', 'onlineCover', 'showButton']]]) {
     try {
       const s = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), file), 'utf8'));
@@ -189,6 +194,19 @@ async function buildZip({ days, from, to, includeNames }) {
 }
 
 let lastExport = null;
+
+// The theme lives in the window, so the window reports it. Only checked values reach the log.
+let appearance = null;
+ipcMain.handle('logs:appearance', (e, a = {}) => {
+  const theme = /^[a-z]{1,20}$/.test(a.theme) ? a.theme : 'unknown';
+  const followCover = !!a.followCover;
+  if (appearance?.theme === theme && appearance?.followCover === followCover) return;
+  appearance = { theme, followCover };
+  console.log(`[Appearance] Theme: ${theme}, follow the cover: ${followCover ? 'on' : 'off'}`);
+});
+ipcMain.handle('logs:eq-output', (e, a = {}) => {
+  console.log(`[EQ] Output changed: ${a.shared ? 'using the shared EQ' : a.known ? "using this output's own EQ" : 'first time on this output, keeping the current EQ'}`);
+});
 
 ipcMain.handle('logs:info', () => {
   logger.flush();

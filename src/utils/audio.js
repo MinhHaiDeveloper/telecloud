@@ -151,7 +151,7 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
     // streaming hands mpv the original bytes, so it doesn't change the samples
     ...(stream ? [{ label: stream.complete ? 'TeleCloud cache' : 'TeleCloud stream', value: stream.complete ? 'On disk' : stream.speed ? `${(stream.speed / 1048576).toFixed(1)} MB/s` : 'Buffering…', state: 'ok' }] : []),
     { label: 'Parametric EQ', value: eqEnabled ? 'On' : 'Off', state: eqEnabled ? 'warn' : 'off', key: 'eq' },
-    { label: 'ReplayGain', value: rg ? audioSettings.replayGain : 'Off', state: rg ? 'warn' : 'off' },
+    { label: 'ReplayGain', value: !rg ? 'Off' : audioSettings.replayGain === 'auto' ? `Auto · ${audioSettings.autoGain || 'track'}` : audioSettings.replayGain, state: rg ? 'warn' : 'off' },
     ...(crossfade ? [{ label: 'Crossfade', value: `${audioSettings.crossfade}s`, state: 'warn' }] : []),
     ...(resampled ? [{ label: 'Resampling', value: outSpec, state: 'warn' }] : []),
     { label: 'Software volume', value: exclusive ? 'Bypassed' : `${volume}%`, state: volFull ? 'ok' : 'warn' },

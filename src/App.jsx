@@ -18,6 +18,8 @@ import SettingsView from './components/SettingsView';
 import EqSettingsView from './components/EqSettingsView';
 import Modal from './components/Modal'; // Import the new Modal component
 import { albumIndex } from './utils/albums';
+import { isTheme, themeKind } from './utils/themes';
+import useCoverAccent from './hooks/useCoverAccent';
 import { computeSignalPath, matchesSource, storageOf, qualityOf, findDuplicates, dedupeTracks, coverTargets, albumQuery, bumpCovers, setCoverPreview, clearCoverPreview } from './utils/audio';
 import { DialogHost, confirmDialog, alertDialog, Progress } from './components/ui';
 import useEq from './hooks/useEq';
@@ -114,7 +116,11 @@ function App() {
   const [artistFilter, setArtistFilterState] = useState('album');
   useEffect(() => { window.ipcRenderer.invoke('load-store', 'settings').then(s => { if (s?.artistFilter === 'all') setArtistFilterState('all'); }).catch(() => {}); }, []);
   const setArtistFilter = (v) => { setArtistFilterState(v); return saveSetting({ artistFilter: v }); };
-  const [theme, setTheme] = useState(() => readPref('tc-theme') || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
+  const [theme, setTheme] = useState(() => {
+    const saved = readPref('tc-theme');
+    if (isTheme(saved)) return saved;
+    return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  });
 
   // New shell UI state
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all' | 'local' | 'cloud'
@@ -142,6 +148,7 @@ function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     writePref('tc-theme', theme);
+    writePref(`tc-theme-${themeKind(theme)}`, theme); // what the top bar button comes back to
   }, [theme]);
   useEffect(() => writePref('tc-sidebar-collapsed', isSidebarCollapsed ? '1' : '0'), [isSidebarCollapsed]);
   useEffect(() => writePref('tc-lyrics-collapsed', lyricsCollapsed ? '1' : '0'), [lyricsCollapsed]);
@@ -176,7 +183,7 @@ function App() {
   }, []);
 
   // EQ (bands, history, AutoEQ choices; persisted and sent to the player by the hook)
-  const eq = useEq();
+  const eq = useEq(selectedDevice);
   const eqEnabled = eq.enabled;
   const setEqEnabled = eq.setEnabled;
 
@@ -1109,6 +1116,25 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
   const currentLive = (currentFile && libraryByPath.get(currentFile.path)) || currentFile;
 
   const duplicates = useMemo(() => findDuplicates(musicFiles), [musicFiles]);
+  useCoverAccent(currentLive, theme);
+
+  // ReplayGain "Auto": an album played in order keeps its own dynamics, anything else is levelled per track
+  const playingPath = currentLive?.path;
+  const autoGain = useMemo(() => {
+    if (audioSettings.replayGain !== 'auto' || !playingPath) return null;
+    if (isShuffle) return 'track';
+    const idx = albumIndex(musicFiles);
+    const album = idx.byPath.get(playingPath);
+    if (!album || album.name === 'Unknown Album') return 'track';
+    const at = playQueue.findIndex(f => f.path === playingPath);
+    if (at < 0) return 'track';
+    const near = [playQueue[at - 1], playQueue[at + 1]].filter(Boolean);
+    return near.some(f => idx.byPath.get(f.path) === album) ? 'album' : 'track';
+  }, [audioSettings.replayGain, playingPath, isShuffle, playQueue, musicFiles]);
+  useEffect(() => {
+    if (autoGain) window.ipcRenderer.invoke('player:replaygain-auto', autoGain).catch(() => {});
+  }, [autoGain]);
+
   if (isCheckingAuth) {
     return <div className="app" />;
   }
@@ -1122,7 +1148,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
   const cloudFiles = musicFiles.filter(f => storageOf(f).includes('cloud'));
   const queueFiles = live(playQueue.slice(currentIndex + 1));
   const visibleDevices = devices.filter(d => !disabledDevices.includes(d.deviceId || d.id));
-  const signal = computeSignalPath({ stream: stream && currentLive && stream.path === currentLive.path ? stream : null, file: currentLive, selectedDevice, devices: visibleDevices, eqEnabled, volume, audioSettings, audioOut: isPlaying ? audioOut : null });
+  const signal = computeSignalPath({ stream: stream && currentLive && stream.path === currentLive.path ? stream : null, file: currentLive, selectedDevice, devices: visibleDevices, eqEnabled, volume, audioSettings: { ...audioSettings, autoGain }, audioOut: isPlaying ? audioOut : null });
   const isScanning = scanProgress?.status === 'inProgress';
   const wideView = currentView === 'settings' || currentView === 'eq-settings';
 
@@ -1262,6 +1288,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
             <EqSettingsView
               onBack={() => setCurrentView('settings')}
               eq={eq}
+              deviceName={selectedDevice === '-1' ? 'System default' : (devices.find(d => (d.deviceId || d.id) === selectedDevice)?.name || 'this output')}
             />
           </div>
         );
@@ -1396,8 +1423,12 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
           onSourceChange={setSourceFilter}
           onRefresh={() => handleRefreshFolder()}
           isScanning={isScanning}
-          theme={theme}
-          onToggleTheme={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
+          theme={themeKind(theme)}
+          onToggleTheme={() => setTheme((t) => {
+            const other = themeKind(t) === 'dark' ? 'light' : 'dark';
+            const last = readPref(`tc-theme-${other}`);
+            return isTheme(last) && themeKind(last) === other ? last : other;
+          })}
           onOpenSettings={() => navigate('settings')}
         />
         {renderView()}

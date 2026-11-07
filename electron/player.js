@@ -45,6 +45,31 @@ let appliedChain = null;
 let mpvDevices = [];
 let currentDevice = '-1';
 let currentAudioSettings = { replayGain: 'no', crossfade: 0, maxBitDepth: null, maxSampleRate: null };
+// Lines that repeat every time mpv opens the output and say nothing is wrong: the first is about an
+// option we set on purpose; the others are the exclusive device being reopened, which takes a few
+// tries when switching output. If it really can't be opened, mpv's "no sound" error is still logged.
+let lastDeviceBusy = 0;
+function isMpvNoise(text) {
+  if (/audio-stream-silence option is set|^Retrying in \d+/.test(text)) return true;
+  if (!/AUDCLNT_E_DEVICE_IN_USE/.test(text)) return false;
+  const now = Date.now();
+  const repeat = now - lastDeviceBusy < 2000;
+  lastDeviceBusy = now;
+  return repeat;
+}
+let lastGainLogged = 'no';
+function logGain() {
+  const m = currentAudioSettings.replayGain;
+  const now = m === 'auto' ? `auto, ${autoGainMode} gain now` : m;
+  if (now !== lastGainLogged) console.log(`[Player] ReplayGain: ${now}`);
+  lastGainLogged = now;
+}
+let autoGainMode = 'track'; // what ReplayGain "auto" means for the track playing now
+const gainMode = () => {
+  const m = currentAudioSettings.replayGain;
+  if (m === 'auto') return autoGainMode;
+  return ['track', 'album'].includes(m) ? m : 'no';
+};
 
 const send = (channel, payload) => {
   const win = BrowserWindow.getAllWindows()[0];
@@ -129,7 +154,7 @@ function handleMessage(msg) {
 
     case 'log-message':
       // mpv's own warnings and errors, for the log file only
-      console.warn(`[mpv] ${msg.prefix}: ${String(msg.text || '').trim()}`);
+      if (!isMpvNoise(String(msg.text || ''))) console.warn(`[mpv] ${msg.prefix}: ${String(msg.text || '').trim()}`);
       break;
 
     case 'end-file':
@@ -367,7 +392,7 @@ async function applyDevice(deviceId) {
 
 async function applyAudioSettingsToMpv() {
   const s = currentAudioSettings;
-  await setProp('replaygain', ['track', 'album'].includes(s.replayGain) ? s.replayGain : 'no');
+  await setProp('replaygain', gainMode());
   await scheduleChain();
 }
 
@@ -393,7 +418,7 @@ async function startCrossfade(t, X) {
   const state = { tail: null, ramp: null, ramping: false, entry: currentEntryId };
   xfade = state;
   const volume = await getProp('volume').catch(() => 100);
-  const replaygain = ['track', 'album'].includes(currentAudioSettings.replayGain) ? currentAudioSettings.replayGain : 'no';
+  const replaygain = gainMode();
   if (xfade !== state) return;
   const fade = `@fade:lavfi=[afade=t=out:st=${startAt.toFixed(3)}:d=${X}]`;
   const tail = spawn(mpvPath, [
@@ -562,16 +587,23 @@ ipcMain.handle('set-eq', async (event, eq) => {
 // Apply audio settings (called from settings view)
 async function applyAudioSettings(settings) {
   currentAudioSettings = {
-    replayGain: ['track', 'album'].includes(settings?.replayGain) ? settings.replayGain : 'no',
+    replayGain: ['track', 'album', 'auto'].includes(settings?.replayGain) ? settings.replayGain : 'no',
     crossfade: num(settings?.crossfade, 0, 15),
     maxBitDepth: [16, 24, 32].includes(settings?.maxBitDepth) ? settings.maxBitDepth : null,
     maxSampleRate: settings?.maxSampleRate ? num(settings.maxSampleRate, 8, 768) : null,
   };
+  logGain();
   if (!currentAudioSettings.crossfade) cancelCrossfade();
   if (sock) await applyAudioSettingsToMpv().catch(err => console.error('[Player] settings rejected:', err.message));
 }
 
 ipcMain.handle('get-audio-settings', () => currentAudioSettings);
+ipcMain.handle('player:replaygain-auto', async (event, mode) => {
+  autoGainMode = mode === 'album' ? 'album' : 'track';
+  logGain();
+  if (sock && currentAudioSettings.replayGain === 'auto') await setProp('replaygain', autoGainMode).catch(() => {});
+  return autoGainMode;
+});
 // exact playback position (the 'time-pos' event is throttled to ~4/s) — used to sync lyrics by hand
 ipcMain.handle('player:position', async () => { try { const t = await getProp('time-pos'); return typeof t?.data === 'number' ? t.data : (typeof t === 'number' ? t : null); } catch { return null; } });
 

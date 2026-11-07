@@ -1,0 +1,283 @@
+/* ===== Extra themes. Dark and Vanilla are in tokens.css; src/utils/themes.js lists them all =====
+   Any element can carry data-theme, which is how the picker draws each preview in its own colours. */
+
+[data-theme="matcha"] {
+  color-scheme: light;
+  --bg: #e6ebd6;
+  --bg-app: #f4f6e9;
+  --surface: #ebefdb;
+  --surface-2: #e0e6cc;
+  --surface-hover: #d6dec0;
+  --border: rgba(50, 65, 25, .12);
+  --text: #232b18;
+  --text-2: #58634a;
+  --text-3: #666f56;
+  --accent: #4e752b;
+  --accent-2: #689a3c;
+  --accent-soft: rgba(78, 117, 43, .14);
+  --on-accent: #fff;
+  --ok: #246b42;
+  --ok-soft: rgba(46, 138, 85, .13);
+  --info: #29619a;
+  --info-soft: rgba(47, 111, 176, .12);
+  --warn: #78580c;
+  --warn-soft: rgba(153, 112, 15, .14);
+  --danger: #a9342f;
+  --shadow: 0 20px 50px rgba(60, 75, 30, .18);
+  --overlay: rgba(40, 50, 20, .35);
+  --hero-grad: linear-gradient(135deg, #dfe9c4 0%, #e8eed4 60%, #ebefdb 100%);
+  --promo-grad: linear-gradient(135deg, #dce8c8 0%, #e9efd8 100%);
+  --scroll-thumb: rgba(60, 75, 30, .20);
+  --scroll-thumb-hover: rgba(60, 75, 30, .34);
+  --np-scrim: rgba(244, 246, 233, .55);
+  --np-text-shadow: 0 1px 10px rgba(244, 246, 233, .6);
+  --q-hires: #9c4116; --q-lossless: #236941; --q-lossy: #296098;
+}
+
+[data-theme="sakura"] {
+  color-scheme: light;
+  --bg: #f8e4ea;
+  --bg-app: #fff5f7;
+  --surface: #fbeaef;
+  --surface-2: #f6dfe6;
+  --surface-hover: #f0d2dc;
+  --border: rgba(110, 40, 65, .11);
+  --text: #35202a;
+  --text-2: #75555f;
+  --text-3: #85626e;
+  --accent: #c03666;
+  --accent-2: #dc5d89;
+  --accent-soft: rgba(192, 54, 102, .12);
+  --on-accent: #fff;
+  --ok: #216b49;
+  --ok-soft: rgba(43, 138, 94, .13);
+  --info: #355ea0;
+  --info-soft: rgba(63, 111, 189, .12);
+  --warn: #7d590c;
+  --warn-soft: rgba(160, 114, 15, .14);
+  --danger: #b02c29;
+  --shadow: 0 20px 50px rgba(130, 50, 80, .16);
+  --overlay: rgba(70, 25, 45, .32);
+  --hero-grad: linear-gradient(135deg, #fbd7e2 0%, #fbe4ea 60%, #fbeaef 100%);
+  --promo-grad: linear-gradient(135deg, #f6d9e4 0%, #fbe9ee 100%);
+  --scroll-thumb: rgba(130, 50, 80, .20);
+  --scroll-thumb-hover: rgba(130, 50, 80, .34);
+  --np-scrim: rgba(255, 245, 247, .55);
+  --np-text-shadow: 0 1px 10px rgba(255, 245, 247, .6);
+  --q-hires: #9f3e17; --q-lossless: #216b49; --q-lossy: #355ea0;
+}
+
+[data-theme="hojicha"] {
+  color-scheme: dark;
+  --bg: #15100b;
+  --bg-app: #1d1610;
+  --surface: #272017;
+  --surface-2: #30281d;
+  --surface-hover: #3b3125;
+  --border: rgba(255, 235, 205, .08);
+  --text: #f3eadc;
+  --text-2: #b5a58f;
+  --text-3: #96866c;
+  --accent: #d9944a;
+  --accent-2: #e8aa66;
+  --accent-soft: rgba(217, 148, 74, .15);
+  --on-accent: #1d1208;
+  --ok: #6fbf8a;
+  --ok-soft: rgba(111, 191, 138, .14);
+  --info: #7fa9d9;
+  --info-soft: rgba(127, 169, 217, .14);
+  --warn: #e5b95c;
+  --warn-soft: rgba(229, 185, 92, .14);
+  --danger: #e97867;
+  --shadow: 0 20px 50px rgba(0, 0, 0, .5);
+  --overlay: rgba(0, 0, 0, .6);
+  --hero-grad: linear-gradient(135deg, #3b2817 0%, #271c12 60%, #272017 100%);
+  --promo-grad: linear-gradient(135deg, #33261a 0%, #241b13 100%);
+  --scroll-thumb: rgba(255, 235, 205, .14);
+  --scroll-thumb-hover: rgba(255, 235, 205, .26);
+  --np-scrim: rgba(14, 10, 6, .45);
+  --np-text-shadow: 0 1px 12px rgba(0, 0, 0, .4);
+}
+
+[data-theme="yozakura"] {
+  color-scheme: dark;
+  --bg: #120c16;
+  --bg-app: #1a1220;
+  --surface: #251a2c;
+  --surface-2: #2f2237;
+  --surface-hover: #3a2b44;
+  --border: rgba(255, 225, 240, .08);
+  --text: #f6eaf1;
+  --text-2: #b7a2b3;
+  --text-3: #917f95;
+  --accent: #f58fb4;
+  --accent-2: #f9abc8;
+  --accent-soft: rgba(245, 143, 180, .15);
+  --on-accent: #2a0f1c;
+  --ok: #69cf9f;
+  --ok-soft: rgba(105, 207, 159, .14);
+  --info: #8fb4f2;
+  --info-soft: rgba(143, 180, 242, .14);
+  --warn: #ecc061;
+  --warn-soft: rgba(236, 192, 97, .14);
+  --danger: #ff6f7d;
+  --shadow: 0 20px 50px rgba(0, 0, 0, .5);
+  --overlay: rgba(0, 0, 0, .6);
+  --hero-grad: linear-gradient(135deg, #432138 0%, #2a1a2e 60%, #251a2c 100%);
+  --promo-grad: linear-gradient(135deg, #37203f 0%, #241a2b 100%);
+  --scroll-thumb: rgba(255, 225, 240, .14);
+  --scroll-thumb-hover: rgba(255, 225, 240, .26);
+  --np-scrim: rgba(12, 8, 16, .45);
+  --np-text-shadow: 0 1px 12px rgba(0, 0, 0, .4);
+}
+
+[data-theme="tube"] {
+  color-scheme: dark;
+  --bg: #0a0806;
+  --bg-app: #100d09;
+  --surface: #1a150e;
+  --surface-2: #241d13;
+  --surface-hover: #2e2518;
+  --border: rgba(255, 220, 160, .08);
+  --text: #f5e6c8;
+  --text-2: #b09d78;
+  --text-3: #8e7e5d;
+  --accent: #ffb02e;
+  --accent-2: #ffc25c;
+  --accent-soft: rgba(255, 176, 46, .14);
+  --on-accent: #2b1a00;
+  --ok: #8fc96a;
+  --ok-soft: rgba(143, 201, 106, .14);
+  --info: #8fb3c9;
+  --info-soft: rgba(143, 179, 201, .14);
+  --warn: #f0c060;
+  --warn-soft: rgba(240, 192, 96, .14);
+  --danger: #f0624d;
+  --shadow: 0 20px 50px rgba(0, 0, 0, .55);
+  --overlay: rgba(0, 0, 0, .65);
+  --hero-grad: linear-gradient(135deg, #332208 0%, #1f1809 60%, #1a150e 100%);
+  --promo-grad: linear-gradient(135deg, #2b1f0d 0%, #1a150e 100%);
+  --scroll-thumb: rgba(255, 220, 160, .14);
+  --scroll-thumb-hover: rgba(255, 220, 160, .26);
+  --np-scrim: rgba(8, 6, 3, .5);
+  --np-text-shadow: 0 1px 12px rgba(0, 0, 0, .45);
+}
+
+[data-theme="ube"] {
+  color-scheme: dark;
+  --bg: #120e1e;
+  --bg-app: #191428;
+  --surface: #231c37;
+  --surface-2: #2c2444;
+  --surface-hover: #372e52;
+  --border: rgba(230, 220, 255, .08);
+  --text: #f0ebfb;
+  --text-2: #a9a0c4;
+  --text-3: #8a83a3;
+  --accent: #b18cff;
+  --accent-2: #c5a8ff;
+  --accent-soft: rgba(177, 140, 255, .15);
+  --on-accent: #1b1033;
+  --ok: #5fd0a0;
+  --ok-soft: rgba(95, 208, 160, .14);
+  --info: #7fb0ff;
+  --info-soft: rgba(127, 176, 255, .14);
+  --warn: #edc05f;
+  --warn-soft: rgba(237, 192, 95, .14);
+  --danger: #ff6b81;
+  --shadow: 0 20px 50px rgba(0, 0, 0, .5);
+  --overlay: rgba(0, 0, 0, .6);
+  --hero-grad: linear-gradient(135deg, #33245c 0%, #231a40 60%, #231c37 100%);
+  --promo-grad: linear-gradient(135deg, #2e2152 0%, #211a36 100%);
+  --scroll-thumb: rgba(230, 220, 255, .14);
+  --scroll-thumb-hover: rgba(230, 220, 255, .26);
+  --np-scrim: rgba(12, 9, 22, .45);
+  --np-text-shadow: 0 1px 12px rgba(0, 0, 0, .4);
+}
+
+[data-theme="abyss"] {
+  color-scheme: dark;
+  --bg: #070f14;
+  --bg-app: #0c171e;
+  --surface: #13222b;
+  --surface-2: #1a2c37;
+  --surface-hover: #223744;
+  --border: rgba(200, 240, 250, .08);
+  --text: #e6f1f5;
+  --text-2: #93aab5;
+  --text-3: #718c98;
+  --accent: #3fc7c0;
+  --accent-2: #62d8d2;
+  --accent-soft: rgba(63, 199, 192, .14);
+  --on-accent: #04211f;
+  --ok: #5fd39a;
+  --ok-soft: rgba(95, 211, 154, .14);
+  --info: #6cb4f0;
+  --info-soft: rgba(108, 180, 240, .14);
+  --warn: #eabf5c;
+  --warn-soft: rgba(234, 191, 92, .14);
+  --danger: #ff6f6f;
+  --shadow: 0 20px 50px rgba(0, 0, 0, .5);
+  --overlay: rgba(0, 0, 0, .6);
+  --hero-grad: linear-gradient(135deg, #0f3a42 0%, #0f2a33 60%, #13222b 100%);
+  --promo-grad: linear-gradient(135deg, #103440 0%, #11222b 100%);
+  --scroll-thumb: rgba(200, 240, 250, .14);
+  --scroll-thumb-hover: rgba(200, 240, 250, .26);
+  --np-scrim: rgba(4, 10, 14, .45);
+  --np-text-shadow: 0 1px 12px rgba(0, 0, 0, .4);
+}
+
+[data-theme="oled"] {
+  color-scheme: dark;
+  --bg: #000;
+  --bg-app: #000;
+  --surface: #0e0e10;
+  --surface-2: #18181b;
+  --surface-hover: #232327;
+  --border: rgba(255, 255, 255, .1);
+  --text: #f4f4f5;
+  --text-2: #a1a1aa;
+  --text-3: #7a7a82;
+  --accent: #ff6a3d;
+  --accent-2: #ff8a5c;
+  --accent-soft: rgba(255, 106, 61, .16);
+  --on-accent: #1f0a02;
+  --ok: #3fcf8e;
+  --ok-soft: rgba(63, 207, 142, .14);
+  --info: #6aa8ff;
+  --info-soft: rgba(106, 168, 255, .14);
+  --warn: #f5b942;
+  --warn-soft: rgba(245, 185, 66, .14);
+  --danger: #ff5c5c;
+  --shadow: 0 20px 50px rgba(0, 0, 0, .8);
+  --overlay: rgba(0, 0, 0, .72);
+  --hero-grad: linear-gradient(135deg, #2a1209 0%, #120806 60%, #0e0e10 100%);
+  --promo-grad: linear-gradient(135deg, #1c1020 0%, #0e0e10 100%);
+  --scroll-thumb: rgba(255, 255, 255, .16);
+  --scroll-thumb-hover: rgba(255, 255, 255, .28);
+  --np-scrim: rgba(0, 0, 0, .5);
+  --np-text-shadow: 0 1px 12px rgba(0, 0, 0, .5);
+}
+
+/* ===== The picker in Settings > Appearance ===== */
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 12px; padding: 16px; }
+.theme-card {
+  display: block; width: 100%; padding: 0; text-align: left; border-radius: 12px; overflow: hidden;
+  background: var(--surface-2); border: 2px solid transparent; outline: 1px solid var(--border);
+}
+.theme-card:hover { outline-color: var(--text-3); }
+.theme-card.on { border-color: var(--accent); outline-color: transparent; }
+.theme-card:active:not(:disabled) { transform: scale(.97); }
+.theme-prev { display: flex; height: 84px; background: var(--bg-app); color: var(--text); }
+.theme-prev .side { width: 30px; background: var(--bg); padding: 8px 6px; display: flex; flex-direction: column; gap: 5px; flex-shrink: 0; }
+.theme-prev .main { flex: 1; min-width: 0; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.theme-prev i { display: block; height: 4px; border-radius: 2px; background: var(--text-2); }
+.theme-prev .side i:first-child { background: var(--accent); }
+.theme-prev .top { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 2px; }
+.theme-prev .top i { width: 34px; height: 6px; background: var(--text); }
+.theme-prev .pill { font-size: 10px; font-weight: 700; line-height: 1; padding: 4px 8px; border-radius: 99px; background: var(--accent); color: var(--on-accent); }
+.theme-prev .row { padding: 4px 6px; border-radius: 4px; background: var(--surface); display: flex; flex-direction: column; gap: 3px; }
+.theme-prev .row i:first-child { width: 72%; background: var(--text); }
+.theme-prev .row i:last-child { width: 44%; height: 3px; }
+.theme-name { display: flex; align-items: center; gap: 6px; padding: 8px 10px; font-size: 13px; font-weight: 700; color: var(--text); }
+.theme-name .ico { width: 15px; height: 15px; margin-left: auto; color: var(--accent); }

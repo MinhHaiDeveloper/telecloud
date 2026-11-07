@@ -146,8 +146,8 @@ const readTextFile = (e) => new Promise((resolve) => {
   reader.readAsText(file);
 });
 
-const EqSettingsView = ({ onBack, eq }) => {
-  const { enabled, setEnabled, bands, setBands, preamp, setPreamp, auto, setAuto, history, commit, apply, jump, undo, redo } = eq;
+const EqSettingsView = ({ onBack, eq, deviceName }) => {
+  const { perDevice, setPerDevice, enabled, setEnabled, bands, setBands, preamp, setPreamp, auto, setAuto, history, commit, apply, jump, undo, redo } = eq;
   const [selected, setSelected] = useState(null);
   const [collapsed, setCollapsed] = useState(() => readPref('tc-eq-bands-collapsed', false));
   const [yRange, setYRange] = useState(() => readPref('tc-eq-yrange', 12));
@@ -321,6 +321,13 @@ const EqSettingsView = ({ onBack, eq }) => {
         </div>
       </div>
 
+      <div className="eq-output">
+        <label className="eq-output-toggle">
+          <Toggle checked={perDevice} onChange={setPerDevice} />
+          <span>Separate EQ for each output</span>
+        </label>
+        <small>{perDevice ? `Editing the EQ for ${deviceName}. Each output remembers its own, and it changes when you switch output.` : 'Off: the same EQ is used on every output.'}</small>
+      </div>
       {importNote && <Callout tone="info">{importNote} <button className="link-btn" onClick={() => setImportNote(null)}>OK</button></Callout>}
       {clipping && <Callout tone="warn">The EQ boosts up to {peak.toFixed(1)} dB but the preamp is {preamp} dB, so loud passages can clip. <button className="link-btn" onClick={() => setPreampCommit(-peak)}>Set preamp to {(-peak).toFixed(1)} dB</button></Callout>}
 
@@ -447,6 +454,7 @@ const EqSettingsView = ({ onBack, eq }) => {
         <h4>Files and history</h4>
         <ul>
           <li>Import / Export use the Squiglink text format, which EqualizerAPO, Peace and Wavelet also read.</li>
+          <li>Turn on Separate EQ for each output to keep one correction for your headphones and another for your speakers.</li>
           <li>Import also reads Audacity and GraphicEQ curves, and Export can write an Audacity Graphic EQ preset. Curves become up to 31 bands, so they are a close match rather than an exact one.</li>
           <li>Every change is kept in History: click an entry, or use Ctrl+Z / Ctrl+Y.</li>
         </ul>

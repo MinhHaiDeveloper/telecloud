@@ -2,6 +2,18 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.0.0-beta.13',
+    items: [
+      'Eight new themes: Matcha, Sakura, Hojicha, Yozakura, Tube Amp, Ube, Abyss and OLED. Choose one in Settings > Appearance.',
+      'Follow the cover: the accent colour can come from the cover playing, and stays readable on every theme.',
+      'Equalizer: keep a separate EQ for each output, so your headphones and speakers each have their own.',
+      'Library: filter by quality, bit depth or sample rate, and sort by sample rate or bit depth.',
+      'ReplayGain Auto: album gain while an album plays in order, track gain on shuffle or mixed lists.',
+      'TeleCloud: Check backup compares your library with what is really in Telegram, and can put back what is missing.',
+      'Small text is easier to read, and dark covers no longer melt into dark themes.',
+    ],
+  },
+  {
     version: '1.0.0-beta.12',
     items: [
       'Your Discord status now has a Get TeleCloud button that others can click. You can turn it off in Settings > General > Discord.',

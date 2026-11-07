@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import LyricsView from './LyricsView';
+import Icon from './Icon';
 import { SettingRow, Segmented, Toggle } from './ui';
+import { THEMES } from '../utils/themes';
 import { APPEARANCE_DEFAULTS, APPEARANCE_LIMITS, resetAppearance, setAppearance, useAppearance } from '../utils/appearance';
 
 const PREVIEW = ['[00:00.00]This line has already played', '[00:02.00]So has this one', '[00:04.00]Each line takes a turn', '[00:06.00]The one playing stands out', '[00:08.00]The rest wait around it', '[00:10.00]Then it starts again'].join('\n');
@@ -40,8 +42,23 @@ const AppearanceSettings = ({ theme, setTheme }) => {
       <section className="set-section">
         <h3>Theme</h3>
         <div className="card set-card">
-          <SettingRow icon={theme === 'dark' ? 'moon' : 'sun'} title="Theme" desc="Dark, or the warm vanilla light theme">
-            <Segmented value={theme} onChange={setTheme} options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }]} />
+          <div className="theme-grid" role="radiogroup" aria-label="Theme">
+            {THEMES.map(t => (
+              <button key={t.id} type="button" role="radio" aria-checked={theme === t.id} className={`theme-card ${theme === t.id ? 'on' : ''}`} onClick={() => setTheme(t.id)}>
+                <div className="theme-prev" data-theme={t.id} aria-hidden="true">
+                  <div className="side"><i /><i /><i /><i /></div>
+                  <div className="main">
+                    <div className="top"><i /><span className="pill">Play</span></div>
+                    <div className="row"><i /><i /></div>
+                    <div className="row"><i /><i /></div>
+                  </div>
+                </div>
+                <div className="theme-name">{t.name}{theme === t.id && <Icon name="check" />}</div>
+              </button>
+            ))}
+          </div>
+          <SettingRow icon="image" title="Follow the cover" desc="The accent colour comes from the cover playing, made lighter or darker so it stays readable. A black and white cover keeps the theme's colour.">
+            <Toggle checked={a.followCover} onChange={(v) => setAppearance({ followCover: v })} />
           </SettingRow>
         </div>
       </section>

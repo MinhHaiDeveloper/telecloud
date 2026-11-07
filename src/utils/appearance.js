@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react';
 
 const KEY = 'tc-appearance';
 export const APPEARANCE_DEFAULTS = {
+  followCover: false, // the accent takes the colour of the cover playing
   coverTilt: false,
   tiltStrength: 10, // degrees at the edge of the cover
   lyricCurrent: 26, // px
@@ -22,7 +23,7 @@ export const APPEARANCE_LIMITS = {
 const clean = (raw) => {
   const out = { ...APPEARANCE_DEFAULTS };
   if (!raw || typeof raw !== 'object') return out;
-  for (const k of ['coverTilt', 'lyricGlow']) if (typeof raw[k] === 'boolean') out[k] = raw[k];
+  for (const k of ['followCover', 'coverTilt', 'lyricGlow']) if (typeof raw[k] === 'boolean') out[k] = raw[k];
   if (['left', 'center', 'right'].includes(raw.lyricAlign)) out.lyricAlign = raw.lyricAlign;
   for (const [k, [lo, hi]] of Object.entries(APPEARANCE_LIMITS)) {
     const n = Number(raw[k]);

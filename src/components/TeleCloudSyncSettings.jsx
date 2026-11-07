@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Icon from './Icon';
 import { Field, Callout, Progress, Select, SettingRow, BackButton, Toggle, MoreMenu, Dialog, confirmDialog, alertDialog } from './ui';
 import { formatBytes } from '../utils/audio';
+import BackupCheck from './BackupCheck';
 
 const SETUP_STEPS = [
     { id: 'credentials', label: 'API keys' },
@@ -608,6 +609,7 @@ const TeleCloudSyncSettings = () => {
                     <BackupCard queue={queue} onSync={sync} onPause={pause} onResume={resume} rate={opts.rateKBps || 0} onRate={(v) => setOption({ rateKBps: v })} />
                     <IndexRow index={status?.index} onSaved={refresh} />
                     <SpeedTest />
+                    <BackupCheck disabled={isLoading} />
                     <SettingRow icon="download" title="Restore library from cloud" desc="On a new computer, add every cloud track to this library. Audio downloads when you play it.">
                         <button className="btn-ghost" onClick={() => restore(false)} disabled={isLoading}>Restore</button>
                     </SettingRow>
