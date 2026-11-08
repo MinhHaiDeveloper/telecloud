@@ -66,9 +66,16 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
     })();
     return () => { alive = false; };
   }, [selectedName]);
+  // Saving into thousands of tracks takes a while: say how far it is, here and in the dialog
+  const [work, setWork] = useState(null);
+  useEffect(() => {
+    const on = (e, p) => setWork(p.finished ? null : p);
+    window.ipcRenderer.on('artists:progress', on);
+    return () => window.ipcRenderer.removeListener?.('artists:progress', on);
+  }, []);
   const saveFound = async () => {
     const r = await window.ipcRenderer.invoke('artists:save', { name: found.name, image: found.image }).catch(() => null);
-    if (r?.success && !r.errors?.length) { setFound(null); setHasPicture(true); } else setPictureOpen(true);
+    if (r?.success && !r.errors?.length && !r.stopped) { setFound(null); setHasPicture(true); } else setPictureOpen(true);
   };
 
   const artists = useMemo(() => {
@@ -154,7 +161,13 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
               <button className="btn-ghost" onClick={() => { const s = [...songs].sort(() => Math.random() - 0.5); onPlay(s[0], 0, s); }}><Icon name="shuffle" />Shuffle</button>
               {!selected.label && <button className="btn-ghost" onClick={() => setPictureOpen(true)}><Icon name="image" />Artist picture…</button>}
             </div>
-            {found && (
+            {work && work.name === selected.name && !pictureOpen && (
+              <div className="lyrics-note found artist-note">
+                <span>Saving the picture · {work.done.toLocaleString()} of {work.total.toLocaleString()} tracks</span>
+                <button className="btn-ghost sm" onClick={() => window.ipcRenderer.invoke('artists:stop')}>Stop</button>
+              </div>
+            )}
+            {found && !(work && work.name === selected.name) && (
               <div className="lyrics-note found artist-note">
                 <span>Picture from {found.label} · not saved</span>
                 <button className="btn-ghost sm" onClick={saveFound}><Icon name="check" />Save</button>

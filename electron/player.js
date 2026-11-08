@@ -33,6 +33,7 @@ let nextPath = null;
 let lastTimeSent = -1;
 let lastTimeAt = 0;
 
+let lastOutLogged = '';
 let currentPath = null;        // file of the entry that is playing
 let duration = 0;
 let muted = false;
@@ -44,7 +45,152 @@ let appliedChain = null;
 
 let mpvDevices = [];
 let currentDevice = '-1';
-let currentAudioSettings = { replayGain: 'no', crossfade: 0, maxBitDepth: null, maxSampleRate: null };
+let currentAudioSettings = { replayGain: 'no', crossfade: 0, maxBitDepth: null, maxSampleRate: null, dsdMode: 'pcm', dopMax: 512, asioDriver: '' };
+
+// ---------- DSD: DoP where it can be bit-perfect, PCM everywhere else
+const entryPlans = new Map();  // mpv playlist entry -> { path, dop, rate, reason, verified }
+const refused = new Set();     // "device|rate" a DAC didn't take as DoP this session
+let chainWaiting = false;      // a filter change that waited for DoP to end
+const DSD_FILE = /\.(dsf|dff)$/i;
+const REASONS = {
+  setting: 'DSD playback is set to PCM',
+  shared: 'DoP needs WASAPI Exclusive',
+  eq: 'the EQ is on',
+  limit: 'above the output limit',
+  max: 'above the highest DSD rate set for DoP',
+  refused: 'the DAC refused DoP at this rate',
+  cloud: 'not on this computer yet',
+  format: 'not plain DSD',
+};
+
+// ---------- native DSD through ASIO (asio.js). Tried first when chosen; DoP, then PCM, if it can't.
+const asio = require('./asio');
+let native = null;        // { id, path, rate, channels, driver, paused, pos, queued: { id, path } }
+let nativeIds = 0;
+let releasingMpv = false; // mpv is being closed so the DAC is free for ASIO: not a stop the window should see
+const nativeInfo = (info, id, file) => ({ id, path: file, kind: info.kind, rate: info.rate, channels: info.channels, dataStart: info.dataStart, blockSize: info.blockSize || 0, bytes: Math.ceil(info.samples / 8), lsbFirst: info.lsbFirst });
+
+/** Can this file go out as native DSD? { ok, info } or { ok: false, why } */
+async function nativePlan(filePath, { mayRelease = false } = {}) {
+  const s = currentAudioSettings;
+  if (!s.asioDriver) return { ok: false, why: 'no ASIO driver chosen' };
+  if (!asio.available()) return { ok: false, why: 'the ASIO helper is missing' };
+  if (normalizeEq(eqState)) return { ok: false, why: 'the EQ is on' };
+  if (/^https?:/i.test(filePath) || !fs.existsSync(filePath)) return { ok: false, why: 'not on this computer yet' };
+  const info = require('./dsd').probe(filePath);
+  if (!info) return { ok: false, why: 'not plain DSD' };
+  let p = await asio.probe(s.asioDriver).catch(err => ({ ok: false, msg: err.message }));
+  // the DAC may be held by mpv in exclusive mode: when a new track starts anyway, free it and ask again
+  if (!p.ok && mayRelease && proc) { await releaseMpv(); p = await asio.probe(s.asioDriver).catch(err => ({ ok: false, msg: err.message })); }
+  if (!p.ok) return { ok: false, why: `${s.asioDriver}: ${p.msg || 'did not open'}` };
+  if (!p.dsd) return { ok: false, why: `${s.asioDriver} doesn't take DSD` };
+  if (!p.rates.includes(info.rate)) return { ok: false, why: `${s.asioDriver} doesn't take DSD${info.rate / 44100} natively` };
+  if (p.outputs < info.channels) return { ok: false, why: `${s.asioDriver} has fewer outputs than the file's channels` };
+  return { ok: true, info };
+}
+
+/** mpv holds the DAC in exclusive mode: close it so the ASIO driver can have the device */
+async function releaseMpv() {
+  if (!proc) return;
+  releasingMpv = true;
+  const gone = new Promise(r => proc.once('exit', r));
+  command(['quit']).catch(() => {});
+  await Promise.race([gone, new Promise(r => setTimeout(r, 3000))]);
+  if (proc) { try { proc.kill(); } catch { /* gone */ } }
+  releasingMpv = false;
+}
+
+async function startNative(filePath, plan, startSec = 0, paused = false) {
+  await releaseMpv();
+  const id = ++nativeIds;
+  native = { id, path: filePath, rate: plan.info.rate, channels: plan.info.channels, driver: currentAudioSettings.asioDriver, paused, pos: startSec, queued: null, starting: true };
+  currentEntryId = `asio:${id}`;
+  currentPath = filePath;
+  entryPlans.set(currentEntryId, { path: filePath, native: true, rate: plan.info.rate, driver: native.driver, reason: null, verified: true });
+  try {
+    await asio.play({ driver: native.driver, start: startSec, ...nativeInfo(plan.info, id, filePath) });
+  } catch (err) {
+    console.warn(`[Player] Native DSD failed: ${err.message}`);
+    const at = native ? native.pos : startSec;
+    native = null;
+    return { failed: err.message, at };
+  }
+  native.starting = false;
+  if (paused) await asio.pause();
+  send('player:audio-out', { format: 'dsd', samplerate: plan.info.rate, channels: plan.info.channels });
+  console.log(`[Player] Output: native DSD ${plan.info.rate} Hz ${plan.info.channels} ch through ASIO`);
+  return { ok: true };
+}
+
+/** Leave native DSD and carry on through mpv from the same moment (DoP if it can, else PCM) */
+async function nativeToMpv(why) {
+  if (!native) return;
+  const { path: file, pos, paused } = native;
+  const queued = native.queued?.path || nextPath;
+  native = null;
+  await asio.stop().catch(() => {});
+  console.warn(`[Player] Native DSD stopped: ${why}. Carrying on through mpv.`);
+  await startMpv();
+  const plan = await dsdPlan(file, { skipNative: true, nativeWhy: why });
+  currentEntryId = await loadFile(file, 'replace', `start=${pos.toFixed(3)}${paused ? ',pause=yes' : ''}`, plan);
+  currentPath = file;
+  nextEntryId = null;
+  nextPath = null;
+  if (queued) { nextEntryId = await loadFile(queued, 'append'); nextPath = queued; }
+  tellDsd();
+  send('player:dsd-notice', `Native DSD stopped (${why}). Playing on through ${plan?.dop ? 'DoP' : 'PCM'}.`);
+}
+
+asio.events.on('pos', (m) => {
+  if (!native || native.paused) return;
+  native.pos = m.sec - (m.id === native.id ? 0 : 0);
+  send('time-pos', Math.round(m.sec * 10) / 10);
+});
+asio.events.on('advanced', (m) => {
+  if (!native?.queued || m.id !== native.queued.id) return;
+  native.id = m.id;
+  native.path = native.queued.path;
+  native.queued = null;
+  currentEntryId = `asio:${m.id}`;
+  currentPath = native.path;
+  entryPlans.set(currentEntryId, { path: native.path, native: true, rate: native.rate, driver: native.driver, verified: true });
+  nextPath = null;
+  send('player:advanced', { path: native.path });
+  tellDsd();
+});
+asio.events.on('ended', (m) => {
+  if (!native || m.id !== native.id) return;
+  console.log('[Player] Native DSD: end of track');
+  send('track-ended');
+});
+// while starting, a failure is handled where play was asked; afterwards the track moves to mpv
+asio.events.on('error', (m) => { if (native && !native.starting) nativeToMpv(m.msg || 'the ASIO driver failed'); });
+/** How a DSD file will play, and why */
+async function dsdPlan(filePath, { skipNative = false, nativeWhy = null, mayRelease = false } = {}) {
+  const s = currentAudioSettings;
+  let why = nativeWhy;
+  if (s.dsdMode === 'native' && !skipNative) {
+    const n = await nativePlan(filePath, { mayRelease });
+    if (n.ok) return { native: true, info: n.info, rate: n.info.rate };
+    why = n.why;
+  }
+  const plan = await dopPlan(filePath, s);
+  if (why) plan.nativeWhy = why;
+  return plan;
+}
+
+async function dopPlan(filePath, s) {
+  if (!['dop', 'native'].includes(s.dsdMode)) return { dop: false, reason: 'setting' };
+  if (!currentDevice || currentDevice === '-1') return { dop: false, reason: 'shared' };
+  if (normalizeEq(eqState)) return { dop: false, reason: 'eq' };
+  if (/^https?:/i.test(filePath) || !fs.existsSync(filePath)) return { dop: false, reason: 'cloud' };
+  const src = await require('./dsd').dopSource(filePath).catch(() => null);
+  if (!src) return { dop: false, reason: 'format' };
+  if (s.dopMax && src.dsdRate > s.dopMax * 44100) return { dop: false, reason: 'max', rate: src.rate };
+  if (s.maxSampleRate && src.rate > s.maxSampleRate * 1000) return { dop: false, reason: 'limit', rate: src.rate };
+  if (refused.has(`${currentDevice}|${src.rate}`)) return { dop: false, reason: 'refused', rate: src.rate };
+  return { dop: true, rate: src.rate, src };
+}
 // Lines that repeat every time mpv opens the output and say nothing is wrong: the first is about an
 // option we set on purpose; the others are the exclusive device being reopened, which takes a few
 // tries when switching output. If it really can't be opened, mpv's "no sound" error is still logged.
@@ -93,13 +239,120 @@ function command(args) {
 const setProp = (name, value) => command(['set_property', name, value]);
 const getProp = (name) => command(['get_property', name]);
 
+/**
+ * DSD can't reach the DAC as DSD from here: mpv turns it into PCM at 1/8 of the DSD rate, 2822.4 kHz
+ * for DSD512, as floating point, and the device then settles on whatever it can. That uneven result
+ * (384 kHz from 705.6 kHz) is where DACs went silent. Ask for 352.8 kHz, an even step down from every
+ * DSD rate, as whole numbers, or the highest rate of that family under the output limit.
+ */
+function dsdOptions(filePath) {
+  if (!/\.(dsf|dff)$/i.test(filePath || '')) return '';
+  const cap = currentAudioSettings.maxSampleRate ? currentAudioSettings.maxSampleRate * 1000 : Infinity;
+  const rate = [352800, 176400, 88200, 44100].find(r => r <= cap) || 44100;
+  const format = currentAudioSettings.maxBitDepth === 16 ? 's16' : 's32';
+  return `audio-samplerate=${rate},audio-format=${format}`;
+}
+
 /** loadfile and return the playlist entry id of the new item. */
-async function loadFile(filePath, mode, options) {
-  const args = options ? ['loadfile', filePath, mode, -1, options] : ['loadfile', filePath, mode];
-  const res = await command(args);
-  if (res && res.playlist_entry_id) return res.playlist_entry_id;
-  const count = await getProp('playlist-count');
-  return getProp(`playlist/${mode === 'append' ? count - 1 : 0}/id`);
+async function loadFile(filePath, mode, extra, given) {
+  let plan = given !== undefined ? given : DSD_FILE.test(filePath || '') ? await dsdPlan(filePath, { skipNative: true }) : null;
+  if (plan?.native) plan = await dsdPlan(filePath, { skipNative: true }); // mpv can't play native DSD
+  // A gapless join at the same rate and channels keeps the device open as it was: it already took this
+  // rate, so there is nothing to check and nothing to mute. The start of anything else waits, silent.
+  const playing = entryPlans.get(currentEntryId);
+  const proven = !!(plan?.dop && mode === 'append' && playing?.dop && playing.rate === plan.rate
+    && playing.channels === plan.src.channels && playing.device === currentDevice);
+  // DoP: no filters at all, and silent until the device is known to take the exact rate
+  const options = (plan?.dop ? [extra, plan.src.options, 'af=', proven ? '' : 'mute=yes'] : [extra, dsdOptions(filePath)]).filter(Boolean).join(',');
+  const target = plan?.dop ? plan.src.url : filePath;
+  const args = options ? ['loadfile', target, mode, -1, options] : ['loadfile', target, mode];
+  let res;
+  try {
+    res = await command(args);
+  } catch (err) {
+    if (!plan?.dop) throw err;
+    console.warn(`[Player] DoP could not be opened (${err.message}): playing as PCM`);
+    return loadFile(filePath, mode, extra, { dop: false, reason: 'format' });
+  }
+  let id = res && res.playlist_entry_id;
+  if (!id) {
+    const count = await getProp('playlist-count');
+    id = await getProp(`playlist/${mode === 'append' ? count - 1 : 0}/id`);
+  }
+  if (plan) {
+    entryPlans.set(id, { path: filePath, dop: plan.dop, rate: plan.rate, channels: plan.src?.channels, device: currentDevice, reason: plan.reason || null, nativeWhy: plan.nativeWhy || null, verified: false, joined: proven });
+    if (entryPlans.size > 20) entryPlans.delete(entryPlans.keys().next().value);
+  }
+  return id;
+}
+
+/** Tell the window how the DSD file now playing reaches the DAC */
+function tellDsd() {
+  const p = entryPlans.get(currentEntryId);
+  if (p) {
+    const how = p.native ? `native through ASIO (${p.driver}) at ${p.rate} Hz` : p.dop ? `DoP at ${p.rate} Hz${p.joined ? ', joined without a gap' : ''}` : `PCM (${REASONS[p.reason] || p.reason})`;
+    console.log(`[Player] DSD: ${how}${p.nativeWhy ? `; native DSD not used: ${p.nativeWhy}` : ''}`);
+  }
+  send('player:dsd', p ? { path: p.path, mode: p.native ? 'native' : p.dop ? 'dop' : 'pcm', rate: p.rate || null, driver: p.driver || null, reason: p.reason ? REASONS[p.reason] : null, nativeWhy: p.nativeWhy || null } : { path: currentPath, mode: null });
+  if (p?.dop) watchDop(currentEntryId);
+}
+
+/** Unmute DoP once mpv opened the device at exactly the DoP rate, as whole numbers; otherwise go to PCM */
+function judgeDop(params) {
+  const p = entryPlans.get(currentEntryId);
+  if (!p?.dop || !params?.samplerate) return;
+  const fine = params.samplerate === p.rate && /^s(24|32)/.test(String(params.format));
+  if (fine && p.verified) return;
+  if (fine) {
+    p.verified = true;
+    console.log(`[Player] DoP accepted: ${params.format} ${params.samplerate} Hz`);
+    if (!muted) setProp('mute', false).catch(() => {});
+  } else {
+    refused.add(`${currentDevice}|${p.rate}`);
+    console.warn(`[Player] DoP refused: asked ${p.rate} Hz, the device opened ${params.format} ${params.samplerate} Hz. Playing as PCM.`);
+    fallbackToPcm('refused');
+  }
+}
+/** The same format between two DoP tracks sends no new event: ask, and give up safely after a while */
+function watchDop(entry) {
+  const started = Date.now();
+  const tick = async () => {
+    const p = entryPlans.get(entry);
+    if (entry !== currentEntryId || !p || p.verified) return;
+    const r = await getProp('audio-out-params').catch(() => null);
+    const params = r?.data ?? r;
+    if (params?.samplerate) { judgeDop(params); return; }
+    if (Date.now() - started > 5000) { console.warn('[Player] DoP: the device did not open, playing as PCM'); fallbackToPcm('refused'); return; }
+    setTimeout(tick, 150);
+  };
+  setTimeout(tick, 150);
+}
+
+let falling = false;
+/** Leave DoP for this track and carry on as PCM from the same moment */
+async function fallbackToPcm(reason) {
+  const p = entryPlans.get(currentEntryId);
+  if (!p?.dop || falling) return;
+  falling = true;
+  try {
+    const r = await getProp('time-pos').catch(() => null);
+    const pos = Math.max(0, Number(r?.data ?? r) || 0);
+    const paused = !!((await getProp('pause').catch(() => null))?.data);
+    const queued = nextPath;
+    p.dop = false; // so its leftovers are judged no more
+    const saved = currentAudioSettings.dsdMode;
+    currentAudioSettings.dsdMode = reason === 'refused' ? saved : 'pcm-once';
+    currentEntryId = await loadFile(p.path, 'replace', `start=${pos.toFixed(3)}${paused ? ',pause=yes' : ''}`);
+    currentAudioSettings.dsdMode = saved;
+    const plan = entryPlans.get(currentEntryId);
+    if (plan && reason !== 'refused') plan.reason = reason;
+    nextEntryId = null;
+    nextPath = null;
+    if (queued) { nextEntryId = await loadFile(queued, 'append'); nextPath = queued; }
+    tellDsd();
+    if (reason === 'refused') send('player:dsd-notice', `Your DAC didn't take DoP at ${(p.rate / 1000).toFixed(1)} kHz, so this plays as PCM.`);
+    if (chainWaiting) { chainWaiting = false; appliedChain = null; scheduleChain(); }
+  } finally { falling = false; }
 }
 
 function handleMessage(msg) {
@@ -126,6 +379,12 @@ function handleMessage(msg) {
       } else if (msg.name === 'pause') {
         send('player:state', { paused: !!msg.data });
       } else if (msg.name === 'audio-out-params' && msg.data) {
+        // what really goes to the device: the first thing to look at when a DAC stays silent
+        const out = `${msg.data.format} ${msg.data.samplerate} Hz ${msg.data['channel-count']} ch`;
+        const plan = entryPlans.get(currentEntryId);
+        if (out !== lastOutLogged) console.log(`[Player] Output: ${out}${plan ? (plan.dop ? ' (DoP)' : ' (DSD converted to PCM)') : ''}`);
+        lastOutLogged = out;
+        judgeDop(msg.data);
         send('player:audio-out', {
           format: msg.data.format, samplerate: msg.data.samplerate, channels: msg.data['channel-count'],
         });
@@ -144,6 +403,8 @@ function handleMessage(msg) {
         nextPath = null;
         command(['playlist-remove', 0]).catch(() => {});
         send('player:advanced', { path: advancedTo });
+        tellDsd();
+        if (chainWaiting && !entryPlans.get(currentEntryId)?.dop) { chainWaiting = false; appliedChain = null; scheduleChain(); }
       }
       break;
 
@@ -158,6 +419,12 @@ function handleMessage(msg) {
       break;
 
     case 'end-file':
+      // a DoP file that failed before its device was checked: it goes on as PCM, never as an error
+      if (msg.reason === 'error' && msg.playlist_entry_id === currentEntryId && entryPlans.get(currentEntryId)?.dop && !entryPlans.get(currentEntryId).verified) {
+        console.warn('[Player] DoP failed to start: playing as PCM');
+        fallbackToPcm('refused');
+        break;
+      }
       if (nextEntryId && msg.playlist_entry_id === nextEntryId && msg.reason === 'error') {
         // The preloaded track can't be opened; let the current one finish and report it then
         nextEntryId = null;
@@ -237,6 +504,8 @@ function startMpv() {
   ];
   // automated tests: play to a silent output instead of the real device
   if (process.env.TELECLOUD_MPV_AO) args.push(`--ao=${process.env.TELECLOUD_MPV_AO}`);
+  // tests only: a forced output rate stands in for a DAC that won't take a DoP rate
+  if (process.env.TELECLOUD_MPV_TEST_RATE) args.push(`--audio-samplerate=${Number(process.env.TELECLOUD_MPV_TEST_RATE)}`);
 
   proc = spawn(mpvPath, args, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
   let stderrTail = '';
@@ -254,7 +523,7 @@ function startMpv() {
     cancelCrossfade();
     pending.forEach(p => p.reject(new Error('mpv exited')));
     pending.clear();
-    send('player:state', { paused: true, stopped: true });
+    if (!releasingMpv && !native) send('player:state', { paused: true, stopped: true });
   });
 
   readyPromise = connect().then(async () => {
@@ -347,6 +616,12 @@ function liveCommands(from, to) {
 /** Push the current chain to mpv: live commands when only values changed, else a rebuild. */
 async function applyChain() {
   if (!sock) return;
+  if (entryPlans.get(currentEntryId)?.dop) {
+    // the EQ can't work on DoP: turning it on moves this track to PCM; anything else waits for the next track
+    if (normalizeEq(eqState)) { chainWaiting = true; await fallbackToPcm('eq'); return; }
+    chainWaiting = true;
+    return;
+  }
   const spec = chainSpec();
   const live = appliedChain && (appliedChain.live || appliedChain.eq);
   if (appliedChain && appliedChain.key === spec.key && spec.eq && live && currentEntryId) {
@@ -478,6 +753,47 @@ async function live() {
   return !!sock;
 }
 
+// Windows registers Bluetooth audio under BTHENUM (classic), BTHHFENUM (hands-free) or BTHLE (LE Audio):
+// their output's GUID is the key of a Render entry whose values name one of those.
+const RENDER_KEY = 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Render';
+function parseBluetoothOutputs(text) {
+  const ids = new Set();
+  let key = null;
+  for (const line of String(text).split(/\r?\n/)) {
+    const k = /\\Render\\(\{[0-9a-f-]+\})/i.exec(line);
+    if (/^HKEY_/i.test(line)) { key = k ? k[1].toLowerCase() : null; continue; }
+    if (key && /BTH(ENUM|HFENUM|LE)/i.test(line)) ids.add(key);
+  }
+  return ids;
+}
+let bluetoothOutputs = new Set();
+const refreshBluetooth = () => new Promise((resolve) => {
+  execFile('reg', ['query', RENDER_KEY, '/s', '/f', 'BTH', '/d'], { windowsHide: true, timeout: 8000 }, (err, stdout) => {
+    if (!err || stdout) bluetoothOutputs = parseBluetoothOutputs(stdout);
+    resolve(bluetoothOutputs);
+  });
+});
+const guidOf = (id) => (/\{[0-9a-f-]{36}\}\s*$/i.exec(String(id || '')) || [''])[0].toLowerCase();
+
+/** The output in use: its name, and whether it is Bluetooth. "System default" asks Windows which that is. */
+async function outputInfo() {
+  if (!bluetoothOutputs.size) await refreshBluetooth();
+  let id = currentDevice;
+  if (!id || id === '-1') id = await asio.defaultOutput().catch(() => '');
+  const guid = guidOf(id);
+  const dev = mpvDevices.find(d => guidOf(d.id) === guid);
+  return { name: dev ? dev.name.replace(/ \(WASAPI\)$/, '') : '', bluetooth: !!guid && bluetoothOutputs.has(guid), viaDefault: !currentDevice || currentDevice === '-1' };
+}
+let lastOutput = null;
+async function tellOutput() {
+  const info = await outputInfo().catch(() => null);
+  if (!info) return;
+  if (JSON.stringify(info) !== JSON.stringify(lastOutput)) console.log(`[Player] Output device: ${info.name || 'unknown'}${info.viaDefault ? ' (Windows default)' : ''}${info.bluetooth ? ', Bluetooth' : ''}`);
+  lastOutput = info;
+  send('player:output', info);
+}
+ipcMain.handle('player:output', () => outputInfo());
+
 ipcMain.handle('get-audio-devices', () => new Promise((resolve) => {
   execFile(mpvPath, ['--no-config', '--audio-device=help'], { windowsHide: true, timeout: 10000 }, (err, stdout) => {
     if (err && !stdout) { console.error('[Player] device list failed', err.message); resolve(mpvDevices); return; }
@@ -486,29 +802,66 @@ ipcMain.handle('get-audio-devices', () => new Promise((resolve) => {
       const m = line.match(/^\s*'([^']+)'\s+\((.+)\)/);
       if (m && m[1].startsWith('wasapi/')) mpvDevices.push({ id: m[1], name: `${m[2]} (WASAPI)` });
     }
-    resolve(mpvDevices);
+    refreshBluetooth().then(() => {
+      mpvDevices.forEach((d) => { d.bluetooth = bluetoothOutputs.has(guidOf(d.id)); });
+      resolve(mpvDevices);
+    });
   });
 }));
 
 ipcMain.handle('play-audio', async (event, { filePath, deviceId, startPaused } = {}) => {
   console.log(`[Player] Play ${filePath}`);
   checkPlayable(filePath);
-  await startMpv();
-  if (deviceId !== undefined && String(deviceId) !== currentDevice) await setDeviceInternal(String(deviceId));
-  cancelCrossfade();
+  if (deviceId !== undefined && String(deviceId) !== currentDevice) await setDeviceInternal(String(deviceId)).catch(() => {});
+  const plan = DSD_FILE.test(filePath) ? await dsdPlan(filePath, { mayRelease: true }) : null;
   nextEntryId = null;
   nextPath = null;
   lastTimeSent = -1;
   duration = 0;
+  if (plan?.native) {
+    cancelCrossfade();
+    const r = await startNative(filePath, plan, 0, !!startPaused);
+    if (r.ok) { tellDsd(); return { success: true }; }
+    // the driver didn't play it: through mpv, and say why
+    await asio.stop().catch(() => {});
+    const fallback = await dsdPlan(filePath, { skipNative: true, nativeWhy: r.failed });
+    await startMpv();
+    currentEntryId = await loadFile(filePath, 'replace', '', fallback);
+    currentPath = filePath;
+    await setProp('pause', !!startPaused);
+    tellDsd();
+    send('player:dsd-notice', `Native DSD didn't start (${r.failed}). Playing through ${fallback.dop ? 'DoP' : 'PCM'}.`);
+    return { success: true };
+  }
+  if (native) { native = null; await asio.stop().catch(() => {}); } // give the DAC back to mpv
+  await startMpv();
+  if (deviceId !== undefined && String(deviceId) !== currentDevice) await setDeviceInternal(String(deviceId));
+  cancelCrossfade();
   // loadfile with "replace" starts this track and drops anything queued
-  currentEntryId = await loadFile(filePath, 'replace');
+  currentEntryId = await loadFile(filePath, 'replace', '', plan);
   currentPath = filePath;
   await setProp('pause', !!startPaused);
+  tellDsd();
+  tellOutput();
+  if (chainWaiting && !entryPlans.get(currentEntryId)?.dop) { chainWaiting = false; appliedChain = null; scheduleChain(); }
   return { success: true };
 });
 
 // Queue the following track inside mpv so it starts with no gap
 ipcMain.handle('player:set-next', async (event, filePath) => {
+  if (native) {
+    // native DSD: another DSD file at the same rate joins without a gap; anything else starts after it ends
+    nextPath = filePath || null;
+    native.queued = null;
+    if (!filePath || !DSD_FILE.test(filePath)) return { success: true };
+    const plan = await dsdPlan(filePath);
+    if (plan?.native && plan.info.rate === native.rate && plan.info.channels === native.channels) {
+      const id = ++nativeIds;
+      const r = await asio.queue(nativeInfo(plan.info, id, filePath)).catch(() => ({ refused: true }));
+      if (!r.refused) native.queued = { id, path: filePath };
+    }
+    return { success: true };
+  }
   if (!(await live())) return { success: false, error: 'Player not running' };
   try {
     if (nextEntryId) {
@@ -519,8 +872,10 @@ ipcMain.handle('player:set-next', async (event, filePath) => {
     }
     if (!filePath) return { success: true };
     checkPlayable(filePath);
-    nextEntryId = await loadFile(filePath, 'append');
+    const plan = DSD_FILE.test(filePath) ? await dsdPlan(filePath) : null;
     nextPath = filePath;
+    if (plan?.native) return { success: true }; // ASIO takes over when this one ends
+    nextEntryId = await loadFile(filePath, 'append', '', plan);
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -528,12 +883,19 @@ ipcMain.handle('player:set-next', async (event, filePath) => {
 });
 
 ipcMain.handle('pause-audio', async (event, paused) => {
+  if (native) {
+    native.paused = !!paused;
+    await (paused ? asio.pause() : asio.resume());
+    send('player:state', { paused: !!paused });
+    return;
+  }
   if (!(await live())) return;
   if (paused) cancelCrossfade();
   await setProp('pause', !!paused);
 });
 
 ipcMain.handle('seek-audio', async (event, timePos) => {
+  if (native) { native.pos = num(timePos, 0, 86400); native.queued = null; await asio.seek(native.pos); return; }
   if (!(await live())) return;
   cancelCrossfade();
   await command(['seek', num(timePos, 0, 86400), 'absolute', 'exact']).catch(() => {});
@@ -548,12 +910,14 @@ ipcMain.handle('set-volume', async (event, vol) => {
 ipcMain.handle('set-mute', async (event, on) => {
   muted = !!on;
   if (muted) cancelCrossfade();
+  if (native) { await (muted ? asio.pause() : native.paused ? null : asio.resume()); return muted; } // DSD silence while muted
   if (await live()) await setProp('mute', muted).catch(() => {});
   return muted;
 });
 
 ipcMain.handle('stop-audio', async () => {
   cancelCrossfade();
+  if (native) { native = null; await asio.stop().catch(() => {}); }
   currentEntryId = null;
   currentPath = null;
   nextEntryId = null;
@@ -566,6 +930,8 @@ async function setDeviceInternal(deviceId) {
   if (deviceId !== '-1' && !mpvDevices.some(d => d.id === deviceId)) throw new Error('Unknown audio device');
   currentDevice = deviceId;
   if (sock) await applyDevice(deviceId);
+  if (deviceId === '-1' && entryPlans.get(currentEntryId)?.dop) await fallbackToPcm('shared');
+  tellOutput();
 }
 
 ipcMain.handle('set-audio-device', async (event, deviceId) => {
@@ -579,6 +945,7 @@ ipcMain.handle('set-audio-device', async (event, deviceId) => {
 
 ipcMain.handle('set-eq', async (event, eq) => {
   eqState = eq && typeof eq === 'object' ? { enabled: !!eq.enabled, preamp: eq.preamp, bands: Array.isArray(eq.bands) ? eq.bands : [] } : null;
+  if (native) { if (normalizeEq(eqState)) await nativeToMpv('the EQ is on'); return; }
   if (!sock) await startMpv().catch(() => {});
   if (!sock) return;
   await scheduleChain();
@@ -591,6 +958,9 @@ async function applyAudioSettings(settings) {
     crossfade: num(settings?.crossfade, 0, 15),
     maxBitDepth: [16, 24, 32].includes(settings?.maxBitDepth) ? settings.maxBitDepth : null,
     maxSampleRate: settings?.maxSampleRate ? num(settings.maxSampleRate, 8, 768) : null,
+    dsdMode: ['dop', 'native'].includes(settings?.dsdMode) ? settings.dsdMode : 'pcm',
+    asioDriver: typeof settings?.asioDriver === 'string' ? settings.asioDriver.slice(0, 200) : '',
+    dopMax: [64, 128, 256, 512].includes(settings?.dopMax) ? settings.dopMax : 512,
   };
   logGain();
   if (!currentAudioSettings.crossfade) cancelCrossfade();
@@ -605,11 +975,13 @@ ipcMain.handle('player:replaygain-auto', async (event, mode) => {
   return autoGainMode;
 });
 // exact playback position (the 'time-pos' event is throttled to ~4/s) — used to sync lyrics by hand
-ipcMain.handle('player:position', async () => { try { const t = await getProp('time-pos'); return typeof t?.data === 'number' ? t.data : (typeof t === 'number' ? t : null); } catch { return null; } });
+ipcMain.handle('player:position', async () => {
+  if (native) return native.pos; try { const t = await getProp('time-pos'); return typeof t?.data === 'number' ? t.data : (typeof t === 'number' ? t : null); } catch { return null; } });
 
 app.on('before-quit', () => {
+  asio.quit();
   cancelCrossfade();
   try { proc?.kill(); } catch { /* ignore */ }
 });
 
-module.exports = { applyAudioSettings, buildEqFilter, capFilter, chainSpec, mpvPath, getProp, setStreamPrefix };
+module.exports = { applyAudioSettings, buildEqFilter, capFilter, chainSpec, mpvPath, getProp, setStreamPrefix, parseBluetoothOutputs };

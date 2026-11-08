@@ -30,6 +30,17 @@ if (fs.existsSync(target)) {
 
 const out = path.join(ROOT, build.directories.output);
 fs.rmSync(out, { recursive: true, force: true });
+// native DSD: tc-asio.exe is built from source (it is not in git) and packed next to mpv.exe
+const asioExe = path.join(ROOT, 'native', 'asio', 'bin', 'tc-asio.exe');
+try {
+  execSync('cmd /c native\\asio\\build.cmd', { cwd: ROOT, stdio: 'inherit' });
+} catch {
+  if (!fs.existsSync(asioExe)) {
+    console.error('tc-asio.exe could not be built: install the Visual Studio C++ build tools (x64).');
+    process.exit(1);
+  }
+  console.warn('tc-asio.exe could not be rebuilt; packing the one already built.');
+}
 execSync('npx vite build', { cwd: ROOT, stdio: 'inherit' });
 execSync('npx electron-builder --win --publish never', { cwd: ROOT, stdio: 'inherit' });
 

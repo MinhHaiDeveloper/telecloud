@@ -67,6 +67,10 @@ ipcMain.handle('get-temp-path', async (event, filename) => {
   return path.join(getTempDir(), safeFileName(filename, `telecloud_${Date.now()}.flac`));
 });
 
+// Settings > Playback > DSD: the ASIO drivers, and what one can do (opening it takes it for a moment)
+ipcMain.handle('asio:list', async () => { try { return { success: true, names: await require('./asio').list(), available: require('./asio').available() }; } catch (err) { return { success: false, error: err.message, names: [] }; } });
+ipcMain.handle('asio:probe', async (event, driver) => { try { return { success: true, ...(await require('./asio').probe(String(driver), { fresh: true })) }; } catch (err) { return { success: false, error: err.message }; } });
+
 ipcMain.handle('apply-audio-settings', async (event, settings) => {
   try {
     await applyAudioSettings(settings);
@@ -180,6 +184,9 @@ app.whenReady().then(async () => {
       crossfade: s.crossfadeEnabled ? s.crossfadeDuration : 0,
       maxBitDepth: s.maxSamplingEnabled ? s.maxBitDepth : null,
       maxSampleRate: s.maxSamplingEnabled ? s.maxSampleRate : null,
+      dsdMode: s.dsdMode,
+      dopMax: s.dopMax,
+      asioDriver: s.asioDriver,
     });
   } catch (err) {
     console.error('Could not apply saved audio settings:', err.message);

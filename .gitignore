@@ -39,3 +39,5 @@ release/
 
 # Last.fm API key for builds (never commit)
 electron/lastfm-key.json
+native/asio/bin/
+native/asio/obj/

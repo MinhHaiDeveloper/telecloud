@@ -46,6 +46,14 @@ async function zip(entries) {
 // ---------- hiding music names (the default)
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// Latin letters and digits make words: a name starting or ending with one needs a break there.
+// Names in scripts without spaces (Japanese, Chinese) can't be told apart that way, so they match anywhere.
+const WORD = /[a-z0-9\u00c0-\u024f]/i;
+const standsAlone = (line, i, name) => (
+  !(WORD.test(name[0]) && i > 0 && WORD.test(line[i - 1]))
+  && !(WORD.test(name[name.length - 1]) && WORD.test(line[i + name.length] || ''))
+);
+
 /** Finds known names in a line without a slow pattern: looks each position up by its first letters */
 function nameFinder(names) {
   const buckets = new Map();
@@ -64,7 +72,7 @@ function nameFinder(names) {
     let i = 0;
     while (i < line.length) {
       const list = buckets.get(low.slice(i, i + 3));
-      const hit = list && list.find(n => low.startsWith(n, i));
+      const hit = list && list.find(n => low.startsWith(n, i) && standsAlone(low, i, n));
       if (hit) { out += '<name>'; i += hit.length; } else { out += line[i]; i++; }
     }
     return out;
@@ -111,7 +119,7 @@ async function logBetween(text, from, to, clean) {
 }
 
 // Only these settings go in the report; anything added later stays out until listed here
-const SAFE_SETTINGS = ['skipDuplicates', 'artistFilter', 'replayGainEnabled', 'replayGainMode', 'crossfadeEnabled', 'crossfadeDuration', 'maxSamplingEnabled', 'maxBitDepth', 'maxSampleRate', 'highPerformanceGpu', 'lastSeenVersion'];
+const SAFE_SETTINGS = ['skipDuplicates', 'artistFilter', 'replayGainEnabled', 'replayGainMode', 'crossfadeEnabled', 'crossfadeDuration', 'maxSamplingEnabled', 'maxBitDepth', 'maxSampleRate', 'dsdMode', 'dopMax', 'asioDriver', 'highPerformanceGpu', 'lastSeenVersion'];
 
 async function systemReport({ days, includeNames }) {
   const lines = [];

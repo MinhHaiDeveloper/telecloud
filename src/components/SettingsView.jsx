@@ -63,6 +63,21 @@ const SettingsView = ({
   // Audio settings
   const [replayGainEnabled, setReplayGainEnabled] = useState(false);
   const [replayGainMode, setReplayGainMode] = useState('track');
+  const [dsdMode, setDsdMode] = useState('pcm');
+  const [dopMax, setDopMax] = useState(512);
+  const [asioDriver, setAsioDriver] = useState('');
+  const [asioDrivers, setAsioDrivers] = useState(null);
+  const [asioCheck, setAsioCheck] = useState(null);
+  useEffect(() => {
+    if (dsdMode === 'native' && !asioDrivers) window.ipcRenderer.invoke('asio:list').then(r => setAsioDrivers(r?.names || [])).catch(() => setAsioDrivers([]));
+  }, [dsdMode, asioDrivers]);
+  const checkAsio = async () => {
+    setAsioCheck({ busy: true });
+    const r = await window.ipcRenderer.invoke('asio:probe', asioDriver).catch(err => ({ success: false, error: err.message }));
+    if (!r?.success || !r.ok) setAsioCheck({ text: `Could not open it: ${r?.msg || r?.error || 'no answer'}. If something is playing through this DAC, stop it and check again.`, bad: true });
+    else if (!r.dsd) setAsioCheck({ text: "It opened, but it doesn't take DSD. TeleCloud will use DoP or PCM.", bad: true });
+    else setAsioCheck({ text: `Native DSD: ${r.rates.map(x => `DSD${x / 44100}`).join(', ')}. Higher rates go through DoP or PCM.` });
+  };
   const [crossfadeEnabled, setCrossfadeEnabled] = useState(false);
   const [crossfadeDuration, setCrossfadeDuration] = useState(3);
   const [maxSamplingEnabled, setMaxSamplingEnabled] = useState(false);
@@ -102,6 +117,9 @@ const SettingsView = ({
       if (settings && settings.maxSamplingEnabled !== undefined) setMaxSamplingEnabled(settings.maxSamplingEnabled);
       if (settings && settings.maxBitDepth) setMaxBitDepth(settings.maxBitDepth);
       if (settings && settings.maxSampleRate) setMaxSampleRate(settings.maxSampleRate);
+      if (settings && settings.dsdMode) setDsdMode(settings.dsdMode);
+      if (settings && settings.dopMax) setDopMax(settings.dopMax);
+      if (settings && settings.asioDriver) setAsioDriver(settings.asioDriver);
       if (settings && settings.keyboardShortcuts) setKeyboardShortcuts(settings.keyboardShortcuts);
       setSettingsLoaded(true);
 
@@ -132,6 +150,9 @@ const SettingsView = ({
       newSettings.maxSamplingEnabled = maxSamplingEnabled;
       newSettings.maxBitDepth = maxBitDepth;
       newSettings.maxSampleRate = maxSampleRate;
+      newSettings.dsdMode = dsdMode;
+      newSettings.dopMax = dopMax;
+      newSettings.asioDriver = asioDriver;
       newSettings.keyboardShortcuts = keyboardShortcuts;
       await ipcRenderer.invoke('save-store', 'settings', newSettings);
       onShortcutsChange?.(keyboardShortcuts);
@@ -140,13 +161,16 @@ const SettingsView = ({
         replayGain: replayGainEnabled ? replayGainMode : 'no',
         crossfade: crossfadeEnabled ? crossfadeDuration : 0,
         maxBitDepth: maxSamplingEnabled ? maxBitDepth : null,
-        maxSampleRate: maxSamplingEnabled ? maxSampleRate : null
+        maxSampleRate: maxSamplingEnabled ? maxSampleRate : null,
+        dsdMode,
+        dopMax,
+        asioDriver,
       };
       await ipcRenderer.invoke('apply-audio-settings', audio);
       onAudioSettingsChange?.(audio);
     };
     saveAudioSettings();
-  }, [settingsLoaded, replayGainEnabled, replayGainMode, crossfadeEnabled, crossfadeDuration, maxSamplingEnabled, maxBitDepth, maxSampleRate, keyboardShortcuts]);
+  }, [settingsLoaded, replayGainEnabled, replayGainMode, crossfadeEnabled, crossfadeDuration, maxSamplingEnabled, maxBitDepth, maxSampleRate, dsdMode, dopMax, asioDriver, keyboardShortcuts]);
 
   const toggleDevice = async (deviceId) => {
     const ipcRenderer = window.ipcRenderer;
@@ -353,6 +377,27 @@ const SettingsView = ({
                     <Callout tone="info">Works in shared mode. In WASAPI exclusive mode the device takes one stream only, so tracks play gapless instead.</Callout>
                   </div>
                 )}
+
+                <SettingRow icon="spectrum" title="DSD playback" desc="Native sends DSD as it is through the DAC's ASIO driver. DoP sends it untouched packed in PCM, in WASAPI Exclusive. Both need the EQ off. Whatever can't be done falls back, native to DoP to PCM, and the signal path says why. Convert to PCM works with every DAC.">
+                  <Segmented size="sm" value={dsdMode} onChange={setDsdMode} options={[{ value: 'native', label: 'Native (ASIO)' }, { value: 'dop', label: 'DoP' }, { value: 'pcm', label: 'Convert to PCM' }]} />
+                </SettingRow>
+                <div className="set-sub">
+                  {dsdMode === 'native' && (
+                    <div className="asio-pick">
+                      <div className="field" style={{ minWidth: 260 }}><span className="field-label">ASIO driver of your DAC</span>
+                        <Select value={asioDriver} onChange={(v) => { setAsioDriver(v); setAsioCheck(null); }} options={[{ value: '', label: asioDrivers === null ? 'Looking…' : asioDrivers.length ? 'Choose a driver' : 'No ASIO drivers found' }, ...(asioDrivers || []).map(n => ({ value: n, label: n }))]} />
+                      </div>
+                      <button className="btn-ghost sm" onClick={checkAsio} disabled={!asioDriver || asioCheck?.busy}>{asioCheck?.busy ? 'Checking…' : 'Check'}</button>
+                      {asioCheck?.text && <small className={asioCheck.bad ? 'cov-problem' : 'dsd-note'}>{asioCheck.text}</small>}
+                    </div>
+                  )}
+                  {dsdMode !== 'pcm' && (
+                    <div className="field" style={{ maxWidth: 260 }}><span className="field-label">{dsdMode === 'native' ? 'Highest DSD rate sent as DoP, when native can\'t' : 'Highest DSD rate sent as DoP'}</span>
+                      <Select value={dopMax} onChange={setDopMax} options={[{ value: 512, label: 'DSD512 (1411.2 kHz)' }, { value: 256, label: 'DSD256 (705.6 kHz)' }, { value: 128, label: 'DSD128 (352.8 kHz)' }, { value: 64, label: 'DSD64 (176.4 kHz)' }]} />
+                    </div>
+                  )}
+                  {dsdMode === 'native' && <small className="dsd-note">PCM keeps playing through the output you chose. Only DSD files go to the ASIO driver, and the DAC is handed over between them.</small>}
+                </div>
 
                 <SettingRow icon="spectrum" title="Limit output format" desc="For DACs that can't take hi-res. Only files above the limit are converted; everything else plays untouched.">
                   <Toggle checked={maxSamplingEnabled} onChange={setMaxSamplingEnabled} />

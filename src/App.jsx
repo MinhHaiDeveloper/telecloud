@@ -76,6 +76,9 @@ function App() {
     return Number.isFinite(v) && readPref('tc-volume') !== null ? Math.max(0, Math.min(100, v)) : 100;
   });
   const [audioOut, setAudioOut] = useState(null);
+  const [dsdInfo, setDsdInfo] = useState(null); // how the DSD file playing reaches the DAC
+  const [outputInfo, setOutputInfo] = useState(null); // the device in use: name, Bluetooth
+  const showToastRef = useRef(null);
   const [libraryReady, setLibraryReady] = useState(false);
   const [advanceTick, setAdvanceTick] = useState(0); // bumps on every gapless advance
 
@@ -481,6 +484,7 @@ function App() {
       toastTimeoutRef.current = null;
     }, 3000);
   };
+  showToastRef.current = showToast;
 
   useEffect(() => {
     // Skip Telegram auth check - app now works without mandatory Telegram login
@@ -544,6 +548,12 @@ function App() {
     const onState = (event, st) => playerEventsRef.current.state?.(st);
     const onError = (event, err) => playerEventsRef.current.error?.(err);
     const onAudioOut = (event, out) => setAudioOut(out);
+    const onDsd = (event, info) => setDsdInfo(info?.mode ? info : null);
+    const onOutput = (event, info) => setOutputInfo(info || null);
+    ipcRenderer.on('player:output', onOutput);
+    const onDsdNotice = (event, text) => showToastRef.current?.(text, 'info');
+    ipcRenderer.on('player:dsd', onDsd);
+    ipcRenderer.on('player:dsd-notice', onDsdNotice);
     ipcRenderer.on('time-pos', onTime);
     ipcRenderer.on('track-ended', onEnded);
     ipcRenderer.on('player:advanced', onAdvanced);
@@ -1153,7 +1163,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
   const cloudFiles = musicFiles.filter(f => storageOf(f).includes('cloud'));
   const queueFiles = live(playQueue.slice(currentIndex + 1));
   const visibleDevices = devices.filter(d => !disabledDevices.includes(d.deviceId || d.id));
-  const signal = computeSignalPath({ stream: stream && currentLive && stream.path === currentLive.path ? stream : null, file: currentLive, selectedDevice, devices: visibleDevices, eqEnabled, volume, audioSettings: { ...audioSettings, autoGain }, audioOut: isPlaying ? audioOut : null });
+  const signal = computeSignalPath({ stream: stream && currentLive && stream.path === currentLive.path ? stream : null, file: currentLive, selectedDevice, devices: visibleDevices, eqEnabled, volume, audioSettings: { ...audioSettings, autoGain }, audioOut: isPlaying ? audioOut : null, dsd: dsdInfo && currentLive && dsdInfo.path === currentLive.path ? dsdInfo : null, output: outputInfo });
   const isScanning = scanProgress?.status === 'inProgress';
   const wideView = currentView === 'settings' || currentView === 'eq-settings';
 

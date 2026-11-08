@@ -872,3 +872,13 @@ h4.whats-new-older { margin-top: 18px; }
 /* One ring around the whole grid of covers, not four */
 .mosaic .cover::after { display: none; }
 .tile.round .mosaic .cover { border-radius: 0; }
+
+/* Artist picture: writing to many tracks */
+.artist-progress { display: flex; flex-direction: column; gap: 6px; }
+.artist-progress .btn-ghost { align-self: flex-start; }
+
+/* Playback: DSD */
+.dsd-note { font-size: 12.5px; color: var(--text-3); }
+.set-sub > .field { align-self: flex-start; }
+.asio-pick { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.asio-pick small { flex-basis: 100%; }

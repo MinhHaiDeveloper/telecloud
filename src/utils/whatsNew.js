@@ -2,6 +2,17 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.0.0-beta.15',
+    items: [
+      'DSD playback in Settings > Playback: Native through your DAC\'s ASIO driver, DoP in WASAPI Exclusive, or Convert to PCM. What can\'t be done falls back, native to DoP to PCM, and the signal path says why.',
+      'Native DSD and DoP send the DSD bits untouched, and the signal path shows Bit-perfect. Checked on a Topping DX1 II: native DSD64 to DSD256, DoP DSD64 and DSD128.',
+      'Convert to PCM now sends 352.8 kHz whole-number PCM. Some DACs stayed silent with DSD before.',
+      'The signal path says why the sound is resampled, names the device System default uses, and shows when it goes out over Bluetooth.',
+      'Saving an artist picture to thousands of tracks shows its progress and can be stopped. TheAudioDB is a new picture source.',
+      'Logs no longer hide parts of ordinary words when they hold a music name.',
+    ],
+  },
+  {
     version: '1.0.0-beta.14',
     items: [
       'Artist pictures: find one on Last.fm or Deezer, or upload your own, from the Artist picture button on an artist page. It is saved in the tags of their tracks, where other players can read it too.',

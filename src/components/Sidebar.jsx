@@ -134,7 +134,7 @@ const Sidebar = ({
           </div>
           <div className="device-meta">
             <span className={`badge ${signal?.bitPerfect ? 'b-lossless' : 'b-cached'}`}>{signal?.verdict || 'Idle'}</span>
-            {signal?.outSpec && <span className="badge b-hires mono">{signal.outSpec} kHz</span>}
+            {signal?.outSpec && <span className="badge b-hires mono">{signal.outSpec}{/\/[\d.]+$/.test(signal.outSpec) ? ' kHz' : ''}</span>}
           </div>
         </button>
       </div>

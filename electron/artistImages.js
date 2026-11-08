@@ -22,8 +22,9 @@ const SOURCES = {
   local: { label: 'This computer', online: false, note: 'Artist pictures in the tags of their tracks, and artist.jpg next to them.' },
   lastfm: { label: 'Last.fm', online: true, note: 'The pictures on the artist\'s public page.' },
   deezer: { label: 'Deezer', online: true },
+  theaudiodb: { label: 'TheAudioDB', online: true, note: 'Pictures from its community, with the public free key (30 searches a minute).' },
 };
-const DEFAULTS = { search: true, autoSave: false, order: ['local', 'lastfm', 'deezer'], disabled: [] };
+const DEFAULTS = { search: true, autoSave: false, order: ['local', 'lastfm', 'deezer', 'theaudiodb'], disabled: [] };
 
 const settingsFile = () => path.join(app.getPath('userData'), 'artist-picture-settings.json');
 function options() {
@@ -215,6 +216,16 @@ const providers = {
       score: i === 0 ? sc : sc - 0.05, // the page's own main picture first
     }));
   },
+  // The free public key, as its documentation gives it. Its square "thumb" is the artist picture;
+  // banners, logos and wide fan art don't fit an artist picture.
+  async theaudiodb(q) {
+    const r = await get(`https://www.theaudiodb.com/api/v1/json/123/search.php?s=${encodeURIComponent(q.artist)}`);
+    return (r?.artists || []).filter(a => /^https:\/\//i.test(a.strArtistThumb || '')).map(a => ({
+      source: 'theaudiodb', artist: a.strArtist, size: '700 × 700',
+      thumb: `${a.strArtistThumb}/medium`, image: { url: a.strArtistThumb, fallback: `${a.strArtistThumb}/medium` },
+      score: score(q.artist, a.strArtist),
+    }));
+  },
   async deezer(q) {
     const r = await get(`https://api.deezer.com/search/artist?q=${encodeURIComponent(q.artist)}&limit=8`);
     return (r?.data || []).filter(x => (x.picture_xl || x.picture_big) && !/\/artist\/\//.test(x.picture_xl || x.picture_big)).map(x => ({
@@ -312,21 +323,31 @@ function announce(name, paths, files) {
   });
 }
 
+let stopRequested = false;
+const progress = (p) => BrowserWindow.getAllWindows().forEach(w => w.webContents.send('artists:progress', p));
+
 async function writeToTracks(name, jpeg, { onlyMissing, allowReadOnly }) {
   const { upsertSingleFile } = require('./music');
   const local = ownTracks(name).filter(t => canHold(t.path));
   const errors = [];
   const files = [];
   let tags = 0;
-  for (const t of local) {
+  let stopped = false;
+  let shownAt = 0;
+  stopRequested = false;
+  progress({ name, done: 0, total: local.length });
+  for (const [i, t] of local.entries()) {
+    if (stopRequested) { stopped = true; break; }
+    if (Date.now() - shownAt > 200) { shownAt = Date.now(); progress({ name, done: i, total: local.length }); }
     try {
       const wrote = withWritable(t.path, allowReadOnly, () => writeTag(t.path, jpeg, { onlyMissing }));
       if (wrote) { tags++; files.push(await upsertSingleFile(t.path)); }
     } catch (err) { errors.push({ path: t.path, ...describeWriteError(err, t.path) }); }
     await new Promise(r => setImmediate(r)); // playback and the window keep going on a big artist
   }
+  progress({ name, done: local.length, total: local.length, finished: true });
   announce(name, local.map(t => t.path), files.filter(Boolean));
-  return { tags, errors };
+  return { tags, errors, stopped, total: local.length };
 }
 
 async function save({ name, image, onlyMissing = false, allowReadOnly = false }) {
@@ -338,7 +359,7 @@ async function save({ name, image, onlyMissing = false, allowReadOnly = false })
   loadIndex()[norm(name)] = { source: 'user' };
   saveIndex();
   const r = await writeToTracks(name, jpeg, { onlyMissing, allowReadOnly });
-  console.log(`[Artist] Picture saved: ${r.tags} tags written, ${r.errors.length} files refused`);
+  console.log(`[Artist] Picture saved: ${r.tags} tags written, ${r.errors.length} files refused${r.stopped ? `, stopped by the user after ${r.tags} of ${r.total}` : ''}`);
   return r;
 }
 
@@ -385,6 +406,7 @@ ipcMain.handle('artists:save', wrap(save));
 ipcMain.handle('artists:remove', wrap(remove));
 ipcMain.handle('artists:has', async (e, { name }) => !!(await pictureFor(name).catch(() => null)));
 ipcMain.handle('artists:targets', (e, { name }) => targets(name));
+ipcMain.handle('artists:stop', () => { stopRequested = true; });
 ipcMain.handle('artists:pick', wrap(async (o, e) => ({ picked: await pick(e) })));
 
 module.exports = { pictureFor, search, save, options, SOURCES };

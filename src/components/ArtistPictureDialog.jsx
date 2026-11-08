@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Icon from './Icon';
 import Cover from './Cover';
 import ArtistPicture from './ArtistPicture';
-import { Dialog, confirmDialog } from './ui';
+import { Dialog, Progress, confirmDialog } from './ui';
 
 const plural = (n, one) => `${n.toLocaleString()} ${n === 1 ? one : `${one}s`}`;
 
@@ -19,6 +19,12 @@ const ArtistPictureDialog = ({ name, file, hasPicture, onClose, onSaved }) => {
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState('');
   const [readOnly, setReadOnly] = useState(0);
+  const [work, setWork] = useState(null); // { done, total } while tags are written
+  useEffect(() => {
+    const on = (e, p) => { if (p.name === name) setWork(p.finished ? null : p); };
+    window.ipcRenderer.on('artists:progress', on);
+    return () => window.ipcRenderer.removeListener?.('artists:progress', on);
+  }, [name]);
 
   const run = async (artist) => {
     setBusy(true);
@@ -42,6 +48,11 @@ const ArtistPictureDialog = ({ name, file, hasPicture, onClose, onSaved }) => {
   };
   const report = (r, did) => {
     if (!r?.success) { setProblem(r?.error || 'Could not do that'); return; }
+    if (r.stopped) {
+      onSaved?.(r);
+      setProblem(`Stopped. ${plural(r.tags, 'track')} of ${r.total.toLocaleString()} already have it; save again to finish.`);
+      return;
+    }
     if (!r.errors?.length) { onSaved?.(r); onClose(); return; }
     const n = r.errors.length;
     const blocked = r.errors.filter(e => e.readOnly).length;
@@ -97,6 +108,13 @@ const ArtistPictureDialog = ({ name, file, hasPicture, onClose, onSaved }) => {
           <small className="cov-cap">{pick ? `${pick.label}${pick.size ? ` · ${pick.size}` : ''}` : hasPicture ? 'Current picture' : 'No picture yet: this is an album cover'}</small>
           <button className="btn-ghost" onClick={upload}><Icon name="plus" />Upload picture…</button>
           <small className="cov-cap">{note}</small>
+          {work && work.total > 0 && (
+            <div className="artist-progress">
+              <Progress value={(work.done / work.total) * 100} />
+              <small className="cov-cap">Writing to {work.done.toLocaleString()} of {plural(work.total, 'track')}…</small>
+              <button className="btn-ghost sm" onClick={() => window.ipcRenderer.invoke('artists:stop')}>Stop</button>
+            </div>
+          )}
           {problem && <small className="cov-problem">{problem}</small>}
           {readOnly > 0 && pick && <button className="btn-ghost sm" onClick={() => save(true)} disabled={saving} title="Writes the picture into them, then makes them read-only again">Write to them anyway</button>}
         </div>

@@ -128,10 +128,13 @@ export const matchesSource = (file, source) => {
  * Bit-perfect needs: lossless source, exclusive device, no DSP, no resampling cap below the
  * source, and software volume at 100%.
  */
-export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnabled, volume, audioSettings = {}, audioOut = null, stream = null }) => {
+export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnabled, volume, audioSettings = {}, audioOut = null, stream = null, dsd = null, output = null }) => {
   const q = qualityOf(file);
   const exclusive = selectedDevice && selectedDevice !== '-1';
-  const deviceName = exclusive ? (devices.find(d => d.id === selectedDevice)?.name || 'Output device') : 'System default';
+  const chosen = exclusive ? devices.find(d => d.id === selectedDevice) : null;
+  // "System default" names the device Windows really uses, when it could be found
+  const deviceName = exclusive ? (chosen?.name || 'Output device') : output?.name ? `System default: ${output.name}` : 'System default';
+  const bluetooth = exclusive ? !!chosen?.bluetooth : !!output?.bluetooth;
   const rg = audioSettings.replayGain && audioSettings.replayGain !== 'no';
   const crossfade = audioSettings.crossfade > 0;
   const capRate = audioSettings.maxSampleRate ? audioSettings.maxSampleRate * 1000 : 0;
@@ -145,7 +148,7 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
     const fmt = String(audioOut.format).replace(/p$/, '');
     outBits = { s16: 16, s24: 24, s32: 32, float: 32, double: 64, u8: 8 }[fmt] || q.bits;
     // 24-bit PCM travels in 32-bit words; untouched it is still 24-bit audio
-    if (fmt === 's32' && q.bits && q.bits <= 24 && !eqEnabled && !rg) outBits = q.bits;
+    if (fmt === 's32' && q.bits > 1 && q.bits <= 24 && !eqEnabled && !rg) outBits = q.bits;
     resampled = !q.ext.startsWith('DSD') && q.rate > 0 && (outRate !== q.rate || (!!capBits && q.bits > capBits && outBits < q.bits));
   } else {
     resampled = (capRate && q.rate > capRate) || (capBits && q.bits > capBits);
@@ -153,7 +156,16 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
     outBits = resampled && capBits ? Math.min(q.bits, capBits) : q.bits;
   }
   const floatOut = audioOut && /^(float|double)/.test(String(audioOut.format));
-  const outSpec = q.ext.startsWith('DSD') && !audioOut ? 'DoP / PCM'
+  // say why the rate or depth changed: Windows' mixer, the output limit, or a device that can't take it
+  const resampleWhy = () => {
+    if (!exclusive) return `Resampling · Windows mixes everything in shared mode at the device's ${outBits && outRate ? `${outBits}-bit ${khz(outRate)} kHz` : 'own format'}`;
+    if ((capRate && q.rate > capRate) || (capBits && q.bits > capBits)) return 'Resampling · your output limit';
+    return 'Resampling · the device doesn\'t take this format';
+  };
+  const isDsd = q.label.startsWith('DSD');
+  const dop = isDsd && dsd?.mode === 'dop';
+  const nativeDsd = isDsd && dsd?.mode === 'native';
+  const outSpec = nativeDsd ? q.label : isDsd && !audioOut ? 'PCM'
     : (outBits && outRate ? `${floatOut ? 'f32' : outBits}/${khz(outRate)}` : '');
 
   const steps = [
@@ -163,20 +175,28 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
     { label: 'Parametric EQ', value: eqEnabled ? 'On' : 'Off', state: eqEnabled ? 'warn' : 'off', key: 'eq' },
     { label: 'ReplayGain', value: !rg ? 'Off' : audioSettings.replayGain === 'auto' ? `Auto · ${audioSettings.autoGain || 'track'}` : audioSettings.replayGain, state: rg ? 'warn' : 'off' },
     ...(crossfade ? [{ label: 'Crossfade', value: `${audioSettings.crossfade}s`, state: 'warn' }] : []),
-    ...(resampled ? [{ label: 'Resampling', value: outSpec, state: 'warn' }] : []),
-    { label: 'Software volume', value: exclusive ? 'Bypassed' : `${volume}%`, state: volFull ? 'ok' : 'warn' },
-    { label: `${deviceName}${exclusive ? ' · WASAPI Exclusive' : ' · Shared'}`, value: outSpec, state: exclusive ? 'ok' : 'warn' },
+    ...(nativeDsd ? [{ label: 'Native DSD through ASIO', value: `${(dsd.rate / 1e6).toFixed(4)} MHz`, state: 'ok' }]
+      : dop ? [{ label: dsd?.nativeWhy ? `DSD over PCM (DoP) · native not used: ${dsd.nativeWhy}` : 'DSD over PCM (DoP)', value: `${q.label} in ${khz(dsd.rate)}`, state: 'ok' }]
+      : isDsd ? [{ label: [dsd?.nativeWhy && `native not used: ${dsd.nativeWhy}`, dsd?.reason].filter(Boolean).length ? `DSD to PCM · ${[dsd?.nativeWhy && `native not used: ${dsd.nativeWhy}`, dsd?.reason].filter(Boolean).join(' · ')}` : 'DSD to PCM', value: outSpec || 'PCM', state: 'warn' }]
+        : resampled ? [{ label: resampleWhy(), value: outSpec, state: 'warn' }] : []),
+    { label: 'Software volume', value: exclusive || nativeDsd ? 'Bypassed' : `${volume}%`, state: volFull || nativeDsd ? 'ok' : 'warn' },
+    // Bluetooth sends no PCM: the headphones' codec (SBC, AAC, aptX, LDAC) compresses it again
+    ...(bluetooth && !nativeDsd ? [{ label: 'Bluetooth · compressed again by the headphones\' codec', value: 'Lossy', state: 'warn' }] : []),
+    nativeDsd ? { label: `${dsd.driver} · ASIO`, value: q.label, state: 'ok' }
+      : { label: `${deviceName}${exclusive ? ' · WASAPI Exclusive' : ' · Shared'}`, value: outSpec, state: exclusive ? 'ok' : 'warn' },
   ];
 
-  const bitPerfect = !!file && q.lossless && exclusive && !eqEnabled && !rg && !crossfade && !resampled && volFull;
+  // DSD is turned into PCM before it leaves the app, so it is never the original bits
+  const bitPerfect = !!file && nativeDsd && !eqEnabled ? true : !!file && !bluetooth && (!isDsd || dop) && q.lossless && exclusive && !eqEnabled && !rg && !crossfade && !resampled && volFull;
   let verdict = 'Idle';
   if (file) {
     if (bitPerfect) verdict = 'Bit-perfect';
     else if (!q.lossless) verdict = 'Lossy source';
+    else if (bluetooth) verdict = 'Bluetooth';
     else if (!exclusive) verdict = 'Shared mode';
     else verdict = 'Processed';
   }
-  return { steps, bitPerfect, verdict, quality: q, deviceName, exclusive, outSpec };
+  return { steps, bitPerfect, verdict, quality: q, deviceName, exclusive, outSpec, bluetooth };
 };
 
 // ---- Duplicate tracks: the same album in two folders must not play or list every song twice
