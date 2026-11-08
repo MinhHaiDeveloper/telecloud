@@ -34,6 +34,50 @@ let lastTimeSent = -1;
 let lastTimeAt = 0;
 
 let lastOutLogged = '';
+const OUTPUT_NOT_READY = /audio output initiali[sz]ation failed|could not open\/initiali[sz]e audio device/i;
+let outputRetry = { path: null, tries: 0 };
+const RETRY_EVERY = 500;
+const RETRY_TRIES = 12; // about 6 s
+
+/** Load the track playing again from where it was, once the output may be back */
+function retryOutput() {
+  if (outputRetry.path !== currentPath) outputRetry = { path: currentPath, tries: 0 };
+  if (outputRetry.tries >= RETRY_TRIES) return false;
+  outputRetry.tries++;
+  if (outputRetry.tries === 1) console.warn('[Player] The output did not open yet (a DAC switching back from ASIO takes about a second): trying again');
+  const file = currentPath;
+  const at = Math.max(0, lastTimeSent);
+  const queued = nextPath;
+  setTimeout(async () => {
+    if (currentPath !== file || native) return;
+    try {
+      currentEntryId = await loadFile(file, 'replace', at > 0 ? `start=${at.toFixed(3)}` : '');
+      nextEntryId = null;
+      nextPath = null;
+      if (queued) { nextEntryId = await loadFile(queued, 'append'); nextPath = queued; }
+      tellDsd();
+    } catch (err) { send('playback-error', { error: err.message }); }
+  }, RETRY_EVERY);
+  return true;
+}
+
+/** Wait until a WASAPI output is listed again (it vanishes while a DAC leaves ASIO) */
+function waitForOutput(id, ms = 4000) {
+  if (!id || id === '-1') return Promise.resolve(true);
+  const guid = (/\{[0-9a-f-]{36}\}/i.exec(id) || [''])[0].toLowerCase();
+  const started = Date.now();
+  return new Promise((resolve) => {
+    const look = () => execFile(mpvPath, ['--no-config', '--audio-device=help'], { windowsHide: true, timeout: 3000 }, (err, out) => {
+      if (String(out || '').toLowerCase().includes(guid)) {
+        const took = Date.now() - started;
+        if (took > 200) console.log(`[Player] The output came back after ${took} ms`);
+        resolve(true);
+      } else if (Date.now() - started > ms) resolve(false);
+      else setTimeout(look, 200);
+    });
+    look();
+  });
+}
 let currentPath = null;        // file of the entry that is playing
 let duration = 0;
 let muted = false;
@@ -130,6 +174,7 @@ async function nativeToMpv(why) {
   native = null;
   await asio.stop().catch(() => {});
   console.warn(`[Player] Native DSD stopped: ${why}. Carrying on through mpv.`);
+  await waitForOutput(currentDevice);
   await startMpv();
   const plan = await dsdPlan(file, { skipNative: true, nativeWhy: why });
   currentEntryId = await loadFile(file, 'replace', `start=${pos.toFixed(3)}${paused ? ',pause=yes' : ''}`, plan);
@@ -384,6 +429,7 @@ function handleMessage(msg) {
         const plan = entryPlans.get(currentEntryId);
         if (out !== lastOutLogged) console.log(`[Player] Output: ${out}${plan ? (plan.dop ? ' (DoP)' : ' (DSD converted to PCM)') : ''}`);
         lastOutLogged = out;
+        outputRetry = { path: currentPath, tries: 0 };
         judgeDop(msg.data);
         send('player:audio-out', {
           format: msg.data.format, samplerate: msg.data.samplerate, channels: msg.data['channel-count'],
@@ -419,8 +465,15 @@ function handleMessage(msg) {
       break;
 
     case 'end-file':
+      // The output didn't open. After ASIO lets go of a DAC, its WASAPI output is gone for about a
+      // second while the driver switches back to PCM: wait and try the same track again.
+      if (msg.reason === 'error' && msg.playlist_entry_id === currentEntryId && OUTPUT_NOT_READY.test(msg.file_error || '')) {
+        if (retryOutput()) break;
+      }
       // a DoP file that failed before its device was checked: it goes on as PCM, never as an error
       if (msg.reason === 'error' && msg.playlist_entry_id === currentEntryId && entryPlans.get(currentEntryId)?.dop && !entryPlans.get(currentEntryId).verified) {
+        const p = entryPlans.get(currentEntryId);
+        refused.add(`${currentDevice}|${p.rate}`); // remembered, so the same rate isn't tried again and again
         console.warn('[Player] DoP failed to start: playing as PCM');
         fallbackToPcm('refused');
         break;
@@ -824,6 +877,7 @@ ipcMain.handle('play-audio', async (event, { filePath, deviceId, startPaused } =
     if (r.ok) { tellDsd(); return { success: true }; }
     // the driver didn't play it: through mpv, and say why
     await asio.stop().catch(() => {});
+    await waitForOutput(currentDevice);
     const fallback = await dsdPlan(filePath, { skipNative: true, nativeWhy: r.failed });
     await startMpv();
     currentEntryId = await loadFile(filePath, 'replace', '', fallback);
@@ -833,7 +887,7 @@ ipcMain.handle('play-audio', async (event, { filePath, deviceId, startPaused } =
     send('player:dsd-notice', `Native DSD didn't start (${r.failed}). Playing through ${fallback.dop ? 'DoP' : 'PCM'}.`);
     return { success: true };
   }
-  if (native) { native = null; await asio.stop().catch(() => {}); } // give the DAC back to mpv
+  if (native) { native = null; await asio.stop().catch(() => {}); await waitForOutput(currentDevice); } // give the DAC back to mpv
   await startMpv();
   if (deviceId !== undefined && String(deviceId) !== currentDevice) await setDeviceInternal(String(deviceId));
   cancelCrossfade();
@@ -984,4 +1038,6 @@ app.on('before-quit', () => {
   try { proc?.kill(); } catch { /* ignore */ }
 });
 
-module.exports = { applyAudioSettings, buildEqFilter, capFilter, chainSpec, mpvPath, getProp, setStreamPrefix, parseBluetoothOutputs };
+module.exports = { applyAudioSettings, buildEqFilter, capFilter, chainSpec, mpvPath, getProp, setStreamPrefix, parseBluetoothOutputs,
+  // tests only: feed a message as if mpv sent it, and see what is playing
+  _mpvMessage: (msg) => handleMessage(msg), _playing: () => ({ entry: currentEntryId, path: currentPath, refused: [...refused] }) };

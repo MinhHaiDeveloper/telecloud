@@ -2,6 +2,14 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.0.0-beta.16',
+    items: [
+      'Going from native DSD to a PCM track no longer stops with "audio output initialization failed". The DAC needs about a second to switch back from DSD, and TeleCloud now waits for it.',
+      'If an output isn\'t ready, the track is tried again for a few seconds before an error shows.',
+      'A DSD file whose rate the DAC can\'t take as DoP goes straight to PCM, instead of trying DoP again and again.',
+    ],
+  },
+  {
     version: '1.0.0-beta.15',
     items: [
       'DSD playback in Settings > Playback: Native through your DAC\'s ASIO driver, DoP in WASAPI Exclusive, or Convert to PCM. What can\'t be done falls back, native to DoP to PCM, and the signal path says why.',
