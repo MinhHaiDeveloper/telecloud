@@ -35,6 +35,11 @@ export const artistImageUrl = (name) => {
   const rev = artistRevisions.get(name);
   return `media://${encodeURIComponent(`artist:${name}`)}${rev ? `?r=${rev}` : ''}`;
 };
+/** The moving version, for an artist's own page. Answers 404 when they have none. */
+export const artistMotionUrl = (name) => {
+  const rev = artistRevisions.get(name);
+  return `media://${encodeURIComponent(`artist-motion:${name}`)}${rev ? `?r=${rev}` : ''}`;
+};
 export const bumpArtist = (name) => {
   artistRevisions.set(name, Date.now());
   window.dispatchEvent(new CustomEvent('telecloud:artists', { detail: name }));

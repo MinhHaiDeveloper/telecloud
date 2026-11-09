@@ -410,7 +410,9 @@ function handleMessage(msg) {
 
   switch (msg.event) {
     case 'property-change':
-      if (msg.name === 'time-pos' && typeof msg.data === 'number') {
+      if (msg.name === 'audio-device-list') {
+        devicesMayHaveChanged();
+      } else if (msg.name === 'time-pos' && typeof msg.data === 'number') {
         maybeCrossfade(msg.data);
         // ~4 updates per second is plenty for the seek bar and synced lyrics
         const now = Date.now();
@@ -585,6 +587,7 @@ function startMpv() {
     await command(['observe_property', 2, 'pause']);
     await command(['observe_property', 3, 'audio-out-params']);
     await command(['observe_property', 4, 'duration']);
+    await command(['observe_property', 5, 'audio-device-list']);
     appliedChain = null;
     await applyDevice(currentDevice);
     await applyAudioSettingsToMpv();
@@ -847,20 +850,46 @@ async function tellOutput() {
 }
 ipcMain.handle('player:output', () => outputInfo());
 
-ipcMain.handle('get-audio-devices', () => new Promise((resolve) => {
+// Native DSD holds the DAC: Windows hides its output while the driver has it and for a moment after.
+const DAC_HOLD_MS = 8000;
+let deviceTimer = null;
+let lastDevices = '';
+const listDevices = () => new Promise((resolve) => {
   execFile(mpvPath, ['--no-config', '--audio-device=help'], { windowsHide: true, timeout: 10000 }, (err, stdout) => {
     if (err && !stdout) { console.error('[Player] device list failed', err.message); resolve(mpvDevices); return; }
-    mpvDevices = [];
+    const now = [];
     for (const line of String(stdout).split('\n')) {
       const m = line.match(/^\s*'([^']+)'\s+\((.+)\)/);
-      if (m && m[1].startsWith('wasapi/')) mpvDevices.push({ id: m[1], name: `${m[2]} (WASAPI)` });
+      if (m && m[1].startsWith('wasapi/')) now.push({ id: m[1], name: `${m[2]} (WASAPI)` });
     }
+    // the DAC in the driver's hands has not left
+    const at = mpvDevices.findIndex(d => d.id === currentDevice);
+    const held = at >= 0 && !now.some(d => d.id === currentDevice) && (!!native || Date.now() - asio.stoppedAt() < DAC_HOLD_MS);
+    if (held) {
+      now.splice(Math.min(at, now.length), 0, mpvDevices[at]);
+      if (!native) { clearTimeout(deviceTimer); deviceTimer = setTimeout(publishDevices, DAC_HOLD_MS + 500); }
+    }
+    mpvDevices = now;
     refreshBluetooth().then(() => {
       mpvDevices.forEach((d) => { d.bluetooth = bluetoothOutputs.has(guidOf(d.id)); });
       resolve(mpvDevices);
     });
   });
-}));
+});
+async function publishDevices() {
+  const list = await listDevices();
+  const now = JSON.stringify(list);
+  if (now === lastDevices) return;
+  lastDevices = now;
+  console.log(`[Player] Outputs now: ${list.map(d => d.name.replace(/ \(WASAPI\)$/, '')).join(', ') || 'none'}`);
+  send('player:devices', list);
+}
+/** mpv saw an output come or go. Windows announces one change several times: look once it settles. */
+function devicesMayHaveChanged() {
+  clearTimeout(deviceTimer);
+  deviceTimer = setTimeout(publishDevices, 3000);
+}
+ipcMain.handle('get-audio-devices', () => listDevices());
 
 ipcMain.handle('play-audio', async (event, { filePath, deviceId, startPaused } = {}) => {
   console.log(`[Player] Play ${filePath}`);

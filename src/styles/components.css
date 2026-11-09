@@ -760,7 +760,10 @@ html.np-cover-only .app.np-mode .np-body { padding-bottom: 0; }
 .bio-link:hover { text-decoration: underline; }
 .bio-similar { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; color: var(--text-3); }
 .update-row { display: flex; align-items: center; gap: 10px; padding: 12px 20px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-2); }
-.update-row span { flex: 1; }
+.update-row span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.update-row button { flex: none; }
+.cov-tabs > button.on { box-shadow: inset 0 -2px 0 var(--accent); }
+.yt-key { width: 260px; }
 .update-row .ico.spin { animation: spin 1s linear infinite; }
 /* lyrics: syncing by hand */
 .lyr-sync { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); }

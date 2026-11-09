@@ -16,6 +16,7 @@ function describeWriteError(err, file) {
   if (code === 'EBUSY') return { error: 'Another program is using the file.', readOnly: false };
   if (code === 'ENOSPC') return { error: 'The disk is full.', readOnly: false };
   if (code === 'ENOENT') return { error: 'The file is no longer there.', readOnly: false };
+  if (/unsupported format/i.test(err?.message || '')) return { error: "This file type can't hold tags.", readOnly: false };
   return { error: err?.message || 'Unknown error', readOnly: false };
 }
 

@@ -192,7 +192,7 @@ app.whenReady().then(async () => {
     console.error('Could not apply saved audio settings:', err.message);
   }
 
-  const typeOf = (buf) => (buf[0] === 0x89 ? 'image/png' : buf[0] === 0x52 ? 'image/webp' : 'image/jpeg');
+  const typeOf = (buf) => (buf[0] === 0x89 ? 'image/png' : buf[0] === 0x52 ? 'image/webp' : buf[0] === 0x47 ? 'image/gif' : 'image/jpeg');
   const imageResponse = (buf) => new Response(buf, { headers: { 'Content-Type': typeOf(buf) } });
 
   /** The picture shown for a track, or null */
@@ -229,7 +229,8 @@ app.whenReady().then(async () => {
   protocol.handle('media', async (request) => {
     try {
       const target = decodeURIComponent(request.url.slice('media://'.length).split('?')[0]);
-      const art = target.startsWith('artist:') ? await artistImages.pictureFor(target.slice('artist:'.length)) : await artFor(target);
+      const art = target.startsWith('artist-motion:') ? await artistImages.motionFor(target.slice('artist-motion:'.length))
+        : target.startsWith('artist:') ? await artistImages.pictureFor(target.slice('artist:'.length)) : await artFor(target);
       return art ? imageResponse(art) : new Response(null, { status: 404 });
     } catch (err) {
       console.error('[media://] Cover extraction error:', err.message);

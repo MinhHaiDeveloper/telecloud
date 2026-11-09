@@ -44,7 +44,8 @@ function buildCaption({ name, size, sha256, info, enc, master }) {
 
 // Non-track files TeleCloud keeps in the chat:
 //   "tcm1:<enc>"         the library manifest (all tags, lyrics, cover references)
-//   "tcc1:<key>:<enc>"   an album cover, shared by every track that uses it
+//   "tcc1:<key>:<enc>"   an album cover, shared by every track that uses it,
+//                        or an artist's GIF when the key starts with "g"
 // where <enc> is "p" (plain) or "e.<key fingerprint>.<iv>" (encrypted with the user's key)
 const encPart = (iv, master) => (iv ? `e.${fingerprint(master)}.${iv}` : 'p');
 const buildManifestCaption = ({ iv, master }) => `tcm1:${encPart(iv, master)}`;
@@ -66,7 +67,7 @@ function parseCaption(text, master) {
   const s = String(text || '');
   const m = s.match(/^tcm1:(\S+)/);
   if (m) return { ours: true, kind: 'manifest', ...parseEnc(m[1], master) };
-  const c = s.match(/^tcc1:([0-9a-f]+):(\S+)/);
+  const c = s.match(/^tcc1:(g?[0-9a-f]+):(\S+)/);
   if (c) return { ours: true, kind: 'cover', key: c[1], ...parseEnc(c[2], master) };
   return { kind: 'track', ...parseTrackCaption(s, master) };
 }

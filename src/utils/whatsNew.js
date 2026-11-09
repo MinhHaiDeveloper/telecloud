@@ -2,6 +2,17 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.0.0-beta.17',
+    items: [
+      'Animated GIF artist pictures. They move on the artist\'s own page and come back with Restore on another computer. Tags get the first frame, so your files stay small.',
+      'Artist picture has a YouTube tab, asked only when you open it. Apple Music and MusicBrainz are new sources, and Find on VGMdb opens its search in your browser.',
+      'DSF files can now hold artist pictures, covers, lyrics and tags.',
+      'An output that goes away, like Bluetooth turned off, leaves the list. Playback moves to System default and goes back when that output returns.',
+      'Albums can be sorted by Latest and Oldest.',
+      'A failed update check now shows one short sentence.',
+    ],
+  },
+  {
     version: '1.0.0-beta.16',
     items: [
       'Going from native DSD to a PCM track no longer stops with "audio output initialization failed". The DAC needs about a second to switch back from DSD, and TeleCloud now waits for it.',

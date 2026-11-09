@@ -71,6 +71,7 @@ async function probe(driver, { fresh = false } = {}) {
   if (!fresh && probes.has(driver)) return probes.get(driver);
   await send({ cmd: 'probe', driver });
   const r = await expect('probe', m => m.driver === driver, 15000);
+  stopped = Date.now(); // the DAC was in the driver's hands for that
   if (r.ok) probes.set(driver, r);
   return r;
 }
@@ -85,10 +86,13 @@ const queue = async (info) => { await send({ cmd: 'queue', ...info }); return ex
 const pause = () => send({ cmd: 'pause' });
 const resume = () => send({ cmd: 'resume' });
 const seek = (sec) => send({ cmd: 'seek', sec });
+let stopped = 0;
+const stoppedAt = () => stopped;
 async function stop() {
   if (!proc) return;
   await send({ cmd: 'stop' });
   await expect('stopped', null, 5000).catch(() => {});
+  stopped = Date.now();
 }
 function quit() { if (proc) { try { proc.stdin.write('{"cmd":"quit"}\n'); } catch { /* gone */ } } }
 
@@ -99,4 +103,4 @@ async function defaultOutput() {
   return (await expect('default', null, 3000)).id || '';
 }
 
-module.exports = { events, list, probe, play, queue, pause, resume, seek, stop, quit, available, defaultOutput, TEST_DRIVER };
+module.exports = { events, list, probe, play, queue, pause, resume, seek, stop, stoppedAt, quit, available, defaultOutput, TEST_DRIVER };

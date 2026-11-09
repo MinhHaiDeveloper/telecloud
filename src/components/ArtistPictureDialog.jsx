@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
 import Cover from './Cover';
 import ArtistPicture from './ArtistPicture';
@@ -20,6 +20,10 @@ const ArtistPictureDialog = ({ name, file, hasPicture, onClose, onSaved }) => {
   const [problem, setProblem] = useState('');
   const [readOnly, setReadOnly] = useState(0);
   const [work, setWork] = useState(null); // { done, total } while tags are written
+  const [tab, setTab] = useState('sources');
+  const [asked, setAsked] = useState(name); // the name searched last, on either tab
+  const [yt, setYt] = useState(null); // { query, busy, results, error, needsKey }, asked for only on its tab
+  const sourcesAsked = useRef(name);
   useEffect(() => {
     const on = (e, p) => { if (p.name === name) setWork(p.finished ? null : p); };
     window.ipcRenderer.on('artists:progress', on);
@@ -29,10 +33,30 @@ const ArtistPictureDialog = ({ name, file, hasPicture, onClose, onSaved }) => {
   const run = async (artist) => {
     setBusy(true);
     setBroken(new Set());
+    sourcesAsked.current = artist;
     const r = await window.ipcRenderer.invoke('artists:search', { query: { artist }, all: true }).catch(() => null);
     setResults(r?.results || []);
     setErrors(r?.errors || {});
     setBusy(false);
+  };
+  const runYoutube = async (artist) => {
+    setYt({ query: artist, busy: true, results: [] });
+    setBroken(new Set());
+    const r = await window.ipcRenderer.invoke('artists:youtube', { artist }).catch(() => ({ error: 'Could not ask YouTube.' }));
+    setYt({ query: artist, busy: false, results: r.results || [], error: r.error, needsKey: r.needsKey });
+  };
+  const openTab = (next) => {
+    setTab(next);
+    if (next === 'youtube' && !yt?.busy && (!yt || yt.error || yt.needsKey || yt.query !== asked)) runYoutube(asked);
+    if (next === 'sources' && !busy && sourcesAsked.current !== asked) run(asked);
+  };
+  const openVgmdb = () => window.ipcRenderer.invoke('open-external', `https://vgmdb.net/search?q=${encodeURIComponent(query.trim() || name)}`);
+  const submit = (e) => {
+    e.preventDefault();
+    const q = query.trim();
+    if (!q) return;
+    setAsked(q);
+    if (tab === 'youtube') runYoutube(q); else run(q);
   };
   useEffect(() => {
     window.ipcRenderer.invoke('artists:options').then(setOpts);
@@ -77,8 +101,12 @@ const ArtistPictureDialog = ({ name, file, hasPicture, onClose, onSaved }) => {
     report(r, 'The picture was removed here, but');
   };
 
-  const labelOf = (id) => opts?.sources?.[id]?.label || id;
-  const shown = results.filter(r => !broken.has(r.thumb));
+  const labelOf = (id) => (id === 'youtube' ? 'YouTube' : opts?.sources?.[id]?.label || id);
+  const onYoutube = tab === 'youtube';
+  const working = onYoutube ? !!yt?.busy : busy;
+  const shown = (onYoutube ? yt?.results || [] : results).filter(r => !broken.has(r.thumb));
+  const nothing = onYoutube && yt?.needsKey ? 'YouTube needs an API key. Add one in Settings, General, Artist pictures.'
+    : onYoutube && yt?.error ? yt.error : 'Nothing found. Try another spelling, or upload a picture.';
   const errorIds = Object.keys(errors);
   let note = '';
   if (info) {
@@ -119,14 +147,21 @@ const ArtistPictureDialog = ({ name, file, hasPicture, onClose, onSaved }) => {
           {readOnly > 0 && pick && <button className="btn-ghost sm" onClick={() => save(true)} disabled={saving} title="Writes the picture into them, then makes them read-only again">Write to them anyway</button>}
         </div>
         <div className="cov-main">
-          <form className="lyr-query" onSubmit={(e) => { e.preventDefault(); run(query); }}>
+          <div className="tabs cov-tabs">
+            <button type="button" className={onYoutube ? '' : 'on'} onClick={() => openTab('sources')}>Sources</button>
+            <button type="button" className={onYoutube ? 'on' : ''} onClick={() => openTab('youtube')}>YouTube</button>
+            <div className="tabs-end">
+              <button type="button" className="btn-ghost sm" onClick={openVgmdb} title="VGMdb has no API, so this opens its search in your browser. Save a picture from there, then use Upload picture."><Icon name="search" />Find on VGMdb</button>
+            </div>
+          </div>
+          <form className="lyr-query" onSubmit={submit}>
             <input className="input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Artist" aria-label="Artist" />
-            <button className="btn-ghost" type="submit" disabled={busy}><Icon name="search" />Search</button>
+            <button className="btn-ghost" type="submit" disabled={working}><Icon name="search" />Search</button>
           </form>
           <div className="cov-results">
-            {busy && <div className="lyr-empty"><span className="ring" />Searching…</div>}
-            {!busy && !shown.length && <div className="lyr-empty">Nothing found. Try another spelling, or upload a picture.</div>}
-            {!busy && shown.length > 0 && (
+            {working && <div className="lyr-empty"><span className="ring" />Searching…</div>}
+            {!working && !shown.length && <div className="lyr-empty">{nothing}</div>}
+            {!working && shown.length > 0 && (
               <div className="cov-grid">
                 {shown.map((r, i) => (
                   <button
@@ -144,7 +179,7 @@ const ArtistPictureDialog = ({ name, file, hasPicture, onClose, onSaved }) => {
               </div>
             )}
           </div>
-          {!busy && errorIds.length > 0 && <div className="lyr-errors">Not reached: {errorIds.map(id => `${labelOf(id)} (${errors[id]})`).join(', ')}</div>}
+          {!onYoutube && !busy && errorIds.length > 0 && <div className="lyr-errors">Not reached: {errorIds.map(id => `${labelOf(id)} (${errors[id]})`).join(', ')}</div>}
         </div>
       </div>
     </Dialog>

@@ -151,7 +151,7 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
           <span className="sub">Artists</span>
         </div>
         <div className="detail-head">
-          {selected.label ? <LabelPicture albums={selected.albums} className="round" /> : <ArtistPicture name={selected.name} file={selected.file} preview={found?.thumb} className="round" />}
+          {selected.label ? <LabelPicture albums={selected.albums} className="round" /> : <ArtistPicture name={selected.name} file={selected.file} preview={found?.thumb} animated className="round" />}
           <div className="info">
             <span className="eyebrow">{!selected.label ? 'Artist' : selected.name === VARIOUS_ARTISTS ? 'Albums by many artists' : 'Albums without an artist'}</span>
             <h2>{selected.name}</h2>

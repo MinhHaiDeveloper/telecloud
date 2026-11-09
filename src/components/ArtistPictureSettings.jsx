@@ -5,7 +5,8 @@ import { SourceOrder } from './LyricsSettings';
 /** Settings → General → Artist pictures: same controls as Lyrics and Album covers */
 const ArtistPictureSettings = () => {
   const [o, setO] = useState(null);
-  useEffect(() => { window.ipcRenderer.invoke('artists:options').then(setO); }, []);
+  const [key, setKey] = useState('');
+  useEffect(() => { window.ipcRenderer.invoke('artists:options').then((v) => { setO(v); setKey(v.youtubeKey || ''); }); }, []);
   if (!o) return null;
   const set = (patch) => {
     const next = { ...o, ...patch };
@@ -24,6 +25,9 @@ const ArtistPictureSettings = () => {
           <Toggle checked={o.autoSave} onChange={(v) => set({ autoSave: v })} disabled={!o.search} />
         </SettingRow>
         <SourceOrder o={o} set={set} />
+        <SettingRow icon="settings" title="YouTube API key" desc="Used only when you open the YouTube tab of an artist picture. A search uses 100 of the key's 10,000 free units a day, and its answer is kept for 30 days.">
+          <input className="input yt-key" type="password" value={key} placeholder="Paste your key" aria-label="YouTube API key" spellCheck={false} onChange={(e) => setKey(e.target.value)} onBlur={() => { const v = key.trim(); if (v !== (o.youtubeKey || '')) set({ youtubeKey: v }); }} />
+        </SettingRow>
       </div>
     </section>
   );

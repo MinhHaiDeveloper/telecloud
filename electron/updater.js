@@ -9,6 +9,22 @@ const send = (patch) => {
   BrowserWindow.getAllWindows().forEach(w => w.webContents.send('update:status', state));
 };
 
+/** One sentence for the About card. The raw error holds the whole response from GitHub, cookies included. */
+function shortError(err) {
+  const text = String(err?.message || err || '');
+  const status = err?.statusCode || Number(/^\s*(?:HttpError:\s*)?(\d{3})\b/.exec(text)?.[1]) || 0;
+  if (status === 404) return 'GitHub has no release to look at.';
+  if (status) return `GitHub is not answering right now (${status}). Try again later.`;
+  if (/net::ERR_|ENOTFOUND|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|socket hang up/i.test(text)) return 'TeleCloud could not reach GitHub. Check your connection.';
+  const first = text.split('\n')[0].trim();
+  return first.length > 120 ? `${first.slice(0, 120)}…` : first || 'Unknown error';
+}
+function fail(err) {
+  const error = shortError(err);
+  if (state.state !== 'error' || state.error !== error) console.warn(`[Updater] ${error}`);
+  send({ state: 'error', error });
+}
+
 let updater = null;
 function getUpdater() {
   if (updater || !app.isPackaged) return updater; // development builds don't update themselves
@@ -21,14 +37,14 @@ function getUpdater() {
   updater.on('update-not-available', () => send({ state: 'latest', checkedAt: Date.now() }));
   updater.on('download-progress', (p) => send({ state: 'downloading', percent: Math.round(p.percent) }));
   updater.on('update-downloaded', (i) => send({ state: 'ready', next: i.version }));
-  updater.on('error', (err) => send({ state: 'error', error: String(err?.message || err).split('\n')[0] }));
+  updater.on('error', fail);
   return updater;
 }
 
 async function check() {
   const u = getUpdater();
   if (!u) { send({ state: 'dev' }); return state; }
-  try { await u.checkForUpdates(); } catch (err) { send({ state: 'error', error: err.message }); }
+  try { await u.checkForUpdates(); } catch (err) { fail(err); }
   return state;
 }
 
@@ -39,4 +55,4 @@ ipcMain.handle('update:status', () => state);
 ipcMain.handle('update:check', () => check());
 ipcMain.handle('update:install', () => { if (state.state === 'ready' && updater) setImmediate(() => updater.quitAndInstall(false, true)); return true; });
 
-module.exports = { check };
+module.exports = { check, shortError };

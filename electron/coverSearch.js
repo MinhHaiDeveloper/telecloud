@@ -282,9 +282,10 @@ function toJpeg(buf) {
   return fit.toJPEG(90);
 }
 
+const { openTags } = require('./tagFile');
 function writeTag(file, jpeg, { onlyMissing = false, onlyIfEmbedded = false } = {}) {
-  const { File, Picture, PictureType, ByteVector } = require('node-taglib-sharp');
-  const f = File.createFromPath(file);
+  const { Picture, PictureType, ByteVector } = require('node-taglib-sharp');
+  const f = openTags(file);
   try {
     // an Artist picture is not a cover: it doesn't count as one, and it stays
     const all = f.tag.pictures || [];
@@ -367,11 +368,10 @@ async function save({ paths, image, to, onlyMissing = false, allowReadOnly = fal
 
 /** How many of these tracks hold a picture inside: saving a new cover has to replace it */
 async function embeddedCount(paths) {
-  const { File } = require('node-taglib-sharp');
   let n = 0;
   for (const p of (paths || []).filter(isLocal)) {
     try {
-      const f = File.createFromPath(p);
+      const f = openTags(p);
       try { if ((f.tag.pictures || []).some(p => !covers.isArtistTagPicture(p))) n++; } finally { f.dispose(); }
     } catch { /* unreadable: the save reports it */ }
   }

@@ -12,9 +12,14 @@ const SORTS = [
   { value: 'name-desc', label: 'Title Z → A' },
   { value: 'artist', label: 'Artist' },
   { value: 'tracks', label: 'Most tracks' },
+  { value: 'latest', label: 'Latest' },
+  { value: 'oldest', label: 'Oldest' },
 ];
 
 const noThe = (s) => s.toLowerCase().replace(/^the /, '');
+
+const yearOf = (album) => parseInt(album.year, 10) || 0;
+const byName = (a, b) => noThe(a.name).localeCompare(noThe(b.name));
 
 const bestQuality = (songs) => songs.map(qualityOf).sort((a, b) => (b.bits * 1e6 + b.rate) - (a.bits * 1e6 + a.rate))[0];
 
@@ -29,6 +34,9 @@ const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavori
       case 'name-desc': return list.sort((a, b) => noThe(b.name).localeCompare(noThe(a.name)));
       case 'artist': return list.sort((a, b) => noThe(a.artist).localeCompare(noThe(b.artist)));
       case 'tracks': return list.sort((a, b) => b.songs.length - a.songs.length);
+      // albums with no year go last either way
+      case 'latest': return list.sort((a, b) => (yearOf(b) - yearOf(a)) || byName(a, b));
+      case 'oldest': return list.sort((a, b) => ((yearOf(a) || 9999) - (yearOf(b) || 9999)) || byName(a, b));
       default: return list.sort((a, b) => noThe(a.name).localeCompare(noThe(b.name)));
     }
   }, [musicFiles, sortBy]);

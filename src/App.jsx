@@ -71,6 +71,8 @@ function App() {
 
   const [devices, setDevices] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState('-1');
+  const applyDevicesRef = useRef(null);
+  const lostDeviceRef = useRef(null); // the output that went away, to go back to when it returns
   const [volume, setVolume] = useState(() => {
     const v = Number(readPref('tc-volume'));
     return Number.isFinite(v) && readPref('tc-volume') !== null ? Math.max(0, Math.min(100, v)) : 100;
@@ -513,6 +515,13 @@ function App() {
 
   useEffect(() => {
     if (!isAuthenticated) return undefined;
+    const on = (e, list) => applyDevicesRef.current?.(list);
+    window.ipcRenderer.on('player:devices', on);
+    return () => window.ipcRenderer.removeListener?.('player:devices', on);
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
     const ipcRenderer = window.ipcRenderer;
     ipcRenderer.invoke('get-audio-devices').then(devs => {
       setDevices(devs || []);
@@ -952,6 +961,7 @@ function App() {
   };
 
   const handleDeviceChange = async (deviceId) => {
+    lostDeviceRef.current = null;
     const res = await window.ipcRenderer.invoke('set-audio-device', deviceId);
     if (res && res.success === false) {
       showToast(`Could not switch output: ${res.error}`, 'error');
@@ -962,6 +972,27 @@ function App() {
     if (deviceId === '-1') window.ipcRenderer.invoke('set-volume', volume);
   };
   handleDeviceChangeRef.current = handleDeviceChange;
+
+  // Outputs come and go: Bluetooth turned off, a DAC unplugged. Playback moves to System default and
+  // comes back when that output does.
+  applyDevicesRef.current = async (list) => {
+    if (!Array.isArray(list)) return;
+    const has = (id) => list.some(d => (d.deviceId || d.id) === id);
+    const label = (d) => (d?.name || 'That output').replace(/ \(WASAPI\)$/, '');
+    const was = devices;
+    setDevices(list);
+    if (selectedDevice !== '-1' && !has(selectedDevice)) {
+      const gone = selectedDevice;
+      await handleDeviceChange('-1');
+      lostDeviceRef.current = gone;
+      writePref('tc-device', gone); // still the one to use when it is there at the next start
+      showToast(`${label(was.find(d => (d.deviceId || d.id) === gone))} is gone. Playing through System default.`, 'info');
+    } else if (selectedDevice === '-1' && lostDeviceRef.current && has(lostDeviceRef.current)) {
+      const back = list.find(d => (d.deviceId || d.id) === lostDeviceRef.current);
+      await handleDeviceChange(lostDeviceRef.current);
+      showToast(`${label(back)} is back.`, 'info');
+    }
+  };
 
   const handleSeek = (timePos) => {
     const t = Math.max(0, Math.min(timePos, currentFile?.metadata?.duration || timePos));
@@ -1426,6 +1457,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
         signal={signal}
         stream={stream && currentLive && stream.path === currentLive.path ? stream : null}
         devices={visibleDevices}
+        onDevicesOpen={() => window.ipcRenderer.invoke('get-audio-devices').then(l => applyDevicesRef.current?.(l))}
         selectedDevice={selectedDevice}
         onDeviceChange={handleDeviceChange}
       />

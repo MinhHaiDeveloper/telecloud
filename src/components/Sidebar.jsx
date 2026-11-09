@@ -19,7 +19,7 @@ const NAV_MUSIC = [
 const Sidebar = ({
   currentView, onNavClick, isCollapsed, onToggleCollapse, counts = {},
   playlists = [], selectedPlaylistId, onOpenPlaylist, onCreatePlaylist,
-  signal, devices = [], selectedDevice, onDeviceChange,
+  signal, devices = [], selectedDevice, onDeviceChange, onDevicesOpen,
 }) => {
   const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
   const deviceRef = useRef(null);
@@ -31,6 +31,7 @@ const Sidebar = ({
       const r = card.getBoundingClientRect();
       setMenuPos({ left: r.left, bottom: window.innerHeight - r.top + 8, width: Math.max(r.width, 260) });
     }
+    if (!deviceMenuOpen) onDevicesOpen?.();
     setDeviceMenuOpen(o => !o);
   };
   const activeKey = currentView === 'playlists' && selectedPlaylistId ? `pl:${selectedPlaylistId}` : currentView;

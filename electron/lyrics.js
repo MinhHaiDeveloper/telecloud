@@ -202,8 +202,7 @@ async function search(track, { all = false, sources } = {}) {
 
 // ---------- saving
 function writeTag(file, text) {
-  const { File } = require('node-taglib-sharp');
-  const f = File.createFromPath(file);
+  const f = require('./tagFile').openTags(file);
   try { f.tag.lyrics = text || ''; f.save(); } finally { f.dispose(); }
 }
 async function save({ path: file, lyrics, to }) {

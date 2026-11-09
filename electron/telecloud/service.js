@@ -155,7 +155,7 @@ async function checkBackup() {
     let extra = 0;
     for (const [id, m] of real) if (m.kind === 'track' && !m.unreadable && !known.has(id)) extra++;
     const indexOnly = (manifest?.tracks || []).filter(t => !real.has(t.id) && !linked.has(t.id)).length;
-    const coverKeys = new Set(rows.map(r => r.cloud_cover).filter(Boolean));
+    const coverKeys = new Set([...rows.map(r => r.cloud_cover).filter(Boolean), ...require('../artistImages').gifsInStorage(s.peer_id).map(g => g.key)]);
     const missingCovers = [...coverKeys].filter((k) => { const c = store.covers.get(s.id, k); return !c || !real.has(c.message_id); });
     const coversMissing = missingCovers.length;
     const manifestOk = manifestState === 'ok';
@@ -177,6 +177,7 @@ async function checkBackup() {
 async function restoreCover(storageId, key) {
   const s = store.storages.get(storageId);
   store.covers.remove(s.id, key);
+  if (isArtistGif(key)) return require('../artistImages').hasGifKey(key); // the index goes back up with it
   const users = store.db().prepare('SELECT path FROM music_files WHERE telegram_channel_id = ? AND cloud_cover = ?').all(String(s.peer_id), key).map(r => r.path);
   const buffer = await covers.readIfExists(covers.cloudCoverFile(key));
   if (buffer && users.length) return !!await ensureCover(users[0], s, { key, buffer });
@@ -425,6 +426,7 @@ async function pauseQueue() {
 // (tracks uploaded elsewhere keep their info).
 
 const manifestDirty = new Set();
+const isArtistGif = (key) => String(key).startsWith('g');
 // During a long backup the index is also saved along the way, so a crash or lost connection
 // never leaves many uploaded tracks out of it
 const CHECKPOINT_TRACKS = Number(process.env.TELECLOUD_MANIFEST_EVERY) || 25;
@@ -459,6 +461,38 @@ async function downloadSmall({ storage, messageId, iv }) {
     fs.promises.rm(tmp, { force: true }).catch(() => {});
     worker.call('forget', { jobId }).catch(() => {});
   }
+}
+
+/**
+ * Which artists move in this chat, for the index. The newest choice wins, so a computer that has
+ * not restored yet doesn't undo another's. A GIF nothing needs any more leaves the chat.
+ */
+async function artistGifs(s, prev) {
+  const images = require('../artistImages');
+  const keep = new Map();
+  const wanted = (prev?.artists || []).filter((a) => { const st = images.gifState(a.name); return !st || st.at < a.at; });
+  wanted.forEach(a => keep.set(a.name.toLowerCase(), a));
+  for (const g of images.gifsInStorage(s.peer_id)) {
+    if (keep.has(g.name.toLowerCase())) continue;
+    try {
+      if (!store.covers.get(s.id, g.key)) {
+        const iv = newIv();
+        const id = await uploadSmall({
+          storage: s, buffer: await fs.promises.readFile(g.file), iv, mime: 'application/octet-stream', // never turned into a video by Telegram
+          fileName: `${g.key}.${iv ? 'tcc' : 'tcg'}`, caption: buildCoverCaption({ key: g.key, iv, master: masterKey() }),
+        });
+        store.covers.put(s.id, g.key, id, iv);
+      }
+      keep.set(g.name.toLowerCase(), { name: g.name, key: g.key, at: g.at });
+    } catch (err) { console.warn('[TeleCloud] artist GIF not uploaded:', err.message); }
+  }
+  const inUse = new Set([...keep.values()].map(a => a.key));
+  const unused = store.covers.all(s.id).filter(c => isArtistGif(c.cover_key) && !inUse.has(c.cover_key));
+  if (unused.length) {
+    await worker.call('deleteMessages', { peer: store.toPeer(s), ids: unused.map(c => c.message_id) }).catch(() => {});
+    unused.forEach(c => store.covers.remove(s.id, c.cover_key));
+  }
+  return [...keep.values()];
 }
 
 /** Upload the track's album cover once per storage; remember which cover the track uses */
@@ -516,7 +550,8 @@ async function writeManifest(storageId) {
       cover: row?.cloud_cover || old?.cover || null,
     };
   });
-  const data = { v: 1, at: Date.now(), tracks, covers: store.covers.all(s.id).map(c => ({ key: c.cover_key, id: c.message_id, iv: c.iv })) };
+  const artists = await artistGifs(s, prev);
+  const data = { v: 1, at: Date.now(), tracks, artists, covers: store.covers.all(s.id).map(c => ({ key: c.cover_key, id: c.message_id, iv: c.iv })) };
   const iv = newIv();
   const id = await uploadSmall({
     storage: s, buffer: zlib.gzipSync(Buffer.from(JSON.stringify(data))), iv, mime: 'application/gzip',
@@ -786,7 +821,7 @@ async function cleanTemp() {
 async function restore() {
   await ensureConnected();
   const database = require('../database');
-  let restored = 0, skipped = 0, updated = 0, needKey = 0, coversFetched = 0;
+  let restored = 0, skipped = 0, updated = 0, needKey = 0, coversFetched = 0, gifsFetched = 0;
   const added = [];
   const changed = [];
   for (const storage of store.storages.all()) {
@@ -829,9 +864,19 @@ async function restore() {
     for (const key of wantCovers.keys()) {
       try { if (await fetchCover(storage, key, manifest)) coversFetched++; } catch (err) { console.error('[TeleCloud] cover download failed:', err.message); }
     }
+    // artists' GIFs: their tracks' tags only hold a still picture
+    const images = require('../artistImages');
+    for (const a of manifest?.artists || []) {
+      try {
+        if (!images.wantsGif(a)) continue;
+        const known = store.covers.get(storage.id, a.key) || (manifest.covers || []).find(c => c.key === a.key);
+        const messageId = known?.message_id ?? known?.id;
+        if (messageId && await images.gifFromCloud(a, await downloadSmall({ storage, messageId, iv: known.iv }))) gifsFetched++;
+      } catch (err) { console.error('[TeleCloud] artist GIF download failed:', err.message); }
+    }
   }
   pushTracks([...added, ...changed]);
-  console.log(`[TeleCloud] Restore: ${restored} added, ${updated} updated, ${skipped} already here, ${coversFetched} covers${needKey ? `, ${needKey} need the recovery key` : ''}`);
+  console.log(`[TeleCloud] Restore: ${restored} added, ${updated} updated, ${skipped} already here, ${coversFetched} covers, ${gifsFetched} artist GIFs${needKey ? `, ${needKey} need the recovery key` : ''}`);
   return { restoredCount: restored, skippedCount: skipped, updatedCount: updated, needKey, covers: coversFetched };
 }
 
@@ -964,7 +1009,7 @@ async function moveTo({ paths, storageId }) {
       store.index.remove(src.id, orphaned);
     }
     // covers no track of the old storage uses any more
-    const unusedCovers = store.covers.all(src.id).filter(c => store.library.coverUsers(src.peer_id, c.cover_key) === 0);
+    const unusedCovers = store.covers.all(src.id).filter(c => !isArtistGif(c.cover_key) && store.library.coverUsers(src.peer_id, c.cover_key) === 0);
     if (unusedCovers.length) {
       await worker.call('deleteMessages', { peer: store.toPeer(src), ids: unusedCovers.map(c => c.message_id) }).catch(() => {});
       unusedCovers.forEach(c => store.covers.remove(src.id, c.cover_key));
@@ -1021,7 +1066,7 @@ async function removeFromCloud({ paths }) {
       store.index.remove(s.id, free);
       deleted += free.length;
     }
-    const unusedCovers = store.covers.all(s.id).filter(c => store.library.coverUsers(s.peer_id, c.cover_key) === 0);
+    const unusedCovers = store.covers.all(s.id).filter(c => !isArtistGif(c.cover_key) && store.library.coverUsers(s.peer_id, c.cover_key) === 0);
     if (unusedCovers.length) {
       await worker.call('deleteMessages', { peer: store.toPeer(s), ids: unusedCovers.map(c => c.message_id) }).catch(() => {});
       unusedCovers.forEach(c => store.covers.remove(s.id, c.cover_key));

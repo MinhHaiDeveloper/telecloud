@@ -24,8 +24,7 @@ function read(p) {
     year: row?.year || '', genre: row?.genre || '', track: row?.track_number || '', disc: row?.disc_number || '',
   };
   if (isLocal(p)) {
-    const { File } = require('node-taglib-sharp');
-    const f = File.createFromPath(p);
+    const f = require('./tagFile').openTags(p);
     try {
       const t = f.tag;
       Object.assign(out, {
@@ -39,8 +38,7 @@ function read(p) {
 }
 
 function writeFile(p, c) {
-  const { File } = require('node-taglib-sharp');
-  const f = File.createFromPath(p);
+  const f = require('./tagFile').openTags(p);
   try {
     const t = f.tag;
     if ('title' in c) t.title = c.title || undefined;
