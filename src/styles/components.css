@@ -134,6 +134,8 @@ input[type="number"].input::-webkit-inner-spin-button { opacity: .4; }
 /* Tiles grid (albums / artists / playlists) */
 .tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 20px 18px; }
 .tile { text-align: left; min-width: 0; display: flex; flex-direction: column; }
+/* a big library: tiles off screen are not laid out or painted. The margin keeps the covers' shadows. */
+.tile-grid > .tile { content-visibility: auto; contain-intrinsic-size: auto 230px; overflow-clip-margin: 32px; }
 .tile .cover { width: 100%; aspect-ratio: 1; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 8px 20px rgba(0, 0, 0, .18); }
 .tile .cover img { transition: transform .4s var(--ease-out); }
 .tile:hover .cover img { transform: scale(1.05); }

@@ -478,6 +478,22 @@ async function youtube({ artist }) {
   return { results };
 }
 
+/** A public link to the artist's picture, for Discord. One chosen here first, then the online sources in order. */
+async function onlineArtistPicture(name) {
+  if (!name || NOT_AN_ARTIST.test(name.trim())) return { url: null };
+  const chosen = loadIndex()[norm(name)]?.url;
+  if (chosen) return { url: chosen };
+  const o = options();
+  let failed = false;
+  for (const id of o.order.filter(x => SOURCES[x].online && !o.disabled.includes(x))) {
+    try {
+      const hit = (await providers[id]({ artist: name })).find(r => r.score >= 0.9 && /^https:\/\//i.test(r.thumb || ''));
+      if (hit) return { url: hit.thumb };
+    } catch { failed = true; }
+  }
+  return { url: null, failed };
+}
+
 // ---------- saving
 async function download(url) {
   if (!/^https:\/\//i.test(url)) throw new Error('Bad image address');
@@ -564,7 +580,7 @@ async function save({ name, image, onlyMissing = false, allowReadOnly = false })
   const jpeg = resized(gif ? gif.still : buf, MAX_SIDE, 90);
   await fs.promises.mkdir(dir(), { recursive: true });
   await fs.promises.writeFile(fileFor(name), resized(jpeg, SHOW_SIDE, 88));
-  loadIndex()[norm(name)] = { source: 'user' };
+  loadIndex()[norm(name)] = { source: 'user', url: /^https:\/\//i.test(image?.url || '') ? image.url : undefined };
   saveIndex();
   const hadGif = !!gifState(name)?.key;
   if (moving) await fs.promises.writeFile(gifFile(name), buf);
@@ -628,4 +644,4 @@ ipcMain.handle('artists:targets', (e, { name }) => targets(name));
 ipcMain.handle('artists:stop', () => { stopRequested = true; });
 ipcMain.handle('artists:pick', wrap(async (o, e) => ({ picked: await pick(e) })));
 
-module.exports = { pictureFor, motionFor, search, save, options, SOURCES, gifState, gifsInStorage, hasGifKey, wantsGif, gifFromCloud };
+module.exports = { pictureFor, motionFor, onlineArtistPicture, search, save, options, SOURCES, gifState, gifsInStorage, hasGifKey, wantsGif, gifFromCloud };

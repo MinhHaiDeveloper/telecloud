@@ -42,8 +42,8 @@ const PlayerBar = ({
   useEffect(() => { clock.current = { t: currentTime || 0, at: performance.now() }; }, [currentTime]);
   useEffect(() => {
     if (!isPlaying || !duration) return undefined;
-    let raf = 0;
-    const frame = () => {
+    let timer = 0;
+    const tick = () => {
       const el = seekRef.current;
       if (el && !seeking.current) {
         const c = clock.current;
@@ -52,10 +52,11 @@ const PlayerBar = ({
         el.value = String(t);
         el.style.setProperty('--pct', `${(t / duration) * 100}%`);
       }
-      raf = requestAnimationFrame(frame);
+      // nothing shows until the bar reaches its next pixel
+      timer = setTimeout(tick, Math.min(1000, Math.max(33, (duration * 1000) / Math.max(1, el?.clientWidth || 1))));
     };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
+    tick();
+    return () => clearTimeout(timer);
   }, [isPlaying, duration]);
   // TeleCloud stream: what is already downloaded, drawn behind the played part
   const buffer = stream && !stream.complete && stream.ranges?.length

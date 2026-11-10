@@ -119,7 +119,7 @@ async function logBetween(text, from, to, clean) {
 }
 
 // Only these settings go in the report; anything added later stays out until listed here
-const SAFE_SETTINGS = ['skipDuplicates', 'artistFilter', 'replayGainEnabled', 'replayGainMode', 'crossfadeEnabled', 'crossfadeDuration', 'maxSamplingEnabled', 'maxBitDepth', 'maxSampleRate', 'dsdMode', 'dopMax', 'asioDriver', 'highPerformanceGpu', 'lastSeenVersion'];
+const SAFE_SETTINGS = ['skipDuplicates', 'artistFilter', 'replayGainEnabled', 'replayGainMode', 'crossfadeEnabled', 'crossfadeDuration', 'maxSamplingEnabled', 'maxBitDepth', 'maxSampleRate', 'dsdMode', 'dopMax', 'asioDriver', 'highPerformanceGpu', 'lowMemoryMode', 'closeToTray', 'lastSeenVersion'];
 
 async function systemReport({ days, includeNames }) {
   const lines = [];

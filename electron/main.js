@@ -57,9 +57,17 @@ const covers = require('./covers');
 
 const isDev = !app.isPackaged;
 
+// One copy at a time: a second one would fight over the database and the audio output, and with
+// the window in the tray, opening TeleCloud again has to bring that window back.
+if (!app.requestSingleInstanceLock()) app.exit(0);
+
 // Settings → General → Performance: run on the high-performance GPU (laptops with two GPUs often
 // give Electron apps the integrated one, which can't keep up with 144–240 Hz screens). Applies at start.
-try { if (readSettings().highPerformanceGpu) app.commandLine.appendSwitch('force_high_performance_gpu'); } catch { /* defaults */ }
+// Low memory mode draws the interface without the graphics card: much less memory, slower animations.
+try {
+  if (readSettings().lowMemoryMode) app.disableHardwareAcceleration();
+  else if (readSettings().highPerformanceGpu) app.commandLine.appendSwitch('force_high_performance_gpu');
+} catch { /* defaults */ }
 ipcMain.handle('app:relaunch', () => { app.relaunch(); app.exit(0); });
 
 // Temporary download target for cloud tracks; the renderer only chooses the file name
@@ -148,9 +156,11 @@ function createWindow() {
       nodeIntegration: false, // Recommended for security
       contextIsolation: true, // Recommended for security
       sandbox: true,
+      spellcheck: false,
     },
   });
 
+  require('./tray').attach(win);
   const sendState = () => { if (!win.isDestroyed()) win.webContents.send('window:state', { maximized: win.isMaximized(), fullscreen: win.isFullScreen(), focused: win.isFocused() }); };
   ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'focus', 'blur', 'restore'].forEach(ev => win.on(ev, sendState));
 

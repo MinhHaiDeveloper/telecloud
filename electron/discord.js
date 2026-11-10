@@ -9,7 +9,7 @@ const crypto = require('crypto');
 
 const CLIENT_ID = '1568091864295415848';
 const LOGO = 'telecloud'; // art asset uploaded to the Discord application
-const DEFAULTS = { enabled: false, showPaused: true, onlineCover: true, showButton: true, statusText: '{track} by {artist}' };
+const DEFAULTS = { enabled: false, showPaused: true, showLastPlayed: true, onlineCover: true, showButton: true, statusText: '{track} by {artist}' };
 const BUTTON = { label: 'Get TeleCloud', url: 'https://telecloud-music.pages.dev/' };
 const MIN_GAP = 4000;  // Discord allows a few updates every 20 s; the newest state always wins
 const RETRY = 15000;   // look for Discord again this often while it isn't running
@@ -31,10 +31,14 @@ const fill = (template, t) => String(template || DEFAULTS.statusText)
   .replace(/\{track\}/g, t.title || '').replace(/\{artist\}/g, t.artist || '').replace(/\{album\}/g, t.album || '');
 const known = (v, unknown) => (v && v !== unknown ? v : '');
 
-/** The activity for a state: { track, playing, position }; null when nothing should show */
-function buildActivity({ track, playing, position }, o, coverUrl, now = Date.now(), compat = false) {
+/**
+ * The activity for a state: { track, playing, position, last }; null when nothing should show.
+ * `last` is the track played most recently, shown when the app has nothing loaded.
+ */
+function buildActivity({ track: current, playing, position, last }, o, coverUrl, now = Date.now(), compat = false, artistUrl = null) {
+  const track = current || (o.showLastPlayed ? last : null);
   if (!track) return null;
-  if (!playing && !o.showPaused) return null;
+  if (current && !playing && !o.showPaused) return null;
   const artist = known(track.artist, 'Unknown Artist');
   const album = known(track.album, 'Unknown Album');
   const a = {
@@ -42,14 +46,19 @@ function buildActivity({ track, playing, position }, o, coverUrl, now = Date.now
     details: fit(track.title) || fit('Unknown track'),
     assets: { large_image: coverUrl && coverUrl.length <= 256 ? coverUrl : LOGO },
   };
+  if (artist && artistUrl && artistUrl.length <= 256) {
+    a.assets.small_image = artistUrl;
+    if (fit(artist)) a.assets.small_text = fit(artist);
+  }
   if (!compat) {
     a.name = fit(fill(o.statusText, { title: track.title, artist, album })) || 'TeleCloud';
     if (o.showButton) a.buttons = [BUTTON];
   }
-  const state = playing ? artist : (artist ? `Paused · ${artist}` : 'Paused');
-  if (fit(state)) a.state = fit(state);
+  const word = current ? 'Paused' : 'Last played';
+  const line = playing ? artist : (artist ? `${word} · ${artist}` : word);
+  if (fit(line)) a.state = fit(line);
   if (fit(album)) a.assets.large_text = fit(album);
-  if (playing) {
+  if (current && playing) {
     const start = Math.round(now - Math.max(0, position || 0) * 1000);
     a.timestamps = { start };
     if (track.duration > 0) a.timestamps.end = Math.round(start + track.duration * 1000);
@@ -79,6 +88,34 @@ async function findCover(track) {
   return url;
 }
 
+/** A picture of the artist, for the small circle on the cover. Public links only, as for covers. */
+const artistCache = new Map();
+async function findArtist(name) {
+  const key = name.toLowerCase();
+  if (artistCache.has(key)) return artistCache.get(key);
+  const { url, failed } = await require('./artistImages').onlineArtistPicture(name);
+  if (url || !failed) {
+    if (artistCache.size > 500) artistCache.clear();
+    artistCache.set(key, url);
+  }
+  return url;
+}
+const artistOf = (t) => firstName(known(t?.artist, 'Unknown Artist'));
+const albumOf = (t) => (t ? `${t.album}\u0000${t.albumArtist}` : '');
+
+// ---------- the last track played, kept for the next start
+const lastFile = () => path.join(app.getPath('userData'), 'discord-last.json');
+let lastTrack;
+function loadLast() {
+  if (lastTrack === undefined) { try { lastTrack = JSON.parse(fs.readFileSync(lastFile(), 'utf8')) || null; } catch { lastTrack = null; } }
+  return lastTrack;
+}
+function rememberLast(track) {
+  if (loadLast()?.path === track.path) return;
+  lastTrack = track;
+  fs.promises.writeFile(lastFile(), JSON.stringify(track)).catch(() => {});
+}
+
 // ---------- the pipe to Discord
 let socket = null;
 let ready = false;
@@ -87,6 +124,9 @@ let retryTimer = null;
 let incoming = Buffer.alloc(0);
 let state = { track: null, playing: false, position: 0, at: Date.now() };
 let coverUrl = null;
+let coverFor;            // the album and artist the pictures were looked up for
+let artistUrl = null;
+let artistFor;
 let compat = false;       // Discord refused the full activity: send only the basics
 let lastSent = 'none';
 let lastSentAt = 0;
@@ -180,7 +220,7 @@ function refresh() {
     return;
   }
   const position = state.playing ? state.position + (Date.now() - state.at) / 1000 : state.position;
-  const activity = buildActivity({ ...state, position }, options(), coverUrl, Date.now(), compat);
+  const activity = buildActivity({ ...state, position, last: loadLast() }, options(), coverUrl, Date.now(), compat, artistUrl);
   const key = JSON.stringify(activity && { ...activity, timestamps: undefined, seek: state.at });
   if (key === lastSent) return;
   lastSent = key;
@@ -190,11 +230,27 @@ function refresh() {
   socket.write(frame(1, { cmd: 'SET_ACTIVITY', args, nonce: pendingNonce }));
 }
 
+/** What the status is about: the current track, or the last one when nothing is loaded */
+const showing = () => state.track || (options().showLastPlayed ? loadLast() : null);
+
+let artistLookup = 0;
+async function updateArtist() {
+  const id = ++artistLookup;
+  const o = options();
+  const name = artistOf(showing());
+  artistFor = name;
+  artistUrl = null;
+  if (!name || !o.enabled || !o.onlineCover) return;
+  const url = await findArtist(name).catch(() => null);
+  if (id === artistLookup && url) { artistUrl = url; lastSent = 'none'; refresh(); }
+}
+
 let lookup = 0;
 async function updateCover() {
   const id = ++lookup;
   const o = options();
-  const track = state.track;
+  const track = showing();
+  coverFor = albumOf(track);
   coverUrl = null;
   if (!track || !o.enabled || !o.onlineCover) return;
   const url = await findCover(track).catch(() => null);
@@ -203,12 +259,12 @@ async function updateCover() {
 
 /** From the player: the track, whether it plays, and where it is */
 function update({ track, playing, position }) {
-  const sameAlbum = state.track && track && state.track.album === track.album && state.track.albumArtist === track.albumArtist;
-  const changed = state.track?.path !== track?.path;
   state = { track: track || null, playing: !!playing, position: position || 0, at: Date.now() };
+  if (track && playing) rememberLast(track);
   if (!options().enabled) return;
   connect();
-  if (changed && !sameAlbum) { updateCover(); }
+  if (albumOf(showing()) !== coverFor) updateCover();
+  if (artistOf(showing()) !== artistFor) updateArtist();
   refresh();
 }
 
@@ -222,10 +278,14 @@ function setOptions(patch) {
     retryTimer = null;
     setTimeout(disconnect, 150);
     coverUrl = null;
+    artistUrl = null;
+    coverFor = undefined;
+    artistFor = undefined;
     lookup++;
+    artistLookup++;
   } else {
     connect();
-    if (!before.enabled || before.onlineCover !== next.onlineCover) updateCover();
+    if (!before.enabled || before.onlineCover !== next.onlineCover || before.showLastPlayed !== next.showLastPlayed) { updateCover(); updateArtist(); }
     lastSent = 'none';
     refresh();
   }

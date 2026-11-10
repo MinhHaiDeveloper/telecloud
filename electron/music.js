@@ -429,6 +429,13 @@ ipcMain.handle('delete-song', async (event, file) => {
   }
 });
 
+/** The folder a track downloads into: its album's name, or none when it has no album */
+function albumFolder(album) {
+  if (!album || album === 'Unknown Album') return '';
+  const name = safeFileName(String(album).replace(/[/\\]/g, '_'), '').replace(/[. ]+$/, ''); // Windows drops these itself
+  return /^(con|prn|aux|nul|com\d|lpt\d)$/i.test(name) ? `${name}_` : name;
+}
+
 // Copies a library file into the download folder chosen in Settings
 ipcMain.handle('download-song', async (event, file) => {
   try {
@@ -443,8 +450,10 @@ ipcMain.handle('download-song', async (event, file) => {
     const name = safeFileName(row.name || path.basename(row.path));
     const ext = path.extname(name);
     const stem = name.slice(0, name.length - ext.length);
-    let target = path.join(dest, name);
-    for (let n = 2; fs.existsSync(target); n++) target = path.join(dest, `${stem} (${n})${ext}`);
+    const folder = path.join(dest, albumFolder(row.album));
+    await fs.promises.mkdir(folder, { recursive: true });
+    let target = path.join(folder, name);
+    for (let n = 2; fs.existsSync(target); n++) target = path.join(folder, `${stem} (${n})${ext}`);
     await fs.promises.copyFile(source, target, fs.constants.COPYFILE_EXCL);
     // A cloud-only track saved into a music folder becomes a local track that is also in the cloud
     if (row.path.startsWith('tc://') && isInLibrary(target)) {
@@ -462,6 +471,14 @@ ipcMain.handle('download-song', async (event, file) => {
     console.error('Error downloading song:', err);
     return { success: false, error: err.message };
   }
+});
+
+// Track menu: show the track's own file. Cloud-only and cached tracks have none to show.
+ipcMain.handle('show-in-folder', async (event, filePath) => {
+  const row = typeof filePath === 'string' ? database.getFileByPath(filePath) : null;
+  if (!row || !isInLibrary(row.path) || !fs.existsSync(row.path)) return { success: false, error: 'The file is no longer there' };
+  shell.showItemInFolder(row.path);
+  return { success: true };
 });
 
 ipcMain.handle('check-file-exists', async (event, filePath) => {

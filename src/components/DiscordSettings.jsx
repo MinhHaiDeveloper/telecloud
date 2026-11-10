@@ -42,6 +42,9 @@ const DiscordSettings = () => {
         <SettingRow icon="queue" title="Show while paused" desc="Off: your status clears when the music is paused." muted={!o.enabled}>
           <Toggle checked={o.showPaused} onChange={(v) => set({ showPaused: v })} disabled={!o.enabled} />
         </SettingRow>
+        <SettingRow icon="clock" title="Show the last track played" desc="While TeleCloud is open with nothing loaded, your status shows the last track you played. Discord clears your status when TeleCloud closes." muted={!o.enabled}>
+          <Toggle checked={o.showLastPlayed} onChange={(v) => set({ showLastPlayed: v })} disabled={!o.enabled} />
+        </SettingRow>
         <SettingRow icon="image" title="Show the album cover" desc="Looks for the album on the online cover sources and shows their picture. Your files are never uploaded. Albums it can't find show the TeleCloud logo. Off: always the logo, and no search." muted={!o.enabled}>
           <Toggle checked={o.onlineCover} onChange={(v) => set({ onlineCover: v })} disabled={!o.enabled} />
         </SettingRow>

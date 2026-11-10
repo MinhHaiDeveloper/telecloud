@@ -12,18 +12,26 @@ const SORTS = [
   { value: 'name-desc', label: 'Title Z → A' },
   { value: 'artist', label: 'Artist' },
   { value: 'tracks', label: 'Most tracks' },
-  { value: 'latest', label: 'Latest' },
-  { value: 'oldest', label: 'Oldest' },
+  { value: 'latest', label: 'Latest added' },
+  { value: 'oldest', label: 'Oldest added' },
 ];
 
 const noThe = (s) => s.toLowerCase().replace(/^the /, '');
 
-const yearOf = (album) => parseInt(album.year, 10) || 0;
-const byName = (a, b) => noThe(a.name).localeCompare(noThe(b.name));
+/** When each album came into the library. Tracks added in one scan share a time: their order in the library decides. */
+const arrivals = (files, albums) => {
+  const pos = new Map(files.map((f, i) => [f.path, i]));
+  const at = new Map();
+  albums.forEach((a) => {
+    const time = Math.min(...a.songs.map(s => new Date(s.added_at || 0).getTime() || 0));
+    at.set(a, [time, Math.min(...a.songs.map(s => pos.get(s.path) ?? 0))]);
+  });
+  return (a, b) => (at.get(a)[0] - at.get(b)[0]) || (at.get(a)[1] - at.get(b)[1]);
+};
 
 const bestQuality = (songs) => songs.map(qualityOf).sort((a, b) => (b.bits * 1e6 + b.rate) - (a.bits * 1e6 + a.rate))[0];
 
-const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavorite, onAddPlaylist, favorites, onCheckSpectrum, selectedAlbum, setSelectedAlbum, onDeleteSong, onDeleteAlbum, onDownloadSong, onBackupMany, onBackupTo, storageNames, onRemoveFromCloud }) => {
+const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavorite, onAddPlaylist, favorites, onCheckSpectrum, selectedAlbum, setSelectedAlbum, onDeleteSong, onDeleteAlbum, onDownloadSong, onDownloadAlbum, onBackupMany, onBackupTo, storageNames, onRemoveFromCloud }) => {
   const [sortBy, setSortBy] = useState('name');
   const ctx = useContext(SongActions);
   useDetailScroll(selectedAlbum ? (selectedAlbum.key ?? selectedAlbum.name) : null);
@@ -34,9 +42,8 @@ const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavori
       case 'name-desc': return list.sort((a, b) => noThe(b.name).localeCompare(noThe(a.name)));
       case 'artist': return list.sort((a, b) => noThe(a.artist).localeCompare(noThe(b.artist)));
       case 'tracks': return list.sort((a, b) => b.songs.length - a.songs.length);
-      // albums with no year go last either way
-      case 'latest': return list.sort((a, b) => (yearOf(b) - yearOf(a)) || byName(a, b));
-      case 'oldest': return list.sort((a, b) => ((yearOf(a) || 9999) - (yearOf(b) || 9999)) || byName(a, b));
+      case 'latest': { const older = arrivals(musicFiles, list); return list.sort((a, b) => older(b, a)); }
+      case 'oldest': return list.sort(arrivals(musicFiles, list));
       default: return list.sort((a, b) => noThe(a.name).localeCompare(noThe(b.name)));
     }
   }, [musicFiles, sortBy]);
@@ -76,7 +83,7 @@ const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavori
               <button className="btn-primary" onClick={() => onPlay(songs[0], 0, songs)}><Icon name="play" filled />Play</button>
               <button className="btn-ghost" onClick={() => { const s = [...songs].sort(() => Math.random() - 0.5); onPlay(s[0], 0, s); }}><Icon name="shuffle" />Shuffle</button>
               <MoreMenu items={[
-                ...(onDownloadSong ? [{ label: 'Download album', icon: 'download', onClick: () => songs.forEach(s => onDownloadSong(s)) }] : []),
+                ...(onDownloadAlbum ? [{ label: 'Download album', icon: 'download', onClick: () => onDownloadAlbum(songs, name) }] : []),
                 ...(onAddPlaylist ? [{ label: 'Add to playlist', icon: 'playlist', onClick: () => onAddPlaylist(songs[0], songs) }] : []),
                 ...(ctx.onEditInfo ? [{ label: 'Edit album info…', icon: 'music', onClick: () => ctx.onEditInfo(songs) }] : []),
                 ...(ctx.onEditCover ? [{ label: 'Album cover…', icon: 'image', onClick: () => ctx.onEditCover(songs) }] : []),

@@ -404,6 +404,7 @@ const SongList = ({
           {ctx.onEditLyrics && <button className="menu-item" onClick={() => act(ctx.onEditLyrics)}><Icon name="lyrics" />Lyrics…</button>}
           {ctx.onEditCover && <button className="menu-item" onClick={() => { const f = menuFile; setMenu(null); ctx.onEditCover([f]); }}><Icon name="image" />Album cover…</button>}
           {onDownloadSong && <button className="menu-item" onClick={() => act(onDownloadSong)}><Icon name="download" />Download</button>}
+          {ctx.onOpenLocation && menuFile.storage_type !== 'cloud' && !menuFile.path.startsWith('tc://') && <button className="menu-item" onClick={() => act(ctx.onOpenLocation)}><Icon name="folder" />Open file location</button>}
           {onRemoveFromCloud && menuFile.telegram_message_id && <button className="menu-item danger" onClick={() => { const f = menuFile; setMenu(null); onRemoveFromCloud([f]); }}><Icon name="cloud" />Remove from TeleCloud</button>}
           {onDeleteSong && <>
             <div className="menu-sep" />

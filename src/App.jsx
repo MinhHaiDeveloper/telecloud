@@ -1110,17 +1110,47 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     showToast(fresh.length === 1 ? 'Added to the queue' : `Added ${fresh.length} tracks to the queue`);
   };
 
+  const hasDownloadFolder = async () => {
+    const settings = await window.ipcRenderer.invoke('load-store', 'settings');
+    if (settings?.downloadFolder) return true;
+    await alertDialog({ title: 'Choose a download folder', message: 'Set a default download location in Settings → Downloads first.', tone: 'info', icon: 'folder' });
+    setCurrentView('settings');
+    return false;
+  };
+
+  // A whole album: one toast, one track at a time
+  const handleDownloadAlbum = async (songs, albumName) => {
+    if (!await hasDownloadFolder()) return;
+    const ipcRenderer = window.ipcRenderer;
+    const toastId = Date.now() + Math.random();
+    setDownloadToasts(prev => [...prev, { id: toastId, name: albumName, progress: 0 }]);
+    let failed = 0;
+    let lastError = '';
+    for (const [i, file] of songs.entries()) {
+      try {
+        if ((file.storage_type || 'local') === 'cloud' || file.path.startsWith('tc://')) {
+          const cached = await ipcRenderer.invoke('telecloud-sync:cache-track', file.path);
+          if (!cached?.success) throw new Error(cached?.error || 'TeleCloud download failed');
+        }
+        const r = await ipcRenderer.invoke('download-song', file);
+        if (!r?.success) throw new Error(r?.error || 'unknown error');
+        if (r.file) setMusicFiles(prev => prev.map(f => (f.path === (r.replaced || file.path) ? r.file : f)));
+      } catch (err) { failed++; lastError = err.message; }
+      setDownloadToasts(prev => prev.map(t => (t.id === toastId ? { ...t, progress: Math.round(((i + 1) / songs.length) * 100) } : t)));
+    }
+    if (failed) showToast(`${failed} of ${songs.length} tracks could not be downloaded: ${lastError}`, 'error');
+    setTimeout(() => {
+      setDownloadToasts(prev => prev.map(t => (t.id === toastId ? { ...t, leaving: true } : t)));
+      setTimeout(() => setDownloadToasts(prev => prev.filter(t => t.id !== toastId)), 300);
+    }, 2500);
+  };
+
   const handleDownloadSong = async (file) => {
     const ipcRenderer = window.ipcRenderer;
     const storageType = file.storage_type || 'local';
     const name = file.metadata?.title || file.name;
 
-    const settings = await ipcRenderer.invoke('load-store', 'settings');
-    if (!settings?.downloadFolder) {
-      await alertDialog({ title: 'Choose a download folder', message: 'Set a default download location in Settings → Downloads first.', tone: 'info', icon: 'folder' });
-      setCurrentView('settings');
-      return;
-    }
+    if (!await hasDownloadFolder()) return;
     const toastId = Date.now() + Math.random();
     setDownloadToasts(prev => [...prev, { id: toastId, name, progress: storageType === 'cloud' ? 0 : 30 }]);
     // Cloud-only: fetch it from TeleCloud first (progress from the download), then copy it out
@@ -1256,13 +1286,18 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
   const openBackupTo = storages.length ? (files, label) => { refreshStorages(); setStorageDialog({ files, label }); } : null;
   const songListProps = {
     currentFile: currentLive, isPlaying, onPlay: playMusic, onToggleFavorite: handleToggleFavorite, onAddPlaylist: handleAddPlaylist,
-    onDeleteSong: handleDeleteSong, onDownloadSong: handleDownloadSong, favorites: favoritesLive, onCheckSpectrum: setSpectrumFile,
+    onDeleteSong: handleDeleteSong, onDownloadSong: handleDownloadSong, onDownloadAlbum: handleDownloadAlbum, favorites: favoritesLive, onCheckSpectrum: setSpectrumFile,
     onBackupTo: openBackupTo ? (file) => openBackupTo([file], `“${file.metadata?.title || file.name}”`) : undefined,
     onBackupMany: openBackupTo || undefined,
     onRemoveFromCloud: storages.length ? handleRemoveFromCloud : undefined,
     storageNames,
   };
+  const handleOpenLocation = async (file) => {
+    const r = await window.ipcRenderer.invoke('show-in-folder', file.path);
+    if (!r?.success) showToast(r?.error || 'Could not open that folder', 'error');
+  };
   const songActions = {
+    onOpenLocation: handleOpenLocation,
     onAddPlaylist: handleAddPlaylist, onBackupTo: songListProps.onBackupTo, onBackupMany: songListProps.onBackupMany,
     onRemoveFromCloud: songListProps.onRemoveFromCloud, storageNames,
     onQueueMany: handleQueueMany, onFavoriteMany: handleFavoriteMany, onDeleteMany: handleDeleteMany,

@@ -14,6 +14,7 @@ const INVOKE_CHANNELS = new Set([
     'clear-database-and-cache',
     'delete-song',
     'download-song',
+    'show-in-folder',
     'get-audio-devices',
     'get-audio-settings',
     'player:replaygain-auto',

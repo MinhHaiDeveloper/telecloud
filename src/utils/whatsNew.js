@@ -2,6 +2,17 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.0.0-beta.18',
+    items: [
+      'Performance settings have Low memory mode and Keep running in the tray. Opening TeleCloud again brings its window back.',
+      'A smaller install, a lighter progress bar, and big album and artist pages open faster.',
+      'Albums sort by Latest added and Oldest added.',
+      'Open file location in the track menu, for tracks with a file on this computer.',
+      'Downloads go into a folder named after the album, and Download album shows one progress bar.',
+      'Discord shows the last track you played while nothing is loaded, and a small artist picture on the cover.',
+    ],
+  },
+  {
     version: '1.0.0-beta.17',
     items: [
       'Animated GIF artist pictures. They move on the artist\'s own page and come back with Restore on another computer. Tags get the first frame, so your files stay small.',
