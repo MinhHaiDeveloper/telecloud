@@ -122,6 +122,9 @@ input[type="number"].input::-webkit-inner-spin-button { opacity: .4; }
 
 /* ===== Page scaffolding ===== */
 .page-head .back-btn { margin-left: -8px; }
+/* album and artist pages: the way back stays in reach at the end of a long list */
+.page-head.detail-nav { position: sticky; top: 0; z-index: 3; height: 44px; margin-bottom: 6px; background: var(--bg-app); }
+.view:has(.detail-nav) .track-head { top: 44px; }
 .page-head .eyebrow { margin: 0; }
 .detail-head { display: flex; gap: 22px; align-items: flex-end; margin: 4px 0 22px; }
 .detail-head .cover { width: 168px; height: 168px; border-radius: 14px; box-shadow: var(--shadow); }

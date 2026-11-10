@@ -62,7 +62,7 @@ const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavori
 
     return (
       <>
-        <div className="page-head" style={{ marginBottom: 6 }}>
+        <div className="page-head detail-nav">
           {selectedAlbum.fromArtist
             ? <BackButton onClick={() => ctx.openArtist?.(selectedAlbum.fromArtist, 'albums')} label={`Back to ${selectedAlbum.fromArtist}`} />
             : <BackButton onClick={() => setSelectedAlbum(null)} label="All albums" />}

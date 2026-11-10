@@ -146,7 +146,7 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
     const total = songs.reduce((s, f) => s + (f.metadata?.duration || 0), 0);
     return (
       <>
-        <div className="page-head" style={{ marginBottom: 6 }}>
+        <div className="page-head detail-nav">
           <BackButton onClick={() => setSelectedName(null)} label="All artists" />
           <span className="sub">Artists</span>
         </div>

@@ -2,6 +2,13 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.0.0-beta.19',
+    items: [
+      'The back button on album and artist pages stays in place, so you can go back from the end of a long list.',
+      'The small playing bars use much less CPU.',
+    ],
+  },
+  {
     version: '1.0.0-beta.18',
     items: [
       'Performance settings have Low memory mode and Keep running in the tray. Opening TeleCloud again brings its window back.',
