@@ -47,6 +47,7 @@ require('./discord.js');
 const artistImages = require('./artistImages.js');
 require('./logExport.js');
 require('./tagEdit.js');
+require('./mqa.js');
 require('./lastfm.js');
 require('./updater.js');
 
@@ -197,6 +198,9 @@ app.whenReady().then(async () => {
       dsdMode: s.dsdMode,
       dopMax: s.dopMax,
       asioDriver: s.asioDriver,
+      balance: s.channelBalance,
+      crossfeed: s.crossfeed,
+      mqaMode: s.mqaMode,
     });
   } catch (err) {
     console.error('Could not apply saved audio settings:', err.message);

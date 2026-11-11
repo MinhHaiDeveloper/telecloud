@@ -92,6 +92,7 @@ let currentDevice = '-1';
 let currentAudioSettings = { replayGain: 'no', crossfade: 0, maxBitDepth: null, maxSampleRate: null, dsdMode: 'pcm', dopMax: 512, asioDriver: '' };
 
 // ---------- DSD: DoP where it can be bit-perfect, PCM everywhere else
+const mqaEntries = new Set();  // mpv playlist entries of MQA tracks sent untouched
 const entryPlans = new Map();  // mpv playlist entry -> { path, dop, rate, reason, verified }
 const refused = new Set();     // "device|rate" a DAC didn't take as DoP this session
 let chainWaiting = false;      // a filter change that waited for DoP to end
@@ -100,6 +101,8 @@ const REASONS = {
   setting: 'DSD playback is set to PCM',
   shared: 'DoP needs WASAPI Exclusive',
   eq: 'the EQ is on',
+  balance: 'channel balance is on',
+  crossfeed: 'crossfeed is on',
   limit: 'above the output limit',
   max: 'above the highest DSD rate set for DoP',
   refused: 'the DAC refused DoP at this rate',
@@ -119,7 +122,7 @@ async function nativePlan(filePath, { mayRelease = false } = {}) {
   const s = currentAudioSettings;
   if (!s.asioDriver) return { ok: false, why: 'no ASIO driver chosen' };
   if (!asio.available()) return { ok: false, why: 'the ASIO helper is missing' };
-  if (normalizeEq(eqState)) return { ok: false, why: 'the EQ is on' };
+  if (dspWhy()) return { ok: false, why: REASONS[dspWhy()] };
   if (/^https?:/i.test(filePath) || !fs.existsSync(filePath)) return { ok: false, why: 'not on this computer yet' };
   const info = require('./dsd').probe(filePath);
   if (!info) return { ok: false, why: 'not plain DSD' };
@@ -227,7 +230,7 @@ async function dsdPlan(filePath, { skipNative = false, nativeWhy = null, mayRele
 async function dopPlan(filePath, s) {
   if (!['dop', 'native'].includes(s.dsdMode)) return { dop: false, reason: 'setting' };
   if (!currentDevice || currentDevice === '-1') return { dop: false, reason: 'shared' };
-  if (normalizeEq(eqState)) return { dop: false, reason: 'eq' };
+  if (dspWhy()) return { dop: false, reason: dspWhy() };
   if (/^https?:/i.test(filePath) || !fs.existsSync(filePath)) return { dop: false, reason: 'cloud' };
   const src = await require('./dsd').dopSource(filePath).catch(() => null);
   if (!src) return { dop: false, reason: 'format' };
@@ -308,7 +311,17 @@ async function loadFile(filePath, mode, extra, given) {
   const proven = !!(plan?.dop && mode === 'append' && playing?.dop && playing.rate === plan.rate
     && playing.channels === plan.src.channels && playing.device === currentDevice);
   // DoP: no filters at all, and silent until the device is known to take the exact rate
-  const options = (plan?.dop ? [extra, plan.src.options, 'af=', proven ? '' : 'mute=yes'] : [extra, dsdOptions(filePath)]).filter(Boolean).join(',');
+  // MQA sent to an MQA DAC: the hidden layer only survives untouched samples, so no filters and no ReplayGain
+  let untouched = false;
+  if (!plan && !/^https?:/i.test(filePath || '')) {
+    const mqa = require('./mqa');
+    const check = mqa.checkTrack(filePath).catch(() => null); // once per track; the first look takes ~0.2 s
+    if (currentAudioSettings.mqaMode === 'decoder') {
+      await Promise.race([check, new Promise(r => setTimeout(r, 2000))]);
+      untouched = !!mqa.mqaOfPath(filePath);
+    }
+  }
+  const options = (plan?.dop ? [extra, plan.src.options, 'af=', proven ? '' : 'mute=yes'] : [extra, dsdOptions(filePath), untouched ? 'af=,replaygain=no' : '']).filter(Boolean).join(',');
   const target = plan?.dop ? plan.src.url : filePath;
   const args = options ? ['loadfile', target, mode, -1, options] : ['loadfile', target, mode];
   let res;
@@ -323,6 +336,11 @@ async function loadFile(filePath, mode, extra, given) {
   if (!id) {
     const count = await getProp('playlist-count');
     id = await getProp(`playlist/${mode === 'append' ? count - 1 : 0}/id`);
+  }
+  if (untouched) {
+    mqaEntries.add(id);
+    if (mqaEntries.size > 20) mqaEntries.delete(mqaEntries.values().next().value);
+    console.log('[Player] MQA: sent untouched for an MQA DAC (no filters, no ReplayGain)');
   }
   if (plan) {
     entryPlans.set(id, { path: filePath, dop: plan.dop, rate: plan.rate, channels: plan.src?.channels, device: currentDevice, reason: plan.reason || null, nativeWhy: plan.nativeWhy || null, verified: false, joined: proven });
@@ -452,7 +470,7 @@ function handleMessage(msg) {
         command(['playlist-remove', 0]).catch(() => {});
         send('player:advanced', { path: advancedTo });
         tellDsd();
-        if (chainWaiting && !entryPlans.get(currentEntryId)?.dop) { chainWaiting = false; appliedChain = null; scheduleChain(); }
+        if (chainWaiting && !entryPlans.get(currentEntryId)?.dop && !mqaEntries.has(currentEntryId)) { chainWaiting = false; appliedChain = null; scheduleChain(); }
       }
       break;
 
@@ -617,6 +635,20 @@ function normalizeEq(eq) {
   return { preamp: Number(num(eq.preamp, -30, 30).toFixed(2)), bands };
 }
 
+// Headphone crossfeed (Bauer stereo-to-binaural): Jan Meier's setting blends least, the bs2b default most
+const CROSSFEED = { light: 'jmeier', medium: 'cmoy', strong: 'default' };
+/** What changes the samples, as a REASONS key: DoP, native DSD and MQA need none of it */
+function dspWhy() {
+  if (normalizeEq(eqState)) return 'eq';
+  if (currentAudioSettings.balance) return 'balance';
+  if (CROSSFEED[currentAudioSettings.crossfeed]) return 'crossfeed';
+  return null;
+}
+/** Left and right gains for a balance in dB: the louder side stays at 1, so nothing can clip */
+function balanceGains(db) {
+  return { left: db > 0 ? 10 ** (-db / 20) : 1, right: db < 0 ? 10 ** (db / 20) : 1 };
+}
+
 const STANDARD_RATES = [8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000, 705600, 768000];
 
 /** Output cap as an aformat filter: it only converts when the source is above the cap. */
@@ -643,11 +675,20 @@ function chainSpec({ crossfadeSlot = currentAudioSettings.crossfade > 0, extra =
     parts.push(`@pre:lavfi=[volume=volume=${eq.preamp}dB]`);
     eq.bands.forEach((b, i) => parts.push(`@b${i}:lavfi=[${b.kind}=f=${b.f}:width_type=q:w=${b.w}:g=${b.g}]`));
   }
+  const bal = currentAudioSettings.balance || 0;
+  const xfeed = CROSSFEED[currentAudioSettings.crossfeed];
+  // both work on two channels: mono plays on both sides, as it would anyway
+  if (bal || xfeed) parts.push('@stereo:lavfi=[aformat=channel_layouts=stereo]');
+  if (bal) {
+    const g = balanceGains(bal);
+    parts.push(`@bal:lavfi=[pan=stereo|c0=${g.left.toFixed(6)}*c0|c1=${g.right.toFixed(6)}*c1]`);
+  }
+  if (xfeed) parts.push(`@xfeed:lavfi=[bs2b=profile=${xfeed}]`);
   if (crossfadeSlot) parts.push('@xf:lavfi=[volume=volume=1]');
   if (extra) parts.push(extra);
   const cap = capFilter(currentAudioSettings);
   if (cap) parts.push(`@fmt:lavfi=[${cap}]`);
-  return { af: parts.join(','), eq, key: JSON.stringify([eq && eq.bands.map(b => b.kind), crossfadeSlot, cap]) };
+  return { af: parts.join(','), eq, key: JSON.stringify([eq && eq.bands.map(b => b.kind), bal, xfeed, crossfadeSlot, cap]) };
 }
 
 /** EQ part only (used by tests and the spectrum preview). */
@@ -672,9 +713,12 @@ function liveCommands(from, to) {
 /** Push the current chain to mpv: live commands when only values changed, else a rebuild. */
 async function applyChain() {
   if (!sock) return;
+  // an MQA track sent untouched keeps no filters: the change waits for the next track
+  if (mqaEntries.has(currentEntryId)) { chainWaiting = true; return; }
   if (entryPlans.get(currentEntryId)?.dop) {
-    // the EQ can't work on DoP: turning it on moves this track to PCM; anything else waits for the next track
-    if (normalizeEq(eqState)) { chainWaiting = true; await fallbackToPcm('eq'); return; }
+    // filters can't work on DoP: turning one on moves this track to PCM; anything else waits for the next track
+    const why = dspWhy();
+    if (why) { chainWaiting = true; await fallbackToPcm(why); return; }
     chainWaiting = true;
     return;
   }
@@ -723,7 +767,7 @@ async function applyDevice(deviceId) {
 
 async function applyAudioSettingsToMpv() {
   const s = currentAudioSettings;
-  await setProp('replaygain', gainMode());
+  if (!mqaEntries.has(currentEntryId)) await setProp('replaygain', gainMode());
   await scheduleChain();
 }
 
@@ -738,6 +782,7 @@ let xfadeTried = null;
 function maybeCrossfade(t) {
   const X = currentAudioSettings.crossfade;
   if (!X || xfade || muted || !nextEntryId || !currentPath || currentDevice !== '-1' || xfadeTried === currentEntryId) return;
+  if (mqaEntries.has(currentEntryId) || mqaEntries.has(nextEntryId)) return; // a fade would change MQA's bits
   if (!(duration > X * 2 + 1) || t < duration - X - XF_LEAD) return;
   startCrossfade(t, X).catch(err => { console.error('[Player] crossfade failed:', err.message); cancelCrossfade(); });
 }
@@ -926,7 +971,7 @@ ipcMain.handle('play-audio', async (event, { filePath, deviceId, startPaused } =
   await setProp('pause', !!startPaused);
   tellDsd();
   tellOutput();
-  if (chainWaiting && !entryPlans.get(currentEntryId)?.dop) { chainWaiting = false; appliedChain = null; scheduleChain(); }
+  if (chainWaiting && !entryPlans.get(currentEntryId)?.dop && !mqaEntries.has(currentEntryId)) { chainWaiting = false; appliedChain = null; scheduleChain(); }
   return { success: true };
 });
 
@@ -1044,17 +1089,22 @@ async function applyAudioSettings(settings) {
     dsdMode: ['dop', 'native'].includes(settings?.dsdMode) ? settings.dsdMode : 'pcm',
     asioDriver: typeof settings?.asioDriver === 'string' ? settings.asioDriver.slice(0, 200) : '',
     dopMax: [64, 128, 256, 512].includes(settings?.dopMax) ? settings.dopMax : 512,
+    balance: Math.round(num(settings?.balance, -12, 12) * 2) / 2,
+    crossfeed: CROSSFEED[settings?.crossfeed] ? settings.crossfeed : 'off',
+    mqaMode: settings?.mqaMode === 'decoder' ? 'decoder' : 'plain',
   };
   logGain();
   if (!currentAudioSettings.crossfade) cancelCrossfade();
   if (sock) await applyAudioSettingsToMpv().catch(err => console.error('[Player] settings rejected:', err.message));
+  // native DSD can't take filters either: what plays now moves to mpv, as when the EQ is turned on
+  if (native && dspWhy()) await nativeToMpv(REASONS[dspWhy()]).catch(() => {});
 }
 
 ipcMain.handle('get-audio-settings', () => currentAudioSettings);
 ipcMain.handle('player:replaygain-auto', async (event, mode) => {
   autoGainMode = mode === 'album' ? 'album' : 'track';
   logGain();
-  if (sock && currentAudioSettings.replayGain === 'auto') await setProp('replaygain', autoGainMode).catch(() => {});
+  if (sock && currentAudioSettings.replayGain === 'auto' && !mqaEntries.has(currentEntryId)) await setProp('replaygain', autoGainMode).catch(() => {});
   return autoGainMode;
 });
 // exact playback position (the 'time-pos' event is throttled to ~4/s) — used to sync lyrics by hand

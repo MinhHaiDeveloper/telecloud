@@ -4,7 +4,7 @@ import MetaLinks from './MetaLinks';
 import Cover from './Cover';
 import SignalPathSteps from './SignalPathSteps';
 import QueueList from './QueueList';
-import { formatTime } from '../utils/audio';
+import { formatTime, mqaOf } from '../utils/audio';
 
 // Closes a popover when clicking anywhere outside `ref`
 const useOutside = (open, ref, onClose) => {
@@ -145,6 +145,7 @@ const PlayerBar = ({
           <button className={`fmt-pill ${signal.quality.tier === 'lossy' ? 'plain' : ''}`} onClick={() => { setSignalOpen(o => !o); if (isQueueOpen) onToggleQueue(); }} title="Signal path">
             <span className={`bp ${signal.bitPerfect ? '' : 'off'}`} />
             <span className="mono">{signal.quality.label}</span>
+            {mqaOf(currentFile) && <span className="badge b-mqa mono">{mqaOf(currentFile).short}</span>}
           </button>
         )}
         <button className={`icon-btn hide-sm np-hide ${eqEnabled ? 'on' : ''}`} onClick={onOpenEq} title="Equalizer"><Icon name="eq" /></button>

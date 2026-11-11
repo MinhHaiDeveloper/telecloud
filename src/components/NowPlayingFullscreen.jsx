@@ -7,7 +7,7 @@ import CoverNote from './CoverNote';
 import Cover from './Cover';
 import LyricsView, { parseLyrics } from './LyricsView';
 import QueueList from './QueueList';
-import { formatTime, qualityOf, formatBytes } from '../utils/audio';
+import { formatTime, qualityOf, formatBytes, mqaOf } from '../utils/audio';
 import { useAppearance } from '../utils/appearance';
 
 // Small artworks the big cover can fly from / back to
@@ -277,6 +277,7 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, onSeek, signal, queueF
             {currentFile && (
               <div className="np-badges">
                 <span className={`badge b-${q.tier} mono`}>{q.label}</span>
+                {mqaOf(currentFile) && <span className="badge b-mqa mono">{mqaOf(currentFile).short}</span>}
                 {signal && <span className={`badge ${signal.bitPerfect ? 'b-lossless' : 'b-cached'}`}>{signal.verdict}</span>}
                 {signal?.outSpec && <span className="badge b-lossy mono">out {signal.outSpec}</span>}
               </div>

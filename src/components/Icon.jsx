@@ -54,6 +54,11 @@ const PATHS = {
   redo: <><path d="m15 14 5-5-5-5" /><path d="M20 9H9a5 5 0 0 0 0 10h3" /></>,
   upload: <path d="M12 21V9M7 14l5-5 5 5M5 3h14" />,
   panel: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></>,
+  // the letters, drawn as strokes like the rest of the set (not the MQA logo)
+  mqa: <g style={{ strokeWidth: 2.6 }}><path d="M1.6 17v-10l3 5.4 3-5.4v10" /><circle cx="12.3" cy="12" r="3.6" /><path d="M13.9 14.7l2 2.3M17.2 17l2.65-10 2.65 10M18.3 14h3.1" /></g>,
+  dsd: <g style={{ strokeWidth: 2.6 }}><path d="M1.5 7.5v9h1.75a4.5 4.5 0 0 0 0-9z" /><path d="M14.25 9.2c-.4-.95-1.35-1.7-2.6-1.7-1.45 0-2.5.85-2.5 2.05 0 2.85 5.4 1.6 5.4 4.65 0 1.3-1.15 2.3-2.75 2.3-1.35 0-2.45-.7-2.85-1.75" /><path d="M16.5 7.5v9h1.75a4.5 4.5 0 0 0 0-9z" /></g>,
+  // up to a ceiling: the output limit
+  limit: <path d="M4 4.5h16M12 20V9M7.5 13.5 12 9l4.5 4.5" />,
 };
 
 const Icon = ({ name, filled = false, className = '', ...rest }) => (

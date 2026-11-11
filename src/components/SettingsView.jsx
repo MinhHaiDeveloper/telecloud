@@ -65,12 +65,28 @@ const SettingsView = ({
   const [replayGainMode, setReplayGainMode] = useState('track');
   const [dsdMode, setDsdMode] = useState('pcm');
   const [dopMax, setDopMax] = useState(512);
+  const [channelBalance, setChannelBalance] = useState(0);
+  const [balanceDraft, setBalanceDraft] = useState(0); // follows the slider; saved when it is let go
+  const [crossfeed, setCrossfeed] = useState('off');
+  const [mqaMode, setMqaMode] = useState('plain');
+  const [mqaScan, setMqaScan] = useState(null);
   const [asioDriver, setAsioDriver] = useState('');
   const [asioDrivers, setAsioDrivers] = useState(null);
   const [asioCheck, setAsioCheck] = useState(null);
   useEffect(() => {
     if (dsdMode === 'native' && !asioDrivers) window.ipcRenderer.invoke('asio:list').then(r => setAsioDrivers(r?.names || [])).catch(() => setAsioDrivers([]));
   }, [dsdMode, asioDrivers]);
+  // MQA: the whole library, in the background; progress comes back as events
+  useEffect(() => {
+    const on = (e, p) => setMqaScan(p);
+    window.ipcRenderer.on('mqa:progress', on);
+    return () => window.ipcRenderer.removeListener?.('mqa:progress', on);
+  }, []);
+  const findMqa = async () => {
+    const r = await window.ipcRenderer.invoke('mqa:check-library');
+    if (r && !r.total) setMqaScan({ ...r, finished: true });
+  };
+
   const checkAsio = async () => {
     setAsioCheck({ busy: true });
     const r = await window.ipcRenderer.invoke('asio:probe', asioDriver).catch(err => ({ success: false, error: err.message }));
@@ -119,6 +135,9 @@ const SettingsView = ({
       if (settings && settings.maxSampleRate) setMaxSampleRate(settings.maxSampleRate);
       if (settings && settings.dsdMode) setDsdMode(settings.dsdMode);
       if (settings && settings.dopMax) setDopMax(settings.dopMax);
+      if (settings && Number.isFinite(settings.channelBalance)) { setChannelBalance(settings.channelBalance); setBalanceDraft(settings.channelBalance); }
+      if (settings && settings.crossfeed) setCrossfeed(settings.crossfeed);
+      if (settings && settings.mqaMode) setMqaMode(settings.mqaMode);
       if (settings && settings.asioDriver) setAsioDriver(settings.asioDriver);
       if (settings && settings.keyboardShortcuts) setKeyboardShortcuts(settings.keyboardShortcuts);
       setSettingsLoaded(true);
@@ -153,6 +172,9 @@ const SettingsView = ({
       newSettings.dsdMode = dsdMode;
       newSettings.dopMax = dopMax;
       newSettings.asioDriver = asioDriver;
+      newSettings.channelBalance = channelBalance;
+      newSettings.crossfeed = crossfeed;
+      newSettings.mqaMode = mqaMode;
       newSettings.keyboardShortcuts = keyboardShortcuts;
       await ipcRenderer.invoke('save-store', 'settings', newSettings);
       onShortcutsChange?.(keyboardShortcuts);
@@ -165,12 +187,15 @@ const SettingsView = ({
         dsdMode,
         dopMax,
         asioDriver,
+        balance: channelBalance,
+        crossfeed,
+        mqaMode,
       };
       await ipcRenderer.invoke('apply-audio-settings', audio);
       onAudioSettingsChange?.(audio);
     };
     saveAudioSettings();
-  }, [settingsLoaded, replayGainEnabled, replayGainMode, crossfadeEnabled, crossfadeDuration, maxSamplingEnabled, maxBitDepth, maxSampleRate, dsdMode, dopMax, asioDriver, keyboardShortcuts]);
+  }, [settingsLoaded, replayGainEnabled, replayGainMode, crossfadeEnabled, crossfadeDuration, maxSamplingEnabled, maxBitDepth, maxSampleRate, dsdMode, dopMax, asioDriver, channelBalance, crossfeed, mqaMode, keyboardShortcuts]);
 
   const toggleDevice = async (deviceId) => {
     const ipcRenderer = window.ipcRenderer;
@@ -378,28 +403,62 @@ const SettingsView = ({
                   </div>
                 )}
 
-                <SettingRow icon="spectrum" title="DSD playback" desc="Native sends DSD as it is through the DAC's ASIO driver. DoP sends it untouched packed in PCM, in WASAPI Exclusive. Both need the EQ off. Whatever can't be done falls back, native to DoP to PCM, and the signal path says why. Convert to PCM works with every DAC.">
-                  <Segmented size="sm" value={dsdMode} onChange={setDsdMode} options={[{ value: 'native', label: 'Native (ASIO)' }, { value: 'dop', label: 'DoP' }, { value: 'pcm', label: 'Convert to PCM' }]} />
+                <SettingRow icon="speaker" title="Channel balance" desc="Turns one side down, for uneven ears or headphones. The louder side stays untouched, so nothing clips. Not bit-perfect while off center.">
+                  {balanceDraft !== 0 && <button className="btn-ghost sm" onClick={() => { setBalanceDraft(0); setChannelBalance(0); }}>Center</button>}
                 </SettingRow>
                 <div className="set-sub">
+                  <div className="slider-line balance-line">
+                    <span className="mono">L</span>
+                    <input type="range" className="range full" min="-12" max="12" step="0.5" value={balanceDraft} aria-label="Channel balance"
+                      style={{ '--pct': `${((balanceDraft + 12) / 24) * 100}%` }}
+                      onChange={(e) => setBalanceDraft(Number(e.target.value))}
+                      onPointerUp={() => setChannelBalance(balanceDraft)} onKeyUp={() => setChannelBalance(balanceDraft)} onBlur={() => setChannelBalance(balanceDraft)} />
+                    <span className="mono">R</span>
+                    <span className="mono balance-value">{balanceDraft === 0 ? 'Center' : `${balanceDraft < 0 ? 'Left' : 'Right'} +${Math.abs(balanceDraft).toFixed(1)} dB`}</span>
+                  </div>
+                </div>
+
+                <SettingRow icon="eq" title="Headphone crossfeed" desc="Blends a little of each channel into the other, as speakers in a room do, so hard-panned recordings are easier on headphones. Not bit-perfect while on.">
+                  <Segmented size="sm" value={crossfeed} onChange={setCrossfeed} options={[{ value: 'off', label: 'Off' }, { value: 'light', label: 'Light' }, { value: 'medium', label: 'Medium' }, { value: 'strong', label: 'Strong' }]} />
+                </SettingRow>
+
+                <SettingRow icon="mqa" title="MQA" desc="TeleCloud doesn't unfold MQA itself. Send to MQA DAC: MQA tracks skip the EQ, balance, crossfeed and ReplayGain, so an MQA DAC gets the untouched bits it needs (WASAPI Exclusive). Play as plain PCM: they play like any other file.">
+                  <Segmented size="sm" value={mqaMode} onChange={setMqaMode} options={[{ value: 'decoder', label: 'Send to MQA DAC' }, { value: 'plain', label: 'Play as plain PCM' }]} />
+                </SettingRow>
+                <div className="set-sub">
+                  <div className="mqa-scan">
+                    <button className="btn-ghost sm" onClick={findMqa} disabled={!!mqaScan && !mqaScan.finished}><Icon name="search" />Find MQA tracks</button>
+                    {mqaScan && !mqaScan.finished && <button className="btn-ghost sm" onClick={() => window.ipcRenderer.invoke('mqa:stop')}>Stop</button>}
+                    <small className="dsd-note">{!mqaScan ? 'Each track is also checked the first time it plays. MQA tracks get a violet badge and their own quality filter.'
+                      : mqaScan.finished ? `${mqaScan.stopped ? 'Stopped. ' : ''}${mqaScan.total ? `Checked ${mqaScan.done.toLocaleString()} ${mqaScan.done === 1 ? 'track' : 'tracks'}, ${mqaScan.found ? `${mqaScan.found.toLocaleString()} new MQA` : 'no new MQA'}. ` : 'Every track was checked already. '}${(mqaScan.inLibrary || 0).toLocaleString()} MQA in your library.`
+                        : `Checking ${mqaScan.done.toLocaleString()} of ${mqaScan.total.toLocaleString()}… ${mqaScan.found ? `${mqaScan.found} MQA so far` : ''}`}</small>
+                  </div>
+                </div>
+
+                <SettingRow icon="dsd" title="DSD playback" desc="Native sends DSD as it is through the DAC's ASIO driver. DoP sends it untouched packed in PCM, in WASAPI Exclusive. Both need the EQ off. Whatever can't be done falls back, native to DoP to PCM, and the signal path says why. Convert to PCM works with every DAC.">
+                  <Segmented size="sm" value={dsdMode} onChange={setDsdMode} options={[{ value: 'native', label: 'Native (ASIO)' }, { value: 'dop', label: 'DoP' }, { value: 'pcm', label: 'Convert to PCM' }]} />
+                </SettingRow>
+                {dsdMode !== 'pcm' && <div className="set-sub">
+                  <div className="dsd-line">
                   {dsdMode === 'native' && (
                     <div className="asio-pick">
                       <div className="field" style={{ minWidth: 260 }}><span className="field-label">ASIO driver of your DAC</span>
                         <Select value={asioDriver} onChange={(v) => { setAsioDriver(v); setAsioCheck(null); }} options={[{ value: '', label: asioDrivers === null ? 'Looking…' : asioDrivers.length ? 'Choose a driver' : 'No ASIO drivers found' }, ...(asioDrivers || []).map(n => ({ value: n, label: n }))]} />
                       </div>
-                      <button className="btn-ghost sm" onClick={checkAsio} disabled={!asioDriver || asioCheck?.busy}>{asioCheck?.busy ? 'Checking…' : 'Check'}</button>
-                      {asioCheck?.text && <small className={asioCheck.bad ? 'cov-problem' : 'dsd-note'}>{asioCheck.text}</small>}
+                      <button className="btn-check sm" onClick={checkAsio} disabled={!asioDriver || asioCheck?.busy}><Icon name="check" />{asioCheck?.busy ? 'Checking…' : 'Check'}</button>
                     </div>
                   )}
                   {dsdMode !== 'pcm' && (
-                    <div className="field" style={{ maxWidth: 260 }}><span className="field-label">{dsdMode === 'native' ? 'Highest DSD rate sent as DoP, when native can\'t' : 'Highest DSD rate sent as DoP'}</span>
+                    <div className="field" style={{ minWidth: 220 }}><span className="field-label">{dsdMode === 'native' ? 'Highest DSD rate sent as DoP, when native can\'t' : 'Highest DSD rate sent as DoP'}</span>
                       <Select value={dopMax} onChange={setDopMax} options={[{ value: 512, label: 'DSD512 (1411.2 kHz)' }, { value: 256, label: 'DSD256 (705.6 kHz)' }, { value: 128, label: 'DSD128 (352.8 kHz)' }, { value: 64, label: 'DSD64 (176.4 kHz)' }]} />
                     </div>
                   )}
+                  </div>
+                  {dsdMode === 'native' && asioCheck?.text && <small className={asioCheck.bad ? 'cov-problem' : 'dsd-note'}>{asioCheck.text}</small>}
                   {dsdMode === 'native' && <small className="dsd-note">PCM keeps playing through the output you chose. Only DSD files go to the ASIO driver, and the DAC is handed over between them.</small>}
-                </div>
+                </div>}
 
-                <SettingRow icon="spectrum" title="Limit output format" desc="For DACs that can't take hi-res. Only files above the limit are converted; everything else plays untouched.">
+                <SettingRow icon="limit" title="Limit output format" desc="For DACs that can't take hi-res. Only files above the limit are converted; everything else plays untouched.">
                   <Toggle checked={maxSamplingEnabled} onChange={setMaxSamplingEnabled} />
                 </SettingRow>
                 {maxSamplingEnabled && (

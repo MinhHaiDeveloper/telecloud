@@ -133,6 +133,15 @@ export const matchesSource = (file, source) => {
  * Bit-perfect needs: lossless source, exclusive device, no DSP, no resampling cap below the
  * source, and software volume at 100%.
  */
+/** MQA found in a track: 1 MQA, 2 MQA Studio. Null when it isn't, or isn't known yet. */
+export const mqaOf = (file) => {
+  const v = file?.mqa;
+  if (!v) return null;
+  const studio = v === 2;
+  const rate = file.mqaRate || null;
+  return { studio, rate, label: studio ? 'MQA Studio' : 'MQA', short: `${studio ? 'MQA S' : 'MQA'}${rate ? ` ${khz(rate)}` : ''}` };
+};
+
 export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnabled, volume, audioSettings = {}, audioOut = null, stream = null, dsd = null, output = null }) => {
   const q = qualityOf(file);
   const exclusive = selectedDevice && selectedDevice !== '-1';
@@ -145,6 +154,14 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
   const capRate = audioSettings.maxSampleRate ? audioSettings.maxSampleRate * 1000 : 0;
   const capBits = audioSettings.maxBitDepth || 0;
   const volFull = exclusive || volume >= 100;
+  // MQA sent to an MQA DAC skips every filter, from a file on this computer
+  const mqa = mqaOf(file);
+  const mqaIntact = !!mqa && audioSettings.mqaMode === 'decoder' && !(stream && !stream.complete);
+  const bal = mqaIntact ? 0 : Number(audioSettings.balance) || 0;
+  const xfeed = !mqaIntact && audioSettings.crossfeed && audioSettings.crossfeed !== 'off' ? audioSettings.crossfeed : null;
+  const eqOn = !!eqEnabled && !mqaIntact;
+  const rgOn = rg && !mqaIntact;
+  const SKIPPED = 'Skipped'; // the MQA step above says why
 
   // Prefer what mpv actually sends to the device; fall back to what the settings imply
   let outRate, outBits, resampled;
@@ -153,7 +170,7 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
     const fmt = String(audioOut.format).replace(/p$/, '');
     outBits = { s16: 16, s24: 24, s32: 32, float: 32, double: 64, u8: 8 }[fmt] || q.bits;
     // 24-bit PCM travels in 32-bit words; untouched it is still 24-bit audio
-    if (fmt === 's32' && q.bits > 1 && q.bits <= 24 && !eqEnabled && !rg) outBits = q.bits;
+    if (fmt === 's32' && q.bits > 1 && q.bits <= 24 && !eqOn && !rgOn && !bal && !xfeed) outBits = q.bits;
     resampled = !q.ext.startsWith('DSD') && q.rate > 0 && (outRate !== q.rate || (!!capBits && q.bits > capBits && outBits < q.bits));
   } else {
     resampled = (capRate && q.rate > capRate) || (capBits && q.bits > capBits);
@@ -163,10 +180,11 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
   const floatOut = audioOut && /^(float|double)/.test(String(audioOut.format));
   // say why the rate or depth changed: Windows' mixer, the output limit, or a device that can't take it
   const resampleWhy = () => {
-    if (!exclusive) return `Resampling · Windows mixes everything in shared mode at the device's ${outBits && outRate ? `${outBits}-bit ${khz(outRate)} kHz` : 'own format'}`;
-    if ((capRate && q.rate > capRate) || (capBits && q.bits > capBits)) return 'Resampling · your output limit';
-    return 'Resampling · the device doesn\'t take this format';
+    if (!exclusive) return `Windows mixes everything in shared mode at the device's ${outBits && outRate ? `${outBits}-bit ${khz(outRate)} kHz` : 'own format'}`;
+    if ((capRate && q.rate > capRate) || (capBits && q.bits > capBits)) return 'Your output limit';
+    return 'The device doesn\'t take this format';
   };
+  const sentence = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
   const isDsd = q.label.startsWith('DSD');
   const dop = isDsd && dsd?.mode === 'dop';
   const nativeDsd = isDsd && dsd?.mode === 'native';
@@ -177,22 +195,29 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
     { label: `${q.ext}${file?.metadata?.bitrate ? ` · ${Math.round(file.metadata.bitrate / 1000)} kbps` : ''}`, value: q.label.replace(q.ext, '').trim() || '—', state: q.lossless ? 'ok' : 'warn' },
     // streaming hands mpv the original bytes, so it doesn't change the samples
     ...(stream ? [{ label: stream.complete ? 'TeleCloud cache' : 'TeleCloud stream', value: stream.complete ? 'On disk' : stream.speed ? `${(stream.speed / 1048576).toFixed(1)} MB/s` : 'Buffering…', state: 'ok' }] : []),
-    { label: 'Parametric EQ', value: eqEnabled ? 'On' : 'Off', state: eqEnabled ? 'warn' : 'off', key: 'eq' },
-    { label: 'ReplayGain', value: !rg ? 'Off' : audioSettings.replayGain === 'auto' ? `Auto · ${audioSettings.autoGain || 'track'}` : audioSettings.replayGain, state: rg ? 'warn' : 'off' },
+    ...(mqa ? [mqaIntact
+      ? { label: mqa.label, detail: `${exclusive ? 'For an MQA DAC to unfold' : 'Needs WASAPI Exclusive to reach the DAC untouched'}${mqa.rate ? ` · ${khz(mqa.rate)} kHz original` : ''}`, value: 'Untouched', state: exclusive && volFull ? 'ok' : 'warn' }
+      : { label: mqa.label, detail: audioSettings.mqaMode === 'decoder' ? 'Untouched once the track is on this computer' : 'Played as plain PCM', value: q.label.replace(q.ext, '').trim() || '—', state: 'off' }] : []),
+    { label: 'Parametric EQ', value: eqEnabled && mqaIntact ? SKIPPED : eqOn ? 'On' : 'Off', state: eqOn ? 'warn' : 'off', key: 'eq' },
+    { label: 'ReplayGain', value: rg && mqaIntact ? SKIPPED : !rg ? 'Off' : audioSettings.replayGain === 'auto' ? `Auto · ${audioSettings.autoGain || 'track'}` : audioSettings.replayGain, state: rgOn ? 'warn' : 'off' },
+    ...(Number(audioSettings.balance) ? [{ label: 'Channel balance', value: mqaIntact ? SKIPPED : `${bal < 0 ? 'Left' : 'Right'} +${Math.abs(bal).toFixed(1)} dB`, state: bal ? 'warn' : 'off' }] : []),
+    ...(audioSettings.crossfeed && audioSettings.crossfeed !== 'off' ? [{ label: 'Headphone crossfeed', value: mqaIntact ? SKIPPED : xfeed[0].toUpperCase() + xfeed.slice(1), state: xfeed ? 'warn' : 'off' }] : []),
     ...(crossfade ? [{ label: 'Crossfade', value: `${audioSettings.crossfade}s`, state: 'warn' }] : []),
     ...(nativeDsd ? [{ label: 'Native DSD through ASIO', value: `${(dsd.rate / 1e6).toFixed(4)} MHz`, state: 'ok' }]
-      : dop ? [{ label: dsd?.nativeWhy ? `DSD over PCM (DoP) · native not used: ${dsd.nativeWhy}` : 'DSD over PCM (DoP)', value: `${q.label} in ${khz(dsd.rate)}`, state: 'ok' }]
-      : isDsd ? [{ label: [dsd?.nativeWhy && `native not used: ${dsd.nativeWhy}`, dsd?.reason].filter(Boolean).length ? `DSD to PCM · ${[dsd?.nativeWhy && `native not used: ${dsd.nativeWhy}`, dsd?.reason].filter(Boolean).join(' · ')}` : 'DSD to PCM', value: outSpec || 'PCM', state: 'warn' }]
-        : resampled ? [{ label: resampleWhy(), value: outSpec, state: 'warn' }] : []),
+      : dop ? [{ label: 'DSD over PCM (DoP)', detail: dsd?.nativeWhy ? `Native not used: ${dsd.nativeWhy}` : null, value: `${q.label} in ${khz(dsd.rate)}`, state: 'ok' }]
+      : isDsd ? [{ label: 'DSD to PCM', detail: sentence([dsd?.nativeWhy && `native not used: ${dsd.nativeWhy}`, dsd?.reason].filter(Boolean).join(' · ')) || null, value: outSpec || 'PCM', state: 'warn' }]
+        : resampled ? [{ label: 'Resampling', detail: resampleWhy(), value: outSpec, state: 'warn' }] : []),
     { label: 'Software volume', value: exclusive || nativeDsd ? 'Bypassed' : `${volume}%`, state: volFull || nativeDsd ? 'ok' : 'warn' },
     // Bluetooth sends no PCM: the headphones' codec (SBC, AAC, aptX, LDAC) compresses it again
-    ...(bluetooth && !nativeDsd ? [{ label: 'Bluetooth · compressed again by the headphones\' codec', value: 'Lossy', state: 'warn' }] : []),
-    nativeDsd ? { label: `${dsd.driver} · ASIO`, value: q.label, state: 'ok' }
-      : { label: `${deviceName}${exclusive ? ' · WASAPI Exclusive' : ' · Shared'}`, value: outSpec, state: exclusive ? 'ok' : 'warn' },
+    ...(bluetooth && !nativeDsd ? [{ label: 'Bluetooth', detail: 'Compressed again by the headphones\' codec', value: 'Lossy', state: 'warn' }] : []),
+    nativeDsd ? { label: dsd.driver, detail: 'ASIO', value: q.label, state: 'ok' }
+      : exclusive ? { label: deviceName.replace(/ \(WASAPI\)$/, ''), detail: 'WASAPI Exclusive', value: outSpec, state: 'ok' }
+        : { label: 'System default', detail: `${output?.name ? `${output.name} · ` : ''}Shared mode, mixed by Windows`, value: outSpec, state: 'warn' },
   ];
 
   // DSD is turned into PCM before it leaves the app, so it is never the original bits
-  const bitPerfect = !!file && nativeDsd && !eqEnabled ? true : !!file && !bluetooth && (!isDsd || dop) && q.lossless && exclusive && !eqEnabled && !rg && !crossfade && !resampled && volFull;
+  const filtered = eqOn || rgOn || !!bal || !!xfeed;
+  const bitPerfect = !!file && nativeDsd && !filtered ? true : !!file && !bluetooth && (!isDsd || dop) && q.lossless && exclusive && !filtered && !crossfade && !resampled && volFull;
   let verdict = 'Idle';
   if (file) {
     if (bitPerfect) verdict = 'Bit-perfect';

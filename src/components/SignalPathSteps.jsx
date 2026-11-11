@@ -6,7 +6,7 @@ const SignalPathSteps = ({ signal, eqEnabled, setEqEnabled, onOpenEq }) => (
     {signal.steps.map((s, i) => (
       <div key={i} className={`sp-step ${s.state === 'off' ? 'off' : s.state === 'warn' ? 'warn' : ''}`}>
         <i />
-        <span className="lbl" style={s.key === 'eq' && onOpenEq ? { cursor: 'pointer' } : undefined} onClick={s.key === 'eq' ? onOpenEq : undefined}>
+        <span className="lbl" style={s.key === 'eq' && onOpenEq ? { cursor: 'pointer' } : undefined} onClick={s.key === 'eq' ? onOpenEq : undefined} title={s.detail || undefined}>
           {s.label}
         </span>
         {s.key === 'eq' && setEqEnabled ? (
@@ -17,6 +17,7 @@ const SignalPathSteps = ({ signal, eqEnabled, setEqEnabled, onOpenEq }) => (
         ) : (
           <span className="val mono">{s.value}</span>
         )}
+        {s.detail && <small className="sp-detail">{s.detail}</small>}
       </div>
     ))}
   </div>

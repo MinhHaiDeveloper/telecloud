@@ -1,4 +1,4 @@
-import React, { useContext, useMemo, useState } from 'react';
+import React, { useContext, useMemo } from 'react';
 import SongList from './SongList';
 import SongActions from './songActions';
 import Cover from './Cover';
@@ -6,6 +6,7 @@ import Icon from './Icon';
 import { Select, MoreMenu, BackButton, useDetailScroll } from './ui';
 import { qualityOf, formatDuration, sortAlbumTracks } from '../utils/audio';
 import { albumIndex, trackCount } from '../utils/albums';
+import useRemembered from '../hooks/useRemembered';
 
 const SORTS = [
   { value: 'name', label: 'Title A → Z' },
@@ -32,7 +33,7 @@ const arrivals = (files, albums) => {
 const bestQuality = (songs) => songs.map(qualityOf).sort((a, b) => (b.bits * 1e6 + b.rate) - (a.bits * 1e6 + a.rate))[0];
 
 const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavorite, onAddPlaylist, favorites, onCheckSpectrum, selectedAlbum, setSelectedAlbum, onDeleteSong, onDeleteAlbum, onDownloadSong, onDownloadAlbum, onBackupMany, onBackupTo, storageNames, onRemoveFromCloud }) => {
-  const [sortBy, setSortBy] = useState('name');
+  const [sortBy, setSortBy] = useRemembered('albums:sort', 'name', SORTS.map(s => s.value));
   const ctx = useContext(SongActions);
   useDetailScroll(selectedAlbum ? (selectedAlbum.key ?? selectedAlbum.name) : null);
 

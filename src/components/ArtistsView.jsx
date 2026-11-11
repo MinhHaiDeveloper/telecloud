@@ -1,4 +1,5 @@
 import React, { useContext, useMemo, useState, useEffect } from 'react';
+import useRemembered from '../hooks/useRemembered';
 import SongList from './SongList';
 import ArtistBio from './ArtistBio';
 import Cover from './Cover';
@@ -34,7 +35,7 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
   const [localName, setLocalName] = useState(null);
   const selectedName = setSelectedArtist ? selectedArtist : localName;
   const setSelectedName = setSelectedArtist || setLocalName;
-  const [sortBy, setSortBy] = useState('name');
+  const [sortBy, setSortBy] = useRemembered('artists:sort', 'name', SORTS.map(s => s.value));
   const [labelTab, setLabelTab] = useState('albums');
   useDetailScroll(selectedName ?? null);
 
@@ -212,6 +213,7 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
           onDeleteSong={onDeleteSong}
           onDownloadSong={onDownloadSong}
           showSort
+          prefKey="artist"
         />
         )}
       </>

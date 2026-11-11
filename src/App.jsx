@@ -325,9 +325,13 @@ function App() {
     window.ipcRenderer.on('covers:saved', onSaved);
     const onArtist = (e, { name }) => bumpArtist(name);
     window.ipcRenderer.on('artists:saved', onArtist);
+    // MQA found by reading the audio: the badge and the quality filter follow straight away
+    const onMqa = (e, { path: p, mqa, mqaRate }) => setMusicFiles(prev => prev.map(f => (f.path === p ? { ...f, mqa, mqaRate } : f)));
+    window.ipcRenderer.on('library:mqa', onMqa);
     return () => {
       window.ipcRenderer.removeListener?.('covers:saved', onSaved);
       window.ipcRenderer.removeListener?.('artists:saved', onArtist);
+      window.ipcRenderer.removeListener?.('library:mqa', onMqa);
     };
   }, []);
   useEffect(() => {
@@ -1455,6 +1459,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
               )}
               onInfoClick={() => setIsInfoModalOpen(true)}
               showSort
+              prefKey="telecloud"
             />
           </div>
         );
@@ -1467,6 +1472,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
               title="Library"
               onInfoClick={() => setIsInfoModalOpen(true)}
               showSort
+              prefKey="library"
             />
           </div>
         );

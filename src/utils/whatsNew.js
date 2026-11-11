@@ -2,6 +2,17 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.0.0-beta.20',
+    items: [
+      'MQA is found in the audio itself, even without tags, and gets a violet badge and its own quality filter. It plays as plain PCM; Settings > Playback can send it untouched to an MQA DAC instead.',
+      'Channel balance in 0.5 dB steps and headphone crossfeed, in Settings > Playback.',
+      'Sorts and filters stay as you left them on Albums, Artists, Library, Favourites, TeleCloud and Playlists, also after a restart.',
+      'The signal path is easier to read: a short label for each step and the reason on a line under it.',
+      'DSD playback settings sit side by side, and MQA, DSD and the output limit have their own icons.',
+      'On Discord, the small artist picture is named after that artist.',
+    ],
+  },
+  {
     version: '1.0.0-beta.19',
     items: [
       'The back button on album and artist pages stays in place, so you can go back from the end of a long list.',

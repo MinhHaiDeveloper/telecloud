@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="830" viewBox="0 0 1440 830" font-family="Segoe UI, Inter, Helvetica, Arial, sans-serif">
+  <title>TeleCloud audio pipeline: from the file to the DAC</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5a6475"/></marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2f6fde"/></marker>
+    <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d9622b"/></marker>
+    <marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a4fd6"/></marker>
+    <style>
+      .t { font-size: 14px; font-weight: 700; fill: #1d2430; }
+      .s { font-size: 12px; fill: #4e5869; }
+      .l { font-size: 13px; font-weight: 800; letter-spacing: .08em; }
+      .n { font-size: 12px; fill: #4e5869; font-style: italic; }
+      .box { fill: #ffffff; stroke: #c4cad4; stroke-width: 1.4; }
+      .pcm { fill: #f2f6fe; stroke: #2f6fde; stroke-width: 1.6; }
+      .dsd { fill: #fdf3ee; stroke: #d9622b; stroke-width: 1.6; }
+      .cloud { fill: #eef9f3; stroke: #1f9d6b; stroke-width: 1.6; }
+      .out { fill: #f4f5f7; stroke: #1d2430; stroke-width: 1.8; }
+      .w { fill: none; stroke: #5a6475; stroke-width: 1.6; }
+      .wb { fill: none; stroke: #2f6fde; stroke-width: 1.8; }
+      .wo { fill: none; stroke: #d9622b; stroke-width: 1.8; }
+      .wv { fill: none; stroke: #7a4fd6; stroke-width: 1.8; stroke-dasharray: 7 5; }
+      .fb { fill: none; stroke: #d9622b; stroke-width: 1.4; stroke-dasharray: 5 4; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1440" height="830" rx="18" fill="#ffffff"/>
+  <text x="30" y="40" style="font-size:21px;font-weight:800;fill:#1d2430">From the file to the DAC</text>
+  <text x="30" y="64" class="s">What TeleCloud does to the sound on the way. Every step shows in the Signal path panel while a track plays.</text>
+
+  <!-- sources -->
+  <rect class="box" x="30" y="100" width="230" height="74" rx="12"/>
+  <text x="46" y="126" class="t">Music file on this computer</text>
+  <text x="46" y="146" class="s">FLAC, ALAC, WAV, AIFF, APE, WV,</text>
+  <text x="46" y="162" class="s">lossy formats, DSF, DFF</text>
+
+  <rect class="cloud" x="30" y="214" width="230" height="74" rx="12"/>
+  <text x="46" y="240" class="t">TeleCloud, in Telegram</text>
+  <text x="46" y="260" class="s">worker.js downloads, then</text>
+  <text x="46" y="276" class="s">decrypts (AES-256-CTR)</text>
+
+  <rect class="cloud" x="30" y="318" width="230" height="74" rx="12"/>
+  <text x="46" y="344" class="t">stream.js on 127.0.0.1</text>
+  <text x="46" y="364" class="s">byte ranges, checked against the</text>
+  <text x="46" y="380" class="s">original; kept in audio-cache</text>
+  <path class="w" d="M145 288 L145 316" marker-end="url(#a)"/>
+
+  <!-- the decision -->
+  <rect class="box" x="300" y="214" width="190" height="96" rx="12"/>
+  <text x="316" y="240" class="t">player.js</text>
+  <text x="316" y="262" class="s">DSD file: dsdPlan</text>
+  <text x="316" y="280" class="s">anything else: mpv</text>
+  <text x="316" y="298" class="s">one mpv process, JSON IPC</text>
+  <path class="w" d="M260 137 L280 137 L280 240 L298 240" marker-end="url(#a)"/>
+  <path class="w" d="M260 355 L280 355 L280 284 L298 284" marker-end="url(#a)"/>
+
+  <!-- PCM lane -->
+  <text x="530" y="98" class="l" fill="#2f6fde">PCM</text>
+  <rect class="pcm" x="530" y="110" width="170" height="74" rx="12"/>
+  <text x="546" y="136" class="t">mpv decodes</text>
+  <text x="546" y="156" class="s">FFmpeg, every format,</text>
+  <text x="546" y="172" class="s">at the file's own rate</text>
+  <path class="wb" d="M490 240 L510 240 L510 147 L528 147" marker-end="url(#ab)"/>
+
+  <rect class="pcm" x="730" y="110" width="190" height="74" rx="12"/>
+  <text x="746" y="136" class="t">MQA check</text>
+  <text x="746" y="156" class="s">mqa.js reads the first 3 s,</text>
+  <text x="746" y="172" class="s">once per track, or the tags</text>
+  <path class="wb" d="M700 147 L728 147" marker-end="url(#ab)"/>
+
+  <rect class="pcm" x="950" y="100" width="230" height="262" rx="12"/>
+  <text x="966" y="126" class="t">Filter chain (lavfi)</text>
+  <text x="966" y="150" class="s">ReplayGain (mpv option)</text>
+  <text x="966" y="178" class="s">EQ: preamp + 31 bands</text>
+  <text x="966" y="206" class="s">stereo layout</text>
+  <text x="966" y="234" class="s">Channel balance (pan)</text>
+  <text x="966" y="262" class="s">Headphone crossfeed (bs2b)</text>
+  <text x="966" y="290" class="s">Crossfade ramp</text>
+  <text x="966" y="318" class="s">Output limit (aformat)</text>
+  <text x="966" y="346" class="n">each one only while it is on</text>
+  <path class="wb" d="M920 147 L948 147" marker-end="url(#ab)"/>
+
+  <!-- MQA sent untouched -->
+  <path class="wv" d="M825 110 L825 80 L1300 80 L1300 118" marker-end="url(#av)"/>
+  <text x="845" y="73" class="s" fill="#7a4fd6" style="fill:#7a4fd6;font-weight:600">MQA track with "Send to MQA DAC": no filters, no ReplayGain, untouched</text>
+
+  <!-- output -->
+  <rect class="out" x="1210" y="120" width="210" height="122" rx="12"/>
+  <text x="1226" y="146" class="t">mpv to WASAPI</text>
+  <text x="1226" y="168" class="s">Exclusive: bit-perfect,</text>
+  <text x="1226" y="184" class="s">volume fixed at 100</text>
+  <text x="1226" y="206" class="s">Shared: Windows mixes and</text>
+  <text x="1226" y="222" class="s">resamples, app volume</text>
+  <path class="wb" d="M1180 180 L1208 180" marker-end="url(#ab)"/>
+
+  <rect class="out" x="1210" y="392" width="210" height="98" rx="12"/>
+  <text x="1226" y="420" class="t">DAC or headphones</text>
+  <text x="1226" y="442" class="s">Bluetooth: compressed again</text>
+  <text x="1226" y="458" class="s">by the headphones' codec</text>
+  <text x="1226" y="476" class="s">(SBC, AAC, aptX)</text>
+  <path class="w" d="M1315 242 L1315 390" marker-end="url(#a)"/>
+
+  <!-- DSD lane -->
+  <text x="300" y="430" class="l" fill="#d9622b">DSD</text>
+  <rect class="dsd" x="300" y="442" width="190" height="150" rx="12"/>
+  <text x="316" y="468" class="t">dsdPlan</text>
+  <text x="316" y="490" class="s">native, then DoP, then PCM.</text>
+  <text x="316" y="510" class="s">Steps down when:</text>
+  <text x="316" y="528" class="s">EQ, balance or crossfeed on,</text>
+  <text x="316" y="546" class="s">shared mode, rate refused,</text>
+  <text x="316" y="564" class="s">no ASIO driver, cloud only.</text>
+  <text x="316" y="582" class="s">The reason shows.</text>
+  <path class="wo" d="M395 310 L395 440" marker-end="url(#ao)"/>
+
+  <path class="wo" d="M490 517 L510 517 L510 467 L528 467" marker-end="url(#ao)"/>
+  <path class="wo" d="M510 517 L510 712 L528 712" marker-end="url(#ao)"/>
+  <path class="wo" d="M510 589 L528 589" marker-end="url(#ao)"/>
+
+  <rect class="dsd" x="530" y="440" width="200" height="60" rx="12"/>
+  <text x="546" y="465" class="t">tc-asio.exe (native)</text>
+  <text x="546" y="485" class="s">reads the DSF/DFF bytes</text>
+  <rect class="dsd" x="760" y="440" width="260" height="60" rx="12"/>
+  <text x="776" y="465" class="t">ASIO driver, DSD buffers</text>
+  <text x="776" y="485" class="s">bit order matched, silence is 0x69</text>
+  <path class="wo" d="M730 470 L758 470" marker-end="url(#ao)"/>
+  <path class="wo" d="M1020 470 L1180 470 L1180 430 L1208 430" marker-end="url(#ao)"/>
+
+  <rect class="dsd" x="530" y="560" width="200" height="60" rx="12"/>
+  <text x="546" y="585" class="t">dsd.js packs DoP</text>
+  <text x="546" y="605" class="s">16 bits + 0x05/0xFA marker</text>
+  <rect class="dsd" x="760" y="560" width="260" height="60" rx="12"/>
+  <text x="776" y="585" class="t">WAV/RF64 on 127.0.0.1</text>
+  <text x="776" y="605" class="s">mpv, no filters, starts muted</text>
+  <path class="wo" d="M730 590 L758 590" marker-end="url(#ao)"/>
+  <path class="wo" d="M1020 590 L1196 590 L1196 462 L1208 462" marker-end="url(#ao)"/>
+  <text x="1030" y="582" class="s" style="fill:#d9622b;font-weight:600">Exclusive</text>
+
+  <rect class="dsd" x="530" y="682" width="290" height="60" rx="12"/>
+  <text x="546" y="707" class="t">mpv decodes DSD to PCM</text>
+  <text x="546" y="727" class="s">352.8 kHz family, whole numbers</text>
+  <path class="wb" d="M820 712 L1100 712 L1100 366" marker-end="url(#ab)"/>
+  <text x="845" y="704" class="s" style="fill:#2f6fde;font-weight:600">same filter chain</text>
+
+  <path class="fb" d="M630 500 L630 558" marker-end="url(#ao)"/>
+  <path class="fb" d="M630 620 L630 680" marker-end="url(#ao)"/>
+  <text x="640" y="534" class="n">can't</text>
+  <text x="640" y="655" class="n">can't</text>
+
+  <!-- signal path -->
+  <rect class="box" x="30" y="766" width="1390" height="46" rx="12"/>
+  <text x="46" y="794" class="s"><tspan style="font-weight:700;fill:#1d2430">Signal path panel</tspan>  computeSignalPath (src/utils/audio.js) reads mpv's audio-out-params, the output device, the DSD plan and MQA, lists each step above and says when the result is bit-perfect.</text>
+</svg>

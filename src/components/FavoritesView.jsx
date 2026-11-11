@@ -15,6 +15,7 @@ const FavoritesView = ({ favorites, currentFile, isPlaying, onPlay, onToggleFavo
     <SongList
       title="Favourites"
       showSort
+      prefKey="favourites"
       musicFiles={favorites}
       currentFile={currentFile}
       isPlaying={isPlaying}

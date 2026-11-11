@@ -3,9 +3,10 @@ import Icon from './Icon';
 import Cover from './Cover';
 import SongActions from './songActions';
 import MetaLinks from './MetaLinks';
-import { formatTime, qualityOf, storageOf } from '../utils/audio';
+import { formatTime, qualityOf, storageOf, mqaOf } from '../utils/audio';
 import { Select } from './ui';
 import { SOURCE_HELP, QUALITY_HELP, PLAYS_HELP } from '../utils/badges';
+import useRemembered from '../hooks/useRemembered';
 
 const SORTS = [
   { id: 'latest', label: 'Recently added' },
@@ -113,12 +114,14 @@ const PlaysInfo = () => (
 
 const titleOf = (f) => f.metadata?.title || f.name || '';
 const isDsd = (q) => q.label.startsWith('DSD');
+const khzText = (hz) => `${Number((hz / 1000).toFixed(1))} kHz`;
 const rateLabel = (hz) => `${Number((hz / 1000).toFixed(1))} kHz`;
 /** Which filter a track falls under. A track can match a kind ("hires") and a sample rate ("r96000"). */
 const qualityKeys = (f) => {
   const q = qualityOf(f);
   const keys = [q.tier];
   if (isDsd(q)) keys.push('dsd');
+  if (f?.mqa) keys.push('mqa');
   else {
     if (q.rate) keys.push(`r${q.rate}`);
     if (q.bits) keys.push(`b${q.bits}`);
@@ -132,7 +135,7 @@ const qualityRank = (f) => {
 
 const SongList = ({
   musicFiles, currentFile, isPlaying = true, onPlay, onToggleFavorite, onAddPlaylist: addPlaylistProp, onCheckSpectrum,
-  onDeleteSong, onDownloadSong, favorites = [], title, subtitle, showSort = false, onInfoClick, deleteLabel = 'Delete from library',
+  onDeleteSong, onDownloadSong, favorites = [], title, subtitle, showSort = false, prefKey = null, onInfoClick, deleteLabel = 'Delete from library',
   onBackupTo: backupToProp, storageNames: storageNamesProp, headerActions, toolbar, onBackupMany: backupManyProp, onRemoveFromCloud: removeFromCloudProp,
   onQueueMany: queueManyProp, onFavoriteMany: favoriteManyProp, onDeleteMany: deleteManyProp,
   linkAlbum = true, groupDiscs = false,
@@ -148,7 +151,8 @@ const SongList = ({
   // library delete only where the list deletes from the library (a playlist passes its own)
   const onDeleteMany = deleteManyProp || (onDeleteSong && deleteLabel === 'Delete from library' ? ctx.onDeleteMany : undefined);
   const [menu, setMenu] = useState(null); // { idx, x, y }
-  const [sortOption, setSortOption] = useState(showSort ? 'latest' : 'default');
+  // a list with a sort remembers it, and its quality filter, under its own name (Library, Favourites...)
+  const [sortOption, setSortOption] = useRemembered(showSort && prefKey ? `${prefKey}:sort` : null, showSort ? 'latest' : 'default', SORTS.map(s => s.id));
   const [sortOpen, setSortOpen] = useState(false);
   const [popKey, setPopKey] = useState(null);
   const menuRef = useRef(null);
@@ -178,14 +182,14 @@ const SongList = ({
   }, [menu, sortOpen]);
 
   // Filter by quality (lists with the sort menu): only what this list actually has is offered
-  const [qualityFilter, setQualityFilter] = useState('all');
+  const [qualityFilter, setQualityFilter] = useRemembered(showSort && prefKey ? `${prefKey}:quality` : null, 'all');
   const qualityOptions = useMemo(() => {
     if (!showSort) return [];
     const counts = new Map();
     musicFiles.forEach(f => qualityKeys(f).forEach(k => counts.set(k, (counts.get(k) || 0) + 1)));
     const label = (name, key) => ({ value: key, label: name, hint: counts.get(key).toLocaleString() });
     const out = [{ value: 'all', label: 'All quality', hint: musicFiles.length.toLocaleString() }];
-    [['hires', 'Hi-Res'], ['lossless', 'Lossless'], ['lossy', 'Lossy'], ['dsd', 'DSD']].forEach(([k, n]) => { if (counts.has(k)) out.push(label(n, k)); });
+    [['hires', 'Hi-Res'], ['lossless', 'Lossless'], ['lossy', 'Lossy'], ['dsd', 'DSD'], ['mqa', 'MQA']].forEach(([k, n]) => { if (counts.has(k)) out.push(label(n, k)); });
     const numbered = (prefix, name) => [...counts.keys()].filter(k => k[0] === prefix).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))).forEach(k => out.push(label(name(Number(k.slice(1))), k)));
     numbered('b', n => `${n}-bit`);
     numbered('r', rateLabel);
@@ -367,7 +371,7 @@ const SongList = ({
                   </div>
                 </div>
                 <span className="t-album c-album">{linkAlbum ? (<MetaLinks file={file} artist={false} />) : (file.metadata?.album || '—')}{linkAlbum && (!file.metadata?.album || file.metadata.album === 'Unknown Album') && '—'}</span>
-                <span><span className={`badge b-${q.tier} mono`}>{q.label}</span></span>
+                <span><span className={`badge b-${q.tier} mono`}>{q.label}</span>{mqaOf(file) && <span className="badge b-mqa mono" title={`${mqaOf(file).label}${mqaOf(file).rate ? `, ${khzText(mqaOf(file).rate)} original` : ''}`}>{mqaOf(file).short}</span>}</span>
                 <span className="t-src c-src" title={file.telegram_message_id && storageNames ? `In ${storageNames.get(String(file.telegram_channel_id)) || 'TeleCloud'}` : undefined}>{storageOf(file).map(s => SRC_BADGE[s])}{ctx.duplicates?.has(file.path) && <span className="badge b-cached" key="dup" title={`Extra copy of ${ctx.duplicates.get(file.path)}`}>Copy</span>}</span>
                 <span className="c-plays">
                   {ctx.playCounts?.[file.path] > 0 && (

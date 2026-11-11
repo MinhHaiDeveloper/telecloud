@@ -17,6 +17,7 @@ TeleCloud is a hi-res music player for Windows, built with Electron and React. m
 | `telegram` (GramJS) | Telegram access, in its own process |
 | `electron-updater` | Updates from GitHub Releases |
 | `electron-store` | Encrypted TeleCloud credentials and options |
+| `tc-asio.exe` (`native/asio`, C++) | Native DSD through the DAC's ASIO driver |
 
 ## Getting started
 
@@ -59,7 +60,13 @@ scripts/release.js   build one channel into beta/ or release/
 | `tagEdit.js` | Writing tags from Edit info |
 | `inferTags.js` | Filling in missing tags from the file name and folders |
 | `fileWrite.js` | Plain-language write errors, writing to read-only files on request |
-| `player.js` | mpv over JSON IPC, EQ chain, crossfade, output devices |
+| `player.js` | mpv over JSON IPC, filter chain, crossfade, output devices, DSD plan |
+| `dsd.js` | Reading DSF/DFF and packing DoP |
+| `asio.js` | Runs `tc-asio.exe` for native DSD |
+| `mqa.js` | Finding MQA in the audio and the tags |
+| `tagFile.js` | Opening tags, including DSF (its ID3v2 tag at the end) |
+| `artistImages.js` | Artist picture sources, saving, GIFs |
+| `tray.js` | Close to the tray, one copy of the app |
 | `covers.js` | Finding and caching cover art |
 | `coverSearch.js` | Online cover sources, saving covers |
 | `lyrics.js` | Lyrics sources and saving |
@@ -132,7 +139,24 @@ An album without the tag belongs to an artist who is on more than half of its tr
 
 ### Playback
 
-`player.js` runs one mpv process and controls it over a named pipe. Exclusive WASAPI gives bit-perfect output, with volume fixed at 100. Each EQ band is a filter in the mpv `lavfi` chain.
+`player.js` runs one mpv process and controls it over a named pipe. Exclusive WASAPI gives bit-perfect output, with volume fixed at 100.
+
+![Audio from the file to the DAC](../docs/audio-pipeline.svg)
+
+The filter chain is built in `chainSpec`, in this order, and each part is there only while it is on:
+
+| Label | Filter | From |
+|---|---|---|
+| `@pre`, `@b0`... | `volume`, then one `equalizer` / shelf per band | EQ. Bands are changed live with `af-command`, so dragging doesn't rebuild the chain |
+| `@stereo` | `aformat=channel_layouts=stereo` | Balance or crossfeed |
+| `@bal` | `pan`, the quieter side multiplied down | Channel balance |
+| `@xfeed` | `bs2b` (`jmeier`, `cmoy`, `default`) | Headphone crossfeed |
+| `@xf` | `volume`, ramped for a crossfade | Crossfade |
+| `@fmt` | `aformat` | Output limit |
+
+ReplayGain is mpv's own option, not a filter. `dspWhy` names the first of EQ, balance or crossfeed that is on: native DSD and DoP need none of them, so they fall back to PCM with that reason.
+
+Some tracks get their own options for one playlist entry (`loadfile` options), so the chain set for everything else comes back by itself at the next track: DoP (`af=`, starts muted) and MQA sent to an MQA DAC (`af=`, `replaygain=no`). A chain change during such a track waits for the next one.
 
 Extra copies of a track are removed from the queue when playback starts, in `playMusic`.
 
@@ -157,6 +181,12 @@ mpv can't send DSD to a DAC. It decodes it to floating-point PCM at 1/8 of the D
 `asio.js` runs the helper; `player.js` tries native first when it is chosen. mpv is closed while ASIO has the DAC and started again for the next PCM file. A DAC's WASAPI output disappears for about a second while its driver leaves ASIO (measured on a Topping DX1 II), so `waitForOutput` waits for it to be listed again. If mpv still can't open the output, `retryOutput` loads the track again every 0.5 s for up to 6 s before it reports an error. A driver that can't play the file (no DSD, not that rate, busy, an error while playing) hands the track to mpv at the same moment: DoP if it can, else PCM. The reason shows in the signal path and the log. The EQ can't touch native DSD, so turning it on does the same. "TeleCloud test output" (only with TC_ASIO_TEST_OUT set) plays in real time into files, so tests check every byte without hardware.
 
 ASIO is a trademark of Steinberg Media Technologies GmbH.
+
+### Balance, crossfeed and MQA
+
+Channel balance and headphone crossfeed are filters in the same chain as the EQ (`pan` and `bs2b`), so like the EQ they send native DSD and DoP back to PCM, with the reason in the signal path. Balance only turns one side down, never the other up.
+
+`mqa.js` finds MQA the way MQA_identifier does (Apache-2.0): the first seconds are decoded with mpv as 32-bit samples and the XOR of the two channels is searched for the sync word, which also gives the original rate and MQA Studio. Tags (`MQAENCODER`, `ORIGINALSAMPLERATE`) count at the scan; the audio is read the first time a track plays, or for the whole library from Settings. TeleCloud does not unfold MQA. "Send to MQA DAC" plays MQA tracks with no filters and no ReplayGain (per-file `af=` and `replaygain=no`), so the DAC gets the bits it needs.
 
 ### Covers
 
@@ -199,7 +229,7 @@ Telegram work runs in a `utilityProcess` (`worker.js`), so the interface stays s
 
 ### Discord
 
-`discord.js` talks to the Discord desktop app over its local pipe, using the application ID in that file. It is off by default. The cover is a public picture from the online sources, otherwise the `telecloud` art asset. A **Get TeleCloud** button links to the website unless turned off. Updates go out at most once every 4 seconds. The app never uploads files for this.
+`discord.js` talks to the Discord desktop app over its local pipe, using the application ID in that file. It is off by default. The cover is a public picture from the online sources, otherwise the `telecloud` art asset. The small picture is the first artist's, from a picture chosen online or the artist sources, and its hover text is that artist's name. While nothing is loaded, the status shows the last track played (`discord-last.json`). A **Get TeleCloud** button links to the website unless turned off. Updates go out at most once every 4 seconds. The app never uploads files for this.
 
 ### Logs
 
@@ -219,7 +249,10 @@ Everything is in `%APPDATA%\telecloud`.
 |---|---|
 | `music-library.db` | SQLite database |
 | `settings.json` and other stores in `music.js` | Settings, playlists, favourites |
-| `lyrics-settings.json`, `cover-settings.json`, `discord-settings.json` | Options of each feature |
+| `lyrics-settings.json`, `cover-settings.json`, `discord-settings.json`, `artist-picture-settings.json` | Options of each feature |
+| `artist-images/` | Artist pictures shown in the app, GIFs and `gifs.json` |
+| `youtube-artists.json` | YouTube answers, kept 30 days |
+| `discord-last.json` | The last track played, for the Discord status |
 | `telecloud-sync.json` | Telegram credentials and options |
 | `lastfm.json` | Last.fm account, with the session key encrypted |
 | `audio-cache/` | Downloaded cloud tracks |
@@ -231,7 +264,7 @@ Database tables:
 
 | Table | Holds |
 |---|---|
-| `music_files` | One row per track: tags, `album_artist`, audio details, `storage_type` (`local`, `cloud`, `both`), `telegram_message_id`, `telegram_channel_id`, `cache_path`, `cloud_checksum`, `cloud_cover` |
+| `music_files` | One row per track: tags, `album_artist`, audio details, `storage_type` (`local`, `cloud`, `both`), `telegram_message_id`, `telegram_channel_id`, `cache_path`, `cloud_checksum`, `cloud_cover`, `mqa` (null not known yet, 0 no, 1 MQA, 2 MQA Studio), `mqa_rate` |
 | `plays` | Listening history. Title, artist and album are kept with each play |
 | `storages` | Telegram chats used as storage, up to 5 |
 | `cloud_index` | One row per file message: checksum, size, IV, track info |
@@ -282,6 +315,7 @@ There is no test suite in the repo. These environment variables let a script run
 |---|---|
 | `TELECLOUD_MPV_AO` | Audio output for mpv, for example `null` for silence |
 | `TELECLOUD_DISCORD_PIPE` | Pipe to use instead of the real Discord |
+| `TC_ASIO_TEST_OUT` | Adds "TeleCloud test output", an ASIO stand-in that writes the DSD it gets to files |
 | `TELECLOUD_FAKE_CLIENT` | Module to use instead of the real Telegram client |
 | `TELECLOUD_IN_PROCESS` | Runs the TeleCloud worker in the same process |
 | `TELECLOUD_MANIFEST_EVERY` | How many tracks between index saves during a backup |

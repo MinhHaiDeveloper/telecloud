@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import useRemembered from '../hooks/useRemembered';
 import SongList from './SongList';
 import Cover from './Cover';
 import Icon from './Icon';
@@ -28,7 +29,7 @@ const PlaylistsView = ({ playlists, setPlaylists, onSavePlaylists, currentFile, 
   const [isCreating, setIsCreating] = useState(createSignal > 0);
   const [newName, setNewName] = useState('');
   const [renaming, setRenaming] = useState(null);
-  const [sortBy, setSortBy] = useState('latest');
+  const [sortBy, setSortBy] = useRemembered('playlists:sort', 'latest', SORTS.map(s => s.value));
   useEffect(() => { if (createSignal > 0) setIsCreating(true); }, [createSignal]);
 
   const save = (next) => { setPlaylists(next); onSavePlaylists(next); };

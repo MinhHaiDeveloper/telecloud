@@ -37,6 +37,7 @@
 }
 .badge .ico { width: 11px; height: 11px; stroke-width: 2.2; }
 .b-hires { background: color-mix(in srgb, var(--q-hires) 15%, transparent); color: var(--q-hires); }
+.b-mqa { background: color-mix(in srgb, var(--q-mqa) 16%, transparent); color: var(--q-mqa); margin-left: 6px; }
 .b-lossless { background: var(--ok-soft); color: var(--ok); }
 .b-lossy, .b-local { background: var(--surface-2); color: var(--text-2); }
 .b-cloud { background: var(--info-soft); color: var(--info); }
@@ -350,14 +351,19 @@
 .signal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
 .signal-head b { font-size: 13px; }
 .sp-steps { display: flex; flex-direction: column; gap: 10px; position: relative; }
-.sp-steps::before { content: ""; position: absolute; left: 6px; top: 8px; bottom: 8px; width: 2px; background: var(--surface-hover); }
-.sp-step { display: flex; gap: 12px; align-items: center; position: relative; font-size: 12.5px; min-width: 0; }
-.sp-step i { width: 14px; height: 14px; border-radius: 50%; background: var(--ok); border: 3px solid var(--surface); flex-shrink: 0; z-index: 1; }
+/* dot | label | value; the why goes under the label and value. The value stays on the label's first line. */
+.sp-step { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 12px; align-items: start; position: relative; font-size: 12.5px; line-height: 1.35; min-width: 0; }
+.sp-step i { width: 14px; height: 14px; margin-top: 1px; border-radius: 50%; background: var(--ok); border: 3px solid var(--surface); z-index: 1; }
+/* the line runs from each dot to the next one, and stops at the last */
+.sp-step:not(:last-child)::after { content: ""; position: absolute; left: 6px; top: 8px; bottom: -18px; width: 2px; background: var(--surface-hover); }
 .sp-step.warn i { background: var(--warn); }
 .sp-step.off { color: var(--text-3); }
 .sp-step.off i { background: var(--text-3); }
 .sp-step .lbl { min-width: 0; line-height: 1.35; overflow-wrap: anywhere; } /* the reasons are the point: wrap, never cut */
-.sp-step .val { margin-left: auto; color: var(--text-3); font-size: 11.5px; white-space: nowrap; }
+/* the why, under a short label, so the label column stays readable in a narrow panel */
+.sp-step .sp-detail { grid-column: 2 / -1; margin-top: 2px; font-size: 11px; line-height: 1.35; color: var(--text-3); overflow-wrap: anywhere; }
+.sp-step.off .sp-detail { color: var(--text-3); opacity: .85; }
+.sp-step .val { justify-self: end; color: var(--text-3); font-size: 11.5px; line-height: 17px; white-space: nowrap; }
 .sp-step label { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-3); cursor: pointer; }
 /* EQ toggle as a small switch */
 .sp-step label input {

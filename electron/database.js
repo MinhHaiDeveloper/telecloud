@@ -77,7 +77,7 @@ function createSchema() {
     }
 
     // Library: file name/extension and codec details
-    for (const col of ['name TEXT', 'ext TEXT', 'codec TEXT', 'lossless INTEGER', 'cloud_cover TEXT', 'album_artist TEXT']) {
+    for (const col of ['name TEXT', 'ext TEXT', 'codec TEXT', 'lossless INTEGER', 'cloud_cover TEXT', 'album_artist TEXT', 'mqa INTEGER', 'mqa_rate INTEGER']) {
         try { db.exec(`ALTER TABLE music_files ADD COLUMN ${col}`); } catch (e) { /* exists */ }
     }
 
@@ -155,14 +155,16 @@ const UPSERT_SQL = `
     INSERT INTO music_files (
       path, name, ext, mtime, size, title, artist, album, album_artist, year, genre,
       track_number, disc_number, duration, bitrate, sample_rate, bit_depth,
-      codec, lossless, lyrics, cover, has_cover, cover_hash, last_scanned, created_at
+      codec, lossless, lyrics, cover, has_cover, cover_hash, last_scanned, created_at, mqa, mqa_rate
     ) VALUES (
       @path, @name, @ext, @mtime, @size, @title, @artist, @album, @albumArtist, @year, @genre,
       @trackNumber, @discNumber, @duration, @bitrate, @sampleRate, @bitDepth,
-      @codec, @lossless, @lyrics, @cover, @hasCover, @coverHash, @lastScanned, @addedAt
+      @codec, @lossless, @lyrics, @cover, @hasCover, @coverHash, @lastScanned, @addedAt, @mqa, @mqaRate
     )
     ON CONFLICT(path) DO UPDATE SET
       name = @name,
+      mqa = @mqa,
+      mqa_rate = @mqaRate,
       ext = @ext,
       codec = @codec,
       lossless = @lossless,
@@ -216,7 +218,10 @@ function upsertParams(fileData) {
         coverHash: fileData.coverHash || null,
         lastScanned: Date.now(),
         // Only used when the row is first inserted; updates keep the original "added" time
-        addedAt: fileData.addedAt || Date.now()
+        addedAt: fileData.addedAt || Date.now(),
+        // MQA from the tags; null when unknown, the first play or a library check reads the audio
+        mqa: fileData.mqa ?? null,
+        mqaRate: fileData.mqaRate || null,
     };
 }
 

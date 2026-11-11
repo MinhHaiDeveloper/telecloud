@@ -31,7 +31,7 @@
   --scroll-thumb-hover: rgba(60, 75, 30, .34);
   --np-scrim: rgba(244, 246, 233, .55);
   --np-text-shadow: 0 1px 10px rgba(244, 246, 233, .6);
-  --q-hires: #9c4116; --q-lossless: #236941; --q-lossy: #296098;
+  --q-hires: #9c4116; --q-lossless: #236941; --q-lossy: #296098; --q-mqa: #6a3fc4;
 }
 
 [data-theme="sakura"] {
@@ -64,7 +64,7 @@
   --scroll-thumb-hover: rgba(130, 50, 80, .34);
   --np-scrim: rgba(255, 245, 247, .55);
   --np-text-shadow: 0 1px 10px rgba(255, 245, 247, .6);
-  --q-hires: #9f3e17; --q-lossless: #216b49; --q-lossy: #355ea0;
+  --q-hires: #9f3e17; --q-lossless: #216b49; --q-lossy: #355ea0; --q-mqa: #6a3fc4;
 }
 
 [data-theme="hojicha"] {

@@ -79,11 +79,23 @@ async function parseTrack(filePath, stat) {
       lossless: f.lossless === true ? 1 : f.lossless === false ? 0 : null,
       // no lyrics in the tags: a .lrc with the same name next to the file counts too
       lyrics: extractLyrics(parsed) || sidecarLyrics(filePath),
+      ...mqaTags(parsed),
     };
   } catch (err) {
     console.error(`[Library] Could not parse ${filePath}: ${err.message}`);
     return { ...base, title: path.basename(filePath, base.ext), artist: 'Unknown Artist', album: 'Unknown Album', albumArtist: '', duration: 0 };
   }
+}
+
+/** MQA written in the tags by the store or a tagging tool (MQAENCODER, ORIGINALSAMPLERATE) */
+function mqaTags(parsed) {
+  const tags = Object.values(parsed.native || {}).flat();
+  const get = (re) => tags.find(t => re.test(String(t.id)))?.value;
+  const enc = get(/^MQAENCODE(R)?$/i);
+  const encoder = String(get(/^ENCODER$/i) || '');
+  if (!enc && !/\bMQA/i.test(encoder)) return {};
+  const rate = Number(get(/^(MQA)?ORIGINALSAMPLERATE$/i)) || null;
+  return { mqa: /studio/i.test(String(get(/^MQASTUDIO$/i) || '')) ? 2 : 1, mqaRate: rate };
 }
 
 function sidecarLyrics(filePath) {

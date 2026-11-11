@@ -12,7 +12,8 @@
 
 TeleCloud plays the music files on your computer the way they were recorded, and keeps a private copy of them in Telegram. Telegram gives every account unlimited storage, so your whole collection is safe and can be streamed back to any computer where you sign in.
 
-- **Plays your files as they are.** FLAC, ALAC, WAV, AIFF, APE, WavPack, DSD and the common lossy formats. With an exclusive output device, the sound goes to your DAC untouched (bit-perfect).
+- **Plays your files as they are.** FLAC, ALAC, WAV, AIFF, APE, WavPack, DSD and the common lossy formats. With an exclusive output device, the sound goes to your DAC untouched (bit-perfect). DSD can go to the DAC as native DSD or DoP.
+- **Shows what happens to the sound.** The Signal path panel lists every step from the file to your DAC, and says when something changes it.
 - **Backs up to Telegram.** Your music goes into a private channel that only you can see. Files are encrypted before they leave your computer.
 - **Streams from the cloud.** Tracks that are only in TeleCloud play straight from Telegram and are kept in a cache for next time.
 - **Restores on a new computer.** Sign in, restore, and your library comes back with its tags, lyrics and album covers.
@@ -40,9 +41,20 @@ In **Settings > Playback**:
 - **Output device:** pick your DAC or headphones. Devices marked *exclusive* give bit-perfect playback; *System default* shares the sound with other apps.
 - **ReplayGain:** evens out the volume between tracks or albums.
 - **Crossfade:** blends the end of one track into the next (in shared mode).
+- **Channel balance:** turns the left or right side down in steps of 0.5 dB, for uneven ears or headphones.
+- **Headphone crossfeed:** blends a little of each side into the other (Light, Medium or Strong), so hard-panned recordings are easier on headphones.
+- **MQA:** TeleCloud recognises MQA tracks and shows a violet **MQA** badge with the original rate. *Send to MQA DAC* sends them untouched so an MQA DAC can unfold them; *Play as plain PCM* plays them like any other file. **Find MQA tracks** checks the whole library; otherwise each track is checked the first time it plays.
+- **DSD playback:** *Native (ASIO)* sends DSD to your DAC as it is, through its ASIO driver. *DoP* sends it packed in PCM, in exclusive mode. *Convert to PCM* works with every DAC. If one way can't be used, TeleCloud falls back to the next and the signal path says why.
 - **Limit output format:** caps the sample rate and bit depth if your device cannot handle very high resolutions.
 
+The EQ, balance, crossfeed and ReplayGain change the sound, so playback is no longer bit-perfect while they are on.
+
 The **Signal path** panel on the right shows exactly what happens to the sound on its way to your device.
+
+**Settings > General > Performance** has two more options:
+
+- **Low memory mode** draws the interface without the graphics card. It uses much less memory; animations may be less smooth. The sound is not affected.
+- **Keep running in the tray when closed** hides the window instead of quitting, and the music keeps playing. Quit from the tray icon.
 
 ### 3. Equalizer (optional)
 
@@ -79,7 +91,9 @@ Each track shows small labels in the **Source** column. The info icon next to "S
 | Cloud | Only in TeleCloud. It streams from Telegram when you play it. |
 | Cloud + Cached | Only in TeleCloud, but already downloaded, so it plays instantly and offline. |
 
-The **Quality** column shows the format: for example **FLAC 24/96** for hi-res, **FLAC 16/44.1** for CD quality, or **MP3 320** for lossy files (the number is the bitrate).
+The **Quality** column shows the format: for example **FLAC 24/96** for hi-res, **FLAC 16/44.1** for CD quality, **DSD64** for DSD, or **MP3 320** for lossy files (the number is the bitrate). MQA tracks also get a violet **MQA** badge with the original rate, such as **MQA 88.2**. The quality filter above the list shows only Hi-Res, DSD, MQA, a bit depth or a sample rate.
+
+Albums can be sorted by title, artist, number of tracks, **Latest added** or **Oldest added**.
 
 ### Selecting several tracks
 
@@ -102,7 +116,19 @@ Use **Remove from TeleCloud** in a track's menu, in an album or playlist menu, o
 
 ### Saving a track to your computer
 
-Choose **Download** in the menu of a cloud track to keep a copy on your computer. The download folder can be changed in **Settings > Downloads**.
+Choose **Download** in a track's menu, or **Download album** in an album's menu, to keep a copy on your computer. Each track goes into a folder named after its album, inside the download folder set in **Settings > Downloads**.
+
+For a track whose file is on this computer, **Open file location** shows it in File Explorer.
+
+### Artist pictures
+
+Open an artist and click **Artist picture** to choose one from the online sources (Last.fm, Deezer, TheAudioDB, Apple Music, MusicBrainz) or upload your own. The **YouTube** tab looks at YouTube channels, and **Find on VGMdb** opens VGMdb's search in your browser. The picture is saved into the tags of that artist's own tracks, so other players see it too.
+
+Animated GIFs move on the artist's page. Tags get a still frame, and the GIF itself goes into your TeleCloud backup, so it comes back on another computer.
+
+### Discord status
+
+In **Settings > General > Discord**, TeleCloud can show what you are listening to on your Discord status, with the album cover and a small picture of the artist. While nothing is loaded, it shows the last track you played. It needs the Discord desktop app on the same computer.
 
 ### Restoring on another computer
 

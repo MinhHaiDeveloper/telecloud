@@ -56,6 +56,8 @@ function toFrontend(dbRow) {
     cloud_checksum: row.cloud_checksum,
     last_synced_at: row.last_synced_at,
     added_at: row.created_at,
+    mqa: row.mqa ?? null,
+    mqaRate: row.mqa_rate || null,
   };
 }
 

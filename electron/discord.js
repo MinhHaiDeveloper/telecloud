@@ -48,7 +48,7 @@ function buildActivity({ track: current, playing, position, last }, o, coverUrl,
   };
   if (artist && artistUrl && artistUrl.length <= 256) {
     a.assets.small_image = artistUrl;
-    if (fit(artist)) a.assets.small_text = fit(artist);
+    if (fit(firstName(artist))) a.assets.small_text = fit(firstName(artist)); // the artist in the picture
   }
   if (!compat) {
     a.name = fit(fill(o.statusText, { title: track.title, artist, album })) || 'TeleCloud';
