@@ -2,9 +2,12 @@ import { useEffect } from 'react';
 
 // One tooltip for the whole app: hovering any text that is cut off with "…" (single-line
 // ellipsis or a line clamp) shows the full text after a short delay. Nothing to add per
-// component, and text that fits never gets a tooltip.
+// component, and text that fits never gets a tooltip. On a touch screen (TeleCloud Remote on a
+// phone), pressing and holding the text shows it; that press doesn't count as a tap.
 
 const DELAY = 380;
+const HOLD = 450; // touch: press and hold this long
+const KEEP = 1800; // touch: how long it stays after the finger lifts
 const MAX_DEPTH = 4; // the hovered node can be an icon or <b> inside the truncated element
 
 const truncated = (el) => {
@@ -84,7 +87,11 @@ const OverflowTooltip = () => {
     };
 
     const pointer = { x: 0, y: 0 };
+    let touch = null;
+    let lastTouch = 0;
     const onOver = (e) => {
+      // a tap also sends mouse events: those aren't hovering
+      if (Date.now() - lastTouch < 900) return;
       pointer.x = e.clientX; pointer.y = e.clientY;
       const el = findTruncated(e.target);
       if (el === target) return;
@@ -103,16 +110,65 @@ const OverflowTooltip = () => {
       if (target && !target.contains(e.relatedTarget)) hide();
     };
 
+    const onTouchStart = (e) => {
+      lastTouch = Date.now();
+      hide();
+      touch = null;
+      if (e.touches.length !== 1) return;
+      const f = e.touches[0];
+      const el = findTruncated(e.target);
+      if (!el) return;
+      touch = { x: f.clientX, y: f.clientY, shown: false };
+      pointer.x = f.clientX; pointer.y = f.clientY;
+      target = el;
+      parkTitle(el);
+      timer = setTimeout(() => {
+        if (target !== el || !el.isConnected || !touch) return;
+        show(el);
+        touch.shown = true;
+        try { navigator.vibrate?.(8); } catch { /* not allowed */ }
+      }, HOLD);
+    };
+    const onTouchMove = (e) => {
+      if (!touch) return;
+      const f = e.touches[0];
+      if (Math.hypot(f.clientX - touch.x, f.clientY - touch.y) > 10) { touch = null; hide(); }
+    };
+    const onTouchEnd = (e) => {
+      lastTouch = Date.now();
+      if (!touch) return;
+      const { shown } = touch;
+      touch = null;
+      if (!shown) { hide(); return; }
+      // the hold showed the text: the lift is not a tap on what is under it
+      if (e.cancelable) e.preventDefault();
+      clearTimeout(timer);
+      timer = setTimeout(hide, KEEP);
+    };
+    // a long press also asks for the browser's own menu; not while the full text is up
+    const onMenu = (e) => { if (tip.classList.contains('show') || touch) e.preventDefault(); };
+
+    document.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+    document.addEventListener('touchmove', onTouchMove, { capture: true, passive: true });
+    document.addEventListener('touchend', onTouchEnd, { capture: true, passive: false });
+    document.addEventListener('touchcancel', hide, true);
+    document.addEventListener('contextmenu', onMenu, true);
     document.addEventListener('mouseover', onOver, true);
     document.addEventListener('mouseout', onOut, true);
-    document.addEventListener('mousedown', hide, true);
+    const onDown = () => { if (Date.now() - lastTouch > 900) hide(); };
+    document.addEventListener('mousedown', onDown, true);
     document.addEventListener('scroll', onScroll, true);
     window.addEventListener('blur', hide);
     return () => {
       hide();
+      document.removeEventListener('touchstart', onTouchStart, true);
+      document.removeEventListener('touchmove', onTouchMove, true);
+      document.removeEventListener('touchend', onTouchEnd, true);
+      document.removeEventListener('touchcancel', hide, true);
+      document.removeEventListener('contextmenu', onMenu, true);
       document.removeEventListener('mouseover', onOver, true);
       document.removeEventListener('mouseout', onOut, true);
-      document.removeEventListener('mousedown', hide, true);
+      document.removeEventListener('mousedown', onDown, true);
       document.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('blur', hide);
       tip.remove();

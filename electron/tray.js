@@ -17,9 +17,10 @@ function showWindow() {
 
 function ensureTray() {
   if (tray) return;
-  const icon = path.join(__dirname, app.isPackaged ? '../dist/icon.png' : '../public/icon.png');
+  const beta = require('../package.json').version.includes('-');
+  const icon = path.join(__dirname, app.isPackaged ? '../dist' : '../public', beta ? 'icon-beta.png' : 'icon.png');
   tray = new Tray(nativeImage.createFromPath(icon).resize({ width: 16, height: 16, quality: 'best' }));
-  tray.setToolTip('TeleCloud');
+  tray.setToolTip(beta ? 'TeleCloud Beta' : 'TeleCloud');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show TeleCloud', click: showWindow },
     { type: 'separator' },

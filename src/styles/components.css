@@ -869,6 +869,9 @@ html.np-cover-only .app.np-mode .np-body { padding-bottom: 0; }
 .whats-new-more { margin-top: 12px; }
 .whats-new-scroll h4, .whats-new-card h4 { margin: 0 0 8px; font-size: 13px; font-weight: 800; }
 h4.whats-new-older { margin-top: 18px; }
+.whats-new-intro { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--text); }
+.whats-new-section + .whats-new-section { margin-top: 14px; }
+.whats-new-section h5 { margin: 0 0 8px; font-size: 11.5px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--accent); }
 
 /* Settings -> About -> Logs */
 .logs-dates { display: flex; gap: 8px; }
@@ -929,3 +932,33 @@ h4.whats-new-older { margin-top: 18px; }
 .balance-track input:hover::-webkit-slider-thumb, .balance-track input:active::-webkit-slider-thumb { transform: scale(1.12); }
 .balance-track input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-soft); }
 .mqa-scan { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* Settings > Remote */
+.remote-pair { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+.remote-qr { width: 176px; height: 176px; flex: none; padding: 8px; border-radius: 14px; background: #fff; }
+.remote-qr svg { display: block; width: 100%; height: 100%; }
+.remote-how { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 8px; }
+.remote-how b { font-size: 15px; }
+.remote-how small { font-size: 12.5px; color: var(--text-2); line-height: 1.45; }
+.remote-how small.muted { color: var(--text-3); }
+.remote-url { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.remote-url code { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 10px; background: var(--surface); font-size: 12px; overflow-wrap: anywhere; user-select: all; }
+.remote-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.remote-name { width: 220px; }
+.remote-devices { gap: 8px; }
+.remote-devices-title { font-size: 13px; }
+.remote-device { display: flex; align-items: center; gap: 10px; }
+.remote-wol { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.remote-wol summary { cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; list-style: none; }
+.remote-wol summary::-webkit-details-marker { display: none; }
+.remote-wol summary .ico { width: 15px; height: 15px; transform: rotate(-90deg); transition: transform .2s; }
+.remote-wol[open] summary .ico { transform: none; }
+.remote-wol[open] { gap: 10px; }
+.remote-wol ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; line-height: 1.5; color: var(--text-2); }
+.remote-wol-info { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; align-items: center; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
+.remote-wol-info span { color: var(--text-3); font-size: 12px; }
+.remote-wol-info code { user-select: all; }
+.remote-device .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex: none; }
+.remote-device .dot.on { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.remote-device-name { font-size: 13px; font-weight: 600; }
+.remote-device small { flex: 1; font-size: 12px; }

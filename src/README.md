@@ -73,6 +73,7 @@ scripts/release.js   build one channel into beta/ or release/
 | `stats.js` | Play history, play counts, Dashboard data |
 | `lastfm.js` | Scrobbling and artist biographies |
 | `discord.js` | Discord status over its local pipe |
+| `remote.js` | TeleCloud Remote: the local web server other devices control the app through |
 | `autoeq.js` | Headphone measurements and target curves |
 | `spectrum.js`, `spectrumCore.js` | Spectrogram and lossless check |
 | `watcher.js` | Native folder watching, followed by a normal refresh |
@@ -105,6 +106,7 @@ scripts/release.js   build one channel into beta/ or release/
 | `utils/whatsNew.js` | Release notes shown in the app |
 | `utils/badges.js` | Text for the Source, Quality and Plays help |
 | `components/ui.jsx` | Shared controls, dialogs, `useDetailScroll` |
+| `remote/` | The Remote page other devices open (`remote.html` entry), and `hostQuery.js`, which answers its library questions inside the app |
 
 ## How it works
 
@@ -231,6 +233,19 @@ Telegram work runs in a `utilityProcess` (`worker.js`), so the interface stays s
 
 `discord.js` talks to the Discord desktop app over its local pipe, using the application ID in that file. It is off by default. The cover is a public picture from the online sources, otherwise the `telecloud` art asset. The small picture is the first artist's, from a picture chosen online or the artist sources, and its hover text is that artist's name. While nothing is loaded, the status shows the last track played (`discord-last.json`). A **Get TeleCloud** button links to the website unless turned off. Updates go out at most once every 4 seconds. The app never uploads files for this.
 
+### Remote
+
+`remote.js` runs a plain HTTP server only while Settings > Remote is on, on a new random port each start. The page is `remote.html` (its own Vite entry, built into `dist/`; under `npm run dev` it comes from Vite, limited to the files the page needs).
+
+- **Pairing.** The QR code holds `http://<address>:<port>/#k=<key>`. The fragment never reaches a server log; the page posts the key to `/api/pair` and gets an HttpOnly, SameSite=Strict cookie. Tokens are kept hashed. **New key** signs every device out; a device can be removed or set to View only (its commands get 403).
+- **State** goes out as Server-Sent Events (`/api/events`), sent by the window when something changes and every 5 seconds while playing. **Commands** are `POST /api/cmd` with an `X-TeleCloud: 1` header (a page on another site can't send it), at most 15 a second per device, checked one by one, then handed to the window as `remote:command`, so the queue, history, Last.fm and Discord behave as for a click on this computer.
+- **Library lists** are `POST /api/browse`: main asks the window (`remote:query`), `src/remote/hostQuery.js` answers from what the app holds, a page of 60 at a time, and main rebuilds the answer key by key. `kind: 'lyrics'` returns the lines of the track that plays (from the tags, or just found online), with times when synced; the state's `lyrics` number changes when they do, so the page asks again. The state also carries the signal path steps, label, value and state only.
+- **Keep awake.** The window reports playing and paused (`power:playing`); with the option on, main holds a `prevent-app-suspension` power blocker while music plays. Settings also shows the MAC and broadcast address of the chosen adapter for Wake-on-LAN.
+- **Never sent:** audio, file paths, folders, settings, Telegram. Tracks are known by an opaque id (part of a SHA-1 of the path); covers are served by that id through `covers.artFor`, the same lookup as the app's `media://` covers (so cloud-only tracks get their TeleCloud cover), resized to 512 px (WebP and GIF as they are). A track only in TeleCloud carries `where: 'cloud' | 'cached'`, and a playback error on the computer goes out as `notice`. Artists carry `pic`, an opaque id for `/api/artist/<pic>` (`artistImages.pictureFor`, or `?motion=1` for the GIF); the page falls back to an album cover.
+- **Layouts.** `layoutOf()` in `RemoteApp.jsx` picks phone, tablet or desktop by width, plus three for foldables: `fold` (Android with a touch screen whose own shape, `screen.width` by `screen.height`, is 0.72 or squarer and at most 1300 px long: the inner screens, where Chrome sends a tablet user agent; also an Android "Mobile" browser 600 px wide or more, or two side-by-side viewport segments; two equal pages around the crease), `flex` (two viewport segments one above the other, Flex Mode: the top segment's height and the hinge come from `window.viewport.segments`) and `cover` (a touch screen narrower than 0.44, 21:9 and taller: tabs at the bottom). The screen's shape is used, not the page's, because Chrome's bars take part of the page. Tests emulate the screens with `Emulation.setDeviceMetricsOverride` (screen size, page size and a `displayFeature` for the hinge), sent after a page has loaded.
+- **Pairing again.** Opening the link with the key in a browser that is already paired keeps the same device (no second entry).
+- **Changes on the computer.** The state carries two counters: `art` changes on `telecloud:covers` and `telecloud:artists` (every picture address gets `?r=<art>`, so phones don't keep an old picture), and `lib` changes with the library, favourites or playlists (the page drops its kept lists and asks again for the page it shows, in place).
+
 ### Logs
 
 `logger.js` is started first in `main.js` and records everything sent to `console`, plus window errors, crashes, the worker, scan threads and mpv warnings.
@@ -253,6 +268,7 @@ Everything is in `%APPDATA%\telecloud`.
 | `artist-images/` | Artist pictures shown in the app, GIFs and `gifs.json` |
 | `youtube-artists.json` | YouTube answers, kept 30 days |
 | `discord-last.json` | The last track played, for the Discord status |
+| `remote-settings.json` | Remote: on or off, pairing key, display name, paired devices (tokens stored hashed) |
 | `telecloud-sync.json` | Telegram credentials and options |
 | `lastfm.json` | Last.fm account, with the session key encrypted |
 | `audio-cache/` | Downloaded cloud tracks |
@@ -307,6 +323,8 @@ Then copy the installer, its `.blockmap` and `latest.yml` to the `beta/` folder 
 
 Beta installs also receive pre-releases; stable installs only receive releases.
 
+`npm run build:beta` makes **TeleCloud Beta**: its own name, a teal-to-violet icon (`public/icon-beta.*`), `TeleCloud-Beta-Setup-<version>.exe`, and a Beta tag in the app and on remotes (any version with a `-`). It has the same app id as TeleCloud, so installing one replaces the other, and both keep the one library in `%APPDATA%	elecloud`. Stable releases come from their own branch (`release/1.0` for 1.0.x); betas from `main`, numbered above the last release (1.1.0-beta.N after 1.0.0).
+
 ## Testing hooks
 
 There is no test suite in the repo. These environment variables let a script run the real app without touching real devices or services:
@@ -315,6 +333,8 @@ There is no test suite in the repo. These environment variables let a script run
 |---|---|
 | `TELECLOUD_MPV_AO` | Audio output for mpv, for example `null` for silence |
 | `TELECLOUD_DISCORD_PIPE` | Pipe to use instead of the real Discord |
+| `TELECLOUD_REMOTE_HOST` | Address the remote listens on, for example `127.0.0.1` so tests get no firewall prompt |
+| `TELECLOUD_REMOTE_DEV_SERVER` | In development, where the remote page comes from (default `http://localhost:3000`); `off` serves `dist/` |
 | `TC_ASIO_TEST_OUT` | Adds "TeleCloud test output", an ASIO stand-in that writes the DSD it gets to files |
 | `TELECLOUD_FAKE_CLIENT` | Module to use instead of the real Telegram client |
 | `TELECLOUD_IN_PROCESS` | Runs the TeleCloud worker in the same process |

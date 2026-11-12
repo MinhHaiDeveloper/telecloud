@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2DD4BF"/><stop offset=".55" stop-color="#3B82F6"/><stop offset="1" stop-color="#7C3AED"/>
+    </linearGradient>
+    <radialGradient id="shine" cx=".28" cy=".16" r=".95">
+      <stop offset="0" stop-color="#fff" stop-opacity=".30"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="sh" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#1e1b6b" flood-opacity=".38"/></filter>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#g)"/>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#shine)"/>
+  <g fill="#fff" filter="url(#sh)" transform="translate(-36 4)"><rect x="288" y="112" width="36" height="250" rx="18"/><path d="M306 112 C 306 112 330 108 348 130 C 384 168 418 196 410 262 C 406 296 392 318 378 330 C 390 300 392 270 372 244 C 356 222 334 214 306 210 Z"/><path d="M6.5 19H17.5A4 4 0 0 0 18.2 11.06A6 6 0 0 0 6.6 9.6A4.7 4.7 0 0 0 6.5 19Z" transform="translate(147.72 249.48) scale(8.8000)"/></g>
+</svg>

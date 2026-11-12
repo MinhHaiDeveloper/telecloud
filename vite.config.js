@@ -7,6 +7,8 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     target: 'chrome120',
+    // the app, and the page TeleCloud Remote serves to other devices
+    rollupOptions: { input: { main: 'index.html', remote: 'remote.html' } },
   },
   server: {
     port: 3000,

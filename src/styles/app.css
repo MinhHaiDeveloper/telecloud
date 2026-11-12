@@ -611,6 +611,9 @@
 .tb-mark { width: 16px; height: 16px; border-radius: 5px; display: grid; place-items: center; flex-shrink: 0;
   background: linear-gradient(135deg, #FF8A3D, #FF5A4E 55%, #F0306E); color: #fff; }
 .tb-mark .ico { width: 13px; height: 13px; }
+/* TeleCloud Beta: the same mark in teal, blue and violet, and a small tag after the name */
+[data-channel="beta"] .logo-mark, [data-channel="beta"] .tb-mark { background: linear-gradient(135deg, #2DD4BF, #3B82F6 55%, #7C3AED); }
+.logo-beta { display: inline-block; margin-left: 7px; padding: 2px 6px; border-radius: 6px; vertical-align: 3px; font-size: 10px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: #fff; background: linear-gradient(135deg, #2DD4BF, #3B82F6 55%, #7C3AED); }
 .titlebar.blurred .tb-mark { filter: saturate(.4) opacity(.7); }
 .tb-name { font-weight: 700; color: var(--text); }
 .titlebar.blurred .tb-name { color: var(--text-2); }

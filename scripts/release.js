@@ -42,9 +42,14 @@ try {
   console.warn('tc-asio.exe could not be rebuilt; packing the one already built.');
 }
 execSync('npx vite build', { cwd: ROOT, stdio: 'inherit' });
-execSync('npx electron-builder --win --publish never', { cwd: ROOT, stdio: 'inherit' });
+// a beta installs as TeleCloud Beta, with its own icon and installer name, so the two are never mixed up
+// (the same app id: installing one replaces the other, and both keep the one library)
+const betaLook = channel === 'beta'
+  ? ' -c.productName="TeleCloud Beta" -c.win.icon=public/icon-beta.ico -c.nsis.shortcutName="TeleCloud Beta" -c.win.artifactName="TeleCloud-Beta-Setup-${version}.${ext}"'
+  : '';
+execSync(`npx electron-builder --win --publish never${betaLook}`, { cwd: ROOT, stdio: 'inherit' });
 
-const name = `TeleCloud-Setup-${version}.exe`;
+const name = `${channel === 'beta' ? 'TeleCloud-Beta-Setup' : 'TeleCloud-Setup'}-${version}.exe`;
 if (!fs.existsSync(path.join(out, name))) { console.error('No installer was produced.'); process.exit(1); }
 fs.mkdirSync(target, { recursive: true });
 // the installer plus what auto-update reads: the channel file (latest.yml / beta.yml) and the blockmap

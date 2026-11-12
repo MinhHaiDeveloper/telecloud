@@ -12,6 +12,7 @@ import UpdateStatus from './UpdateStatus';
 import DuplicatesSettings from './DuplicatesSettings';
 import PerformanceSettings from './PerformanceSettings';
 import AppearanceSettings from './AppearanceSettings';
+import RemoteSettings from './RemoteSettings';
 import { Toggle, Segmented, Select, SettingRow, Callout, Dialog, alertDialog } from './ui';
 import useSlidingIndicator from '../hooks/useSlidingIndicator';
 import pkg from '../../package.json';
@@ -25,6 +26,7 @@ const TABS = [
   { id: 'keyboard', label: 'Keyboard', icon: 'lyrics' },
   { id: 'downloads', label: 'Downloads', icon: 'download' },
   { id: 'telecloud', label: 'TeleCloud Sync', icon: 'cloud' },
+  { id: 'remote', label: 'Remote', icon: 'monitor' },
   { id: 'about', label: 'About', icon: 'info' },
 ];
 
@@ -531,6 +533,9 @@ const SettingsView = ({
       case 'telecloud':
         return <TeleCloudSyncSettings />;
 
+      case 'remote':
+        return <RemoteSettings />;
+
       case 'about':
       default:
         return (
@@ -541,7 +546,7 @@ const SettingsView = ({
               <div className="about-hero">
                 <div className="logo-mark"><Icon name="logo" /></div>
                 <div>
-                  <div style={{ fontWeight: 800, fontSize: 18 }}>TeleCloud</div>
+                  <div style={{ fontWeight: 800, fontSize: 18 }}>TeleCloud{pkg.version.includes('-') && <span className="logo-beta">Beta</span>}</div>
                   <div style={{ color: 'var(--text-3)', fontSize: 13 }}>Version {pkg.version} · Local hi-res player with Telegram cloud backup</div>
                 </div>
               </div>

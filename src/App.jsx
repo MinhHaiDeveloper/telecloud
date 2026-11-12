@@ -18,9 +18,11 @@ import SettingsView from './components/SettingsView';
 import EqSettingsView from './components/EqSettingsView';
 import Modal from './components/Modal'; // Import the new Modal component
 import { albumIndex } from './utils/albums';
+import { answer as remoteAnswer, resolveSource as remoteSource, trackOut as remoteTrackOut } from './remote/hostQuery';
 import { isTheme, themeKind } from './utils/themes';
 import useCoverAccent from './hooks/useCoverAccent';
 import { computeSignalPath, matchesSource, storageOf, qualityOf, findDuplicates, dedupeTracks, coverTargets, albumQuery, bumpCovers, bumpArtist, setCoverPreview, clearCoverPreview } from './utils/audio';
+import { parseLyrics } from './components/LyricsView';
 import { DialogHost, confirmDialog, alertDialog, Progress } from './components/ui';
 import useEq from './hooks/useEq';
 import StorageDialog from './components/StorageDialog';
@@ -807,7 +809,11 @@ function App() {
       addToRecent(file);
     } catch (err) {
       console.error(err);
-      if (token === playTokenRef.current) showToast(`Playback error: ${err.message}`, 'error');
+      if (token === playTokenRef.current) {
+        showToast(`Playback error: ${err.message}`, 'error');
+        // remotes see it too (a cloud track that can't be streamed right now, a missing file)
+        setRemoteNotice({ text: `Couldn't play ${file.metadata?.title || file.name}: ${err.message}`, at: Date.now() });
+      }
     }
   };
 
@@ -1116,6 +1122,17 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     showToast(fresh.length === 1 ? 'Added to the queue' : `Added ${fresh.length} tracks to the queue`);
   };
 
+  // Right after the current track (a remote's "Play next"); tracks already waiting move up
+  const handlePlayNextMany = (files) => {
+    if (!currentFile || currentIndex < 0) { playMusic(files[0], 0, files); return; }
+    const paths = new Set(files.map(f => f.path));
+    const rest = playQueue.slice(currentIndex + 1).filter(f => !paths.has(f.path));
+    const fresh = (skipDuplicates ? dedupeTracks(files) : files).filter(f => f.path !== currentFile.path);
+    if (!fresh.length) return;
+    setPlayQueue([...playQueue.slice(0, currentIndex + 1), ...fresh, ...rest]);
+    showToast(fresh.length === 1 ? 'Playing next' : `Playing ${fresh.length} tracks next`);
+  };
+
   const hasDownloadFolder = async () => {
     const settings = await window.ipcRenderer.invoke('load-store', 'settings');
     if (settings?.downloadFolder) return true;
@@ -1217,6 +1234,59 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     if (autoGain) window.ipcRenderer.invoke('player:replaygain-auto', autoGain).catch(() => {});
   }, [autoGain]);
 
+  // ---- TeleCloud Remote: what remotes see goes out when it changes (and the position now and then);
+  // their commands come back here and run like clicks on this computer
+  const [remoteOn, setRemoteOn] = useState(false);
+  const [remoteNotice, setRemoteNotice] = useState(null);
+  // remotes ask for covers and pictures again when one changes here, and for lists when the library does
+  const [remoteArt, setRemoteArt] = useState(0);
+  useEffect(() => {
+    const on = () => setRemoteArt(Date.now());
+    window.addEventListener('telecloud:covers', on);
+    window.addEventListener('telecloud:artists', on);
+    return () => { window.removeEventListener('telecloud:covers', on); window.removeEventListener('telecloud:artists', on); };
+  }, []);
+  const remoteLibRev = useRef(0);
+  const remoteLib = useMemo(() => { remoteLibRev.current += 1; return remoteLibRev.current; }, [musicFiles, favorites, playlists]); // eslint-disable-line react-hooks/exhaustive-deps
+  const remoteSnapRef = useRef(null);
+  const remoteSent = useRef({ key: '', pos: 0, at: 0 });
+  const remoteCmdRef = useRef(null);
+  const remoteQueryRef = useRef(null);
+  useEffect(() => {
+    const ipc = window.ipcRenderer;
+    const apply = (s) => { remoteSent.current.key = ''; setRemoteOn(!!s?.running); };
+    ipc.invoke('remote:status').then(apply).catch(() => {});
+    const onStatus = (e, s) => { if (!!s?.running !== remoteOnRef.current) apply(s); };
+    const onCommand = (e, c) => remoteCmdRef.current?.(c?.cmd, c?.args || {});
+    ipc.on('remote:status', onStatus);
+    // a remote browsing the library: answered from what this window already holds
+    const onQuery = (e, q) => {
+      let result;
+      try { result = remoteQueryRef.current?.(q?.req || {}) ?? { error: 'not ready' }; } catch (err) { result = { error: err.message }; }
+      ipc.invoke('remote:answer', { qid: q?.qid, result }).catch(() => {});
+    };
+    ipc.on('remote:status', onStatus);
+    ipc.on('remote:command', onCommand);
+    ipc.on('remote:query', onQuery);
+    return () => { ipc.removeListener?.('remote:status', onStatus); ipc.removeListener?.('remote:command', onCommand); ipc.removeListener?.('remote:query', onQuery); };
+  }, []);
+  const remoteOnRef = useRef(false);
+  // Settings > Remote can keep the computer awake while music plays
+  useEffect(() => { window.ipcRenderer.invoke('power:playing', !!isPlaying).catch(() => {}); }, [isPlaying]);
+  remoteOnRef.current = remoteOn;
+  useEffect(() => {
+    const s = remoteSnapRef.current;
+    if (!s) return;
+    const key = JSON.stringify(s);
+    const r = remoteSent.current;
+    const expected = r.pos + (s.playing ? (performance.now() - r.at) / 1000 : 0);
+    if (key === r.key && Math.abs(currentTime - expected) < 2 && performance.now() - r.at < 5000) return;
+    r.key = key;
+    r.pos = currentTime;
+    r.at = performance.now();
+    window.ipcRenderer.invoke('remote:state', { ...s, position: currentTime }).catch(() => {});
+  });
+
   if (isCheckingAuth) {
     return <div className="app" />;
   }
@@ -1231,6 +1301,20 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
   const queueFiles = live(playQueue.slice(currentIndex + 1));
   const visibleDevices = devices.filter(d => !disabledDevices.includes(d.deviceId || d.id));
   const signal = computeSignalPath({ stream: stream && currentLive && stream.path === currentLive.path ? stream : null, file: currentLive, selectedDevice, devices: visibleDevices, eqEnabled, volume, audioSettings: { ...audioSettings, autoGain }, audioOut: isPlaying ? audioOut : null, dsd: dsdInfo && currentLive && dsdInfo.path === currentLive.path ? dsdInfo : null, output: outputInfo });
+  const remoteTrack = (f) => remoteTrackOut(f);
+  // the lyrics shown here: from the tags, or just found online for this track
+  const remoteLyrics = currentLive ? (currentLive.metadata?.lyrics || (lyricsFound?.path === currentLive.path ? lyricsFound.lyrics : '') || '') : '';
+  remoteSnapRef.current = remoteOn ? {
+    lyrics: remoteLyrics.length, // remotes ask for the lines again when this changes
+    notice: remoteNotice,
+    art: remoteArt,
+    lib: remoteLib,
+    steps: (signal?.steps || []).slice(0, 14).map(x => ({ label: x.label, value: x.value, state: x.state })),
+    track: currentLive ? { ...remoteTrackOut(currentLive), fav: favorites.some(f => f.path === currentLive.path) } : null, playing: isPlaying, volume, muted: isMuted, shuffle: isShuffle, repeat: loopMode,
+    queue: queueFiles.slice(0, 200).map(remoteTrack), exclusive: selectedDevice !== '-1',
+    outputs: [{ id: '-1', name: 'System default' }, ...visibleDevices.map(d => ({ id: d.deviceId || d.id, name: (d.name || '').replace(/ \(WASAPI\)$/, '') }))],
+    output: selectedDevice, eq: !!eqEnabled, verdict: signal?.verdict, bitPerfect: !!signal?.bitPerfect, theme,
+  } : null;
   const isScanning = scanProgress?.status === 'inProgress';
   const wideView = currentView === 'settings' || currentView === 'eq-settings';
 
@@ -1274,6 +1358,57 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     const newQueue = [...playQueue];
     newQueue.splice(targetIndex, 1);
     setPlayQueue(newQueue);
+  };
+
+  // a command from a remote: the same handlers as the buttons here. Queue commands name the track too,
+  // so one sent just as the queue changed can't hit the wrong track.
+  remoteCmdRef.current = (cmd, a) => {
+    const upcoming = playQueue.slice(currentIndex + 1);
+    const at = (i, p) => (upcoming[i]?.path === p ? i : upcoming.findIndex(f => f.path === p));
+    switch (cmd) {
+      case 'toggle': handleTogglePlay(); break;
+      case 'next': handleNext(); break;
+      case 'prev': keyActionsRef.current.previous?.(); break;
+      case 'seek': if (currentFile) handleSeek(a.time); break;
+      case 'volume': handleVolumeChange(a.volume); break;
+      case 'mute': setMuted(!!a.on); break;
+      case 'shuffle': handleToggleShuffle(); break;
+      case 'repeat': if (a.mode) setLoopMode(a.mode); else handleToggleLoop(); break;
+      case 'jump': { const i = at(a.index, a.path); if (i >= 0) handlePlayQueued(i); break; }
+      case 'remove': { const i = at(a.index, a.path); if (i >= 0) handleRemoveFromQueue(i); break; }
+      case 'move': if (upcoming[a.from]?.path === a.path) handleMoveQueued(a.from, Math.min(a.to, upcoming.length - 1)); break;
+      case 'eq': setEqEnabled(!!a.on); break;
+      case 'output': if (a.id === '-1' || visibleDevices.some(d => (d.deviceId || d.id) === a.id)) handleDeviceChange(a.id); break;
+      // from the library on a remote: the list is worked out here again, from what the remote named
+      case 'play': {
+        const list = live(remoteSource(remoteCtx(), a.source));
+        if (!list.length) break;
+        if (a.shuffle) { const s = [...list].sort(() => Math.random() - 0.5); playMusic(s[0], 0, s); break; }
+        const i = a.path ? list.findIndex(f => f.path === a.path) : 0;
+        if (i >= 0) playMusic(list[i], i, list);
+        break;
+      }
+      case 'queue': {
+        const list = live(remoteSource(remoteCtx(), a.source));
+        const files = a.path ? list.filter(f => f.path === a.path).slice(0, 1) : list;
+        if (!files.length) break;
+        if (a.next) handlePlayNextMany(files); else handleQueueMany(files);
+        break;
+      }
+      case 'fav': {
+        const f = libraryByPath.get(a.path) || currentLive?.path === a.path && currentLive;
+        if (f && favorites.some(x => x.path === a.path) !== !!a.on) handleToggleFavorite(f);
+        break;
+      }
+      default: break;
+    }
+  };
+  const remoteCtx = () => ({ files: musicFiles, favorites: favoritesLive, recent: recentLive, playlists: playlistsLive, dedupe: skipDuplicates ? (l) => dedupeTracks(l) : null });
+  remoteQueryRef.current = (req) => {
+    if (req.kind !== 'lyrics') return remoteAnswer(remoteCtx(), req);
+    // only the track that plays: what remotes show beside the music
+    const p = parseLyrics(remoteLyrics);
+    return { track: currentLive ? remoteTrackOut(currentLive) : null, synced: p.isSynced, lines: p.lines.slice(0, 2000).map(l => ({ time: p.isSynced ? l.time : null, text: l.text })) };
   };
 
   const handleSaveQueueAsPlaylist = () => {

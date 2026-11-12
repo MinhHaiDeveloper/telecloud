@@ -62,7 +62,7 @@ const Sidebar = ({
     <aside className="sidebar">
       <div className="logo">
         <div className="logo-mark"><Icon name="logo" /></div>
-        <span className="logo-text">TeleCloud</span>
+        <span className="logo-text">TeleCloud{document.documentElement.dataset.channel === 'beta' && <span className="logo-beta">Beta</span>}</span>
         <button className="icon-btn sm collapse-btn" onClick={onToggleCollapse} title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
           <Icon name="chevronLeft" />
         </button>

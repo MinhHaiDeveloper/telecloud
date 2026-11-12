@@ -5,6 +5,8 @@ const fsp = fs.promises;
 const dotenv = require('dotenv');
 const logger = require('./logger');
 
+// TeleCloud and TeleCloud Beta keep one library, in %APPDATA%	elecloud, whatever the installer calls the app
+if (app.isPackaged && !/^telecloud$/i.test(app.getName())) app.setPath('userData', path.join(app.getPath('appData'), 'telecloud'));
 // First of all, so nothing from startup is missed
 logger.init(path.join(app.getPath('userData'), 'logs'));
 logger.write('INFO', 'app', `TeleCloud ${app.getVersion()} starting (Electron ${process.versions.electron}, ${process.platform} ${require('os').release()}, ${app.isPackaged ? 'installed' : 'development'})`);
@@ -35,7 +37,7 @@ const COVER_CACHE_DIR = path.join(app.getPath('userData'), 'cover-cache');
 const MusicFolderWatcher = require('./watcher.js');
 const { setupTeleCloudSyncHandlers, cleanupTeleCloudSync } = require('./telecloud/service');
 const database = require('./database');
-const { getLibraryRoots, getTempDir, isInLibrary, isInAppStorage, safeFileName, readSettings } = require('./paths');
+const { getLibraryRoots, getTempDir, safeFileName, readSettings } = require('./paths');
 const { backgroundRefresh } = require('./music.js');
 const { applyAudioSettings } = require('./player.js');
 require('./spectrum.js');
@@ -48,6 +50,7 @@ const artistImages = require('./artistImages.js');
 require('./logExport.js');
 require('./tagEdit.js');
 require('./mqa.js');
+require('./remote.js');
 require('./lastfm.js');
 require('./updater.js');
 
@@ -151,7 +154,7 @@ function createWindow() {
     minHeight: 600,
     frame: false,
     backgroundColor: '#121214', // no white flash before the page paints
-    icon: path.join(__dirname, isDev ? '../public/icon.png' : '../dist/icon.png'),
+    icon: path.join(__dirname, isDev ? '../public' : '../dist', require('../package.json').version.includes('-') ? 'icon-beta.png' : 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false, // Recommended for security
@@ -209,20 +212,7 @@ app.whenReady().then(async () => {
   const typeOf = (buf) => (buf[0] === 0x89 ? 'image/png' : buf[0] === 0x52 ? 'image/webp' : buf[0] === 0x47 ? 'image/gif' : 'image/jpeg');
   const imageResponse = (buf) => new Response(buf, { headers: { 'Content-Type': typeOf(buf) } });
 
-  /** The picture shown for a track, or null */
-  const artFor = async (songPath) => {
-    const row = database.getFileByPath(songPath);
-    const stored = row?.cloud_cover ? await covers.readIfExists(covers.cloudCoverFile(row.cloud_cover)) : null;
-    const original = isInLibrary(songPath) && fs.existsSync(songPath);
-    // cloud-only: the album cover in TeleCloud comes first, even with a cached copy of the audio
-    // (that copy's embedded art may be older than a cover chosen since)
-    if (!original && stored) return stored;
-    const candidates = [];
-    if (row?.cache_path && isInAppStorage(row.cache_path)) candidates.push(row.cache_path);
-    if (original) candidates.push(songPath);
-    const source = candidates.find(p => fs.existsSync(p));
-    return (source ? await covers.coverForFile(source) : null) || stored;
-  };
+  const { artFor } = covers;
   ipcMain.handle('covers:has', async (e, { path: p }) => {
     const art = await artFor(p).catch(() => null);
     if (!art) return false;

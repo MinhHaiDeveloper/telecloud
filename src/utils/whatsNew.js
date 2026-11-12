@@ -2,6 +2,17 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.1.0-beta.1',
+    items: [
+      'TeleCloud Remote: a phone, a tablet or another computer on your Wi-Fi controls the music from its browser. Scan the QR code in Settings > Remote; nothing to install.',
+      'From the remote: play, skip, seek, volume, Up next, the output and the EQ; browse and search albums, artists, playlists, favourites and recently played; lyrics that follow the music and the signal path.',
+      'Each paired device can be set to View only, the computer can have its own name, and the remote follows tag, cover and artist picture changes straight away.',
+      'On a Galaxy Z Fold the remote has layouts of its own: two pages around the crease when open, the controls on the bottom half in Flex Mode, and tabs under your thumb on the cover screen.',
+      'Keep this computer awake while music plays, and the steps to wake it from a phone (Wake-on-LAN), in Settings > Remote.',
+      'On a touch screen, pressing and holding a name cut off with "…" shows it in full.',
+    ],
+  },
+  {
     version: '1.0.0-beta.21',
     items: [
       'The lyrics editor shows the line you are on, has a seek bar with a mark for every synced line, and a green band can follow the music line by line.',

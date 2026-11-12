@@ -16,6 +16,7 @@ TeleCloud plays the music files on your computer the way they were recorded, and
 - **Shows what happens to the sound.** The Signal path panel lists every step from the file to your DAC, and says when something changes it.
 - **Backs up to Telegram.** Your music goes into a private channel that only you can see. Files are encrypted before they leave your computer.
 - **Streams from the cloud.** Tracks that are only in TeleCloud play straight from Telegram and are kept in a cache for next time.
+- **A remote on any device.** A phone, a tablet or another computer on your Wi-Fi opens a page from TeleCloud and controls the music, with nothing to install.
 - **Restores on a new computer.** Sign in, restore, and your library comes back with its tags, lyrics and album covers.
 
 ## Download and install
@@ -129,6 +130,22 @@ Animated GIFs move on the artist's page. Tags get a still frame, and the GIF its
 ### Discord status
 
 In **Settings > General > Discord**, TeleCloud can show what you are listening to on your Discord status, with the album cover and a small picture of the artist. While nothing is loaded, it shows the last track you played. It needs the Discord desktop app on the same computer.
+
+### Remote control from a phone or another computer
+
+In **Settings > Remote**, turn on **Let other devices control TeleCloud** and scan the QR code with a phone, or open the address in any browser on the same network. The device stays paired after that. From it you can:
+
+- Play, pause, skip, seek, change the volume, shuffle and repeat.
+- See and change Up next: play a track from it, move it, remove it.
+- Browse and search your albums, artists, playlists, favourites and recently played, and play them, play them next or add them to the queue.
+- Choose the output device and turn the equalizer on or off, and see the signal path in short.
+- Read the lyrics as they are sung (tap the lyrics button on Playing); tap a line to go there.
+
+Tracks that are only in TeleCloud show a small cloud and play just as they would on the computer: a cached one at once, any other streams from Telegram, so the computer needs to be signed in to TeleCloud. If one can't play, the remote says why. Artists show the picture you chose for them. When you edit tags, change a cover or an artist picture on the computer, remotes show it straight away, even on the page they have open. On a Galaxy Z Fold, the remote has layouts of its own: open, two pages meet at the crease (now playing in the album's colours on the left, the queue, library and output on the right); half folded in Flex Mode, the cover or the lyrics fill the top half and the controls the bottom; on the tall cover screen, the tabs sit at the bottom under your thumb. Names cut off with "…" show in full when you hover them, or press and hold them on a phone.
+
+**Keep this computer awake while music plays** stops Windows from sleeping in the middle of an album. To wake a sleeping computer from a phone, open **Wake this computer from a phone** in the same place: it lists the steps and the MAC address a Wake-on-LAN app needs.
+
+The sound still comes from your computer. Each paired device can be set to **View only**, and **New key** signs every device out. The address changes each time TeleCloud starts, so scan again then. If a device can't connect, allow TeleCloud for private networks when Windows asks, and make sure your Wi-Fi is set to Private, not Public.
 
 ### Restoring on another computer
 
