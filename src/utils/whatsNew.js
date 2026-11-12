@@ -2,134 +2,47 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
-    version: '1.0.0-beta.21',
-    items: [
-      'The lyrics editor shows the line you are on, has a seek bar with a mark for every synced line, and a green band can follow the music line by line.',
-      'Channel balance has a thumb that starts in the middle, the value rides above it, and a double-click centres it.',
-      'MQA Studio gets its own blue badge. The MQA badge sits under the format, and the quality help explains both.',
-      'The first track after starting TeleCloud plays straight through the output you chose, instead of shared mode for a moment.',
-      'Checking a library for MQA no longer makes Windows show a busy cursor, and it is faster.',
-    ],
-  },
-  {
-    version: '1.0.0-beta.20',
-    items: [
-      'MQA is found in the audio itself, even without tags, and gets a violet badge and its own quality filter. It plays as plain PCM; Settings > Playback can send it untouched to an MQA DAC instead.',
-      'Channel balance in 0.5 dB steps and headphone crossfeed, in Settings > Playback.',
-      'Sorts and filters stay as you left them on Albums, Artists, Library, Favourites, TeleCloud and Playlists, also after a restart.',
-      'The signal path is easier to read: a short label for each step and the reason on a line under it.',
-      'DSD playback settings sit side by side, and MQA, DSD and the output limit have their own icons.',
-      'On Discord, the small artist picture is named after that artist.',
-    ],
-  },
-  {
-    version: '1.0.0-beta.19',
-    items: [
-      'The back button on album and artist pages stays in place, so you can go back from the end of a long list.',
-      'The small playing bars use much less CPU.',
-    ],
-  },
-  {
-    version: '1.0.0-beta.18',
-    items: [
-      'Performance settings have Low memory mode and Keep running in the tray. Opening TeleCloud again brings its window back.',
-      'A smaller install, a lighter progress bar, and big album and artist pages open faster.',
-      'Albums sort by Latest added and Oldest added.',
-      'Open file location in the track menu, for tracks with a file on this computer.',
-      'Downloads go into a folder named after the album, and Download album shows one progress bar.',
-      'Discord shows the last track you played while nothing is loaded, and a small artist picture on the cover.',
-    ],
-  },
-  {
-    version: '1.0.0-beta.17',
-    items: [
-      'Animated GIF artist pictures. They move on the artist\'s own page and come back with Restore on another computer. Tags get the first frame, so your files stay small.',
-      'Artist picture has a YouTube tab, asked only when you open it. Apple Music and MusicBrainz are new sources, and Find on VGMdb opens its search in your browser.',
-      'DSF files can now hold artist pictures, covers, lyrics and tags.',
-      'An output that goes away, like Bluetooth turned off, leaves the list. Playback moves to System default and goes back when that output returns.',
-      'Albums can be sorted by Latest and Oldest.',
-      'A failed update check now shows one short sentence.',
-    ],
-  },
-  {
-    version: '1.0.0-beta.16',
-    items: [
-      'Going from native DSD to a PCM track no longer stops with "audio output initialization failed". The DAC needs about a second to switch back from DSD, and TeleCloud now waits for it.',
-      'If an output isn\'t ready, the track is tried again for a few seconds before an error shows.',
-      'A DSD file whose rate the DAC can\'t take as DoP goes straight to PCM, instead of trying DoP again and again.',
-    ],
-  },
-  {
-    version: '1.0.0-beta.15',
-    items: [
-      'DSD playback in Settings > Playback: Native through your DAC\'s ASIO driver, DoP in WASAPI Exclusive, or Convert to PCM. What can\'t be done falls back, native to DoP to PCM, and the signal path says why.',
-      'Native DSD and DoP send the DSD bits untouched, and the signal path shows Bit-perfect. Checked on a Topping DX1 II: native DSD64 to DSD256, DoP DSD64 and DSD128.',
-      'Convert to PCM now sends 352.8 kHz whole-number PCM. Some DACs stayed silent with DSD before.',
-      'The signal path says why the sound is resampled, names the device System default uses, and shows when it goes out over Bluetooth.',
-      'Saving an artist picture to thousands of tracks shows its progress and can be stopped. TheAudioDB is a new picture source.',
-      'Logs no longer hide parts of ordinary words when they hold a music name.',
-    ],
-  },
-  {
-    version: '1.0.0-beta.14',
-    items: [
-      'Artist pictures: find one on Last.fm or Deezer, or upload your own, from the Artist picture button on an artist page. It is saved in the tags of their tracks, where other players can read it too.',
-      'Various Artists and Unknown Artist now have their own place at the top of the Artists page, showing their albums one by one.',
-      'Two compilations with the same name, such as Greatest Hits, stay two albums unless their disc numbers show they belong together.',
-      'Saving an album cover now keeps an artist picture already in the file.',
-    ],
-  },
-  {
-    version: '1.0.0-beta.13',
-    items: [
-      'Eight new themes: Matcha, Sakura, Hojicha, Yozakura, Tube Amp, Ube, Abyss and OLED. Choose one in Settings > Appearance.',
-      'Follow the cover: the accent colour can come from the cover playing, and stays readable on every theme.',
-      'Equalizer: keep a separate EQ for each output, so your headphones and speakers each have their own.',
-      'Library: filter by quality, bit depth or sample rate, and sort by sample rate or bit depth.',
-      'ReplayGain Auto: album gain while an album plays in order, track gain on shuffle or mixed lists.',
-      'TeleCloud: Check backup compares your library with what is really in Telegram, and can put back what is missing.',
-      'Small text is easier to read, and dark covers no longer melt into dark themes.',
-    ],
-  },
-  {
-    version: '1.0.0-beta.12',
-    items: [
-      'Your Discord status now has a Get TeleCloud button that others can click. You can turn it off in Settings > General > Discord.',
-    ],
-  },
-  {
-    version: '1.0.0-beta.11',
-    items: [
-      'Report problems more easily: Settings > About > Logs saves a log to send along. It stays on your computer until you send it yourself.',
-      'Music names are hidden in the saved log unless you choose to include them. Keys, passwords and your Telegram session are never included.',
-    ],
-  },
-  {
-    version: '1.0.0-beta.10',
-    items: [
-      'Discord status: show what you are listening to, with the album cover. Turn it on in Settings > General.',
-      'New Appearance settings: make the full-screen cover tilt with your mouse, and choose the lyrics size, alignment, glow and speed.',
-      'Equalizer: import and export Audacity curves.',
-      'Clearer messages when a file cannot be changed, with the option to write to read-only files.',
-      'Saving a cover no longer fails when the largest picture is missing.',
-      "This What's New note, also in Settings > About.",
-    ],
-  },
-  {
-    version: '1.0.0-beta.9',
-    items: [
-      'The Artists page can show album artists only, or everyone.',
-      'The disc icon lines up with its heading.',
-      'Clearer message when a lyrics or cover source cannot be reached.',
-    ],
-  },
-  {
-    version: '1.0.0-beta.8',
-    items: [
-      'Albums are grouped by album artist: two albums with the same name stay apart, and guests no longer split an album.',
-      'Artist pages list albums they only appear on separately.',
-      'Files without tags take their details from the file name and folders.',
-      'The library also picks up .wma, .aifc, .m4b, .mka and .mpc files.',
+    version: '1.0.0',
+    sections: [
+      {
+        title: 'Sound',
+        items: [
+          'Bit-perfect playback through WASAPI Exclusive, and a Signal path that shows every step from the file to your DAC and says when something changes the sound.',
+          "DSD as native DSD through your DAC's ASIO driver, as DoP, or converted to PCM, falling back on its own when one way can't be used.",
+          'MQA found in the audio itself, with violet MQA and blue MQA Studio badges; send it untouched to an MQA DAC or play it as plain PCM.',
+          'A 31-band equalizer with AutoEQ, Squiglink and Audacity curves, and a separate EQ for each output.',
+          'ReplayGain (Auto: album gain for albums, track gain on shuffle), crossfade, channel balance in 0.5 dB steps and headphone crossfeed.',
+          'Outputs that come and go, like Bluetooth, are followed, and the first track plays straight through the output you chose.',
+        ],
+      },
+      {
+        title: 'Your library',
+        items: [
+          'Albums grouped by album artist, compilations kept apart, and Various Artists and Unknown Artist in their own place.',
+          'Filter and sort by quality, bit depth and sample rate; albums by title, artist, tracks, latest or oldest added. Sorts and filters stay as you left them.',
+          'Files without tags take their details from the file name and folders; .wma, .aifc, .m4b, .mka, .mpc and DSF tags are read too.',
+          'Artist pictures from Last.fm, Deezer, TheAudioDB, Apple Music, MusicBrainz or YouTube, or your own, animated GIFs included, saved in the tags.',
+          'Lyrics found online and kept in sync with the music, with an editor that follows the line you are on. Album covers found online too.',
+          'Download a track or an album into a folder named after it, and Open file location for files on this computer.',
+        ],
+      },
+      {
+        title: 'TeleCloud',
+        items: [
+          'Your music backed up to a private Telegram channel, encrypted before it leaves your computer, in up to five storages.',
+          'Tracks only in TeleCloud stream straight away and are kept in a cache; Restore brings your library back on another computer, with tags, lyrics, covers and artist GIFs.',
+          'Check backup compares your library with what is really in Telegram and puts back what is missing.',
+        ],
+      },
+      {
+        title: 'Look and feel',
+        items: [
+          'Ten themes, an accent colour that can follow the cover, and a full-screen player with tilting cover and adjustable lyrics.',
+          "Discord status with the album cover, the artist's picture and a Get TeleCloud button.",
+          'Low memory mode, Keep running in the tray, a smaller install and light, quick pages, even with large libraries.',
+          'Settings > About > Logs saves a log for reporting problems, with music names hidden unless you include them.',
+        ],
+      },
     ],
   },
 ];
