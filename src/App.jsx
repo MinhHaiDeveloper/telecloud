@@ -70,7 +70,8 @@ function App() {
   const [currentTime, setCurrentTime] = useState(0);
 
   const [devices, setDevices] = useState([]);
-  const [selectedDevice, setSelectedDevice] = useState('-1');
+  // the output chosen last time, from the first moment: a track played before the device list arrives goes there too
+  const [selectedDevice, setSelectedDevice] = useState(() => readPref('tc-device') || '-1');
   const applyDevicesRef = useRef(null);
   const lostDeviceRef = useRef(null); // the output that went away, to go back to when it returns
   const [volume, setVolume] = useState(() => {
@@ -531,6 +532,7 @@ function App() {
       setDevices(devs || []);
       const saved = readPref('tc-device');
       if (saved && saved !== '-1' && (devs || []).some(d => d.id === saved)) handleDeviceChangeRef.current?.(saved);
+      else if (saved && saved !== '-1') { lostDeviceRef.current = saved; setSelectedDevice('-1'); } // not plugged in: back to it when it is
     });
 
     ipcRenderer.invoke('load-library').then(async (savedFiles) => {

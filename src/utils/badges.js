@@ -18,4 +18,6 @@ export const QUALITY_HELP = [
   { tags: [['b-hires', 'FLAC 24/96']], text: 'Hi-Res: lossless above 16-bit or 48 kHz, or DSD.' },
   { tags: [['b-lossless', 'FLAC 16/44.1']], text: 'CD-quality lossless.' },
   { tags: [['b-lossy', 'MP3 320']], text: 'Lossy: the format and its bitrate in kbps, read from the file (MP3 320, AAC 256, MP3 96…). Higher sounds closer to the original.' },
+  { tags: [['b-mqa', 'MQA 88.2']], text: 'MQA, found in the audio itself or its tags. The number is the original rate the encoder recorded. TeleCloud plays it as the plain PCM it is (see Settings > Playback).' },
+  { tags: [['b-mqa-studio', 'MQA Studio 88.2']], text: 'MQA Studio: MQA that the label or the artist says they checked in the studio. Only a label: the music inside is the same kind of MQA.' },
 ];

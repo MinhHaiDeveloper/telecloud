@@ -407,14 +407,16 @@ const SettingsView = ({
                   {balanceDraft !== 0 && <button className="btn-ghost sm" onClick={() => { setBalanceDraft(0); setChannelBalance(0); }}>Center</button>}
                 </SettingRow>
                 <div className="set-sub">
-                  <div className="slider-line balance-line">
-                    <span className="mono">L</span>
-                    <input type="range" className="range full" min="-12" max="12" step="0.5" value={balanceDraft} aria-label="Channel balance"
-                      style={{ '--pct': `${((balanceDraft + 12) / 24) * 100}%` }}
-                      onChange={(e) => setBalanceDraft(Number(e.target.value))}
-                      onPointerUp={() => setChannelBalance(balanceDraft)} onKeyUp={() => setChannelBalance(balanceDraft)} onBlur={() => setChannelBalance(balanceDraft)} />
-                    <span className="mono">R</span>
-                    <span className="mono balance-value">{balanceDraft === 0 ? 'Center' : `${balanceDraft < 0 ? 'Left' : 'Right'} +${Math.abs(balanceDraft).toFixed(1)} dB`}</span>
+                  <div className="balance" style={{ '--f': (balanceDraft + 12) / 24 }}>
+                    <span className="mono balance-side">L</span>
+                    <div className="balance-track">
+                      <span className="balance-value mono">{balanceDraft === 0 ? 'Center' : `${balanceDraft < 0 ? 'L' : 'R'} +${Math.abs(balanceDraft).toFixed(1)} dB`}</span>
+                      <input type="range" min="-12" max="12" step="0.5" value={balanceDraft} aria-label="Channel balance" title="Double-click to center"
+                        onChange={(e) => setBalanceDraft(Number(e.target.value))}
+                        onDoubleClick={() => { setBalanceDraft(0); setChannelBalance(0); }}
+                        onPointerUp={() => setChannelBalance(balanceDraft)} onKeyUp={() => setChannelBalance(balanceDraft)} onBlur={() => setChannelBalance(balanceDraft)} />
+                    </div>
+                    <span className="mono balance-side">R</span>
                   </div>
                 </div>
 
@@ -429,7 +431,7 @@ const SettingsView = ({
                   <div className="mqa-scan">
                     <button className="btn-ghost sm" onClick={findMqa} disabled={!!mqaScan && !mqaScan.finished}><Icon name="search" />Find MQA tracks</button>
                     {mqaScan && !mqaScan.finished && <button className="btn-ghost sm" onClick={() => window.ipcRenderer.invoke('mqa:stop')}>Stop</button>}
-                    <small className="dsd-note">{!mqaScan ? 'Each track is also checked the first time it plays. MQA tracks get a violet badge and their own quality filter.'
+                    <small className="dsd-note">{!mqaScan ? 'Each track is also checked the first time it plays. MQA tracks get a badge, violet for MQA and blue for MQA Studio, and their own quality filter.'
                       : mqaScan.finished ? `${mqaScan.stopped ? 'Stopped. ' : ''}${mqaScan.total ? `Checked ${mqaScan.done.toLocaleString()} ${mqaScan.done === 1 ? 'track' : 'tracks'}, ${mqaScan.found ? `${mqaScan.found.toLocaleString()} new MQA` : 'no new MQA'}. ` : 'Every track was checked already. '}${(mqaScan.inLibrary || 0).toLocaleString()} MQA in your library.`
                         : `Checking ${mqaScan.done.toLocaleString()} of ${mqaScan.total.toLocaleString()}… ${mqaScan.found ? `${mqaScan.found} MQA so far` : ''}`}</small>
                   </div>

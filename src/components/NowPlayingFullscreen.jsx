@@ -277,7 +277,7 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, onSeek, signal, queueF
             {currentFile && (
               <div className="np-badges">
                 <span className={`badge b-${q.tier} mono`}>{q.label}</span>
-                {mqaOf(currentFile) && <span className="badge b-mqa mono">{mqaOf(currentFile).short}</span>}
+                {mqaOf(currentFile) && <span className={`badge ${mqaOf(currentFile).cls} mono`}>{mqaOf(currentFile).short}</span>}
                 {signal && <span className={`badge ${signal.bitPerfect ? 'b-lossless' : 'b-cached'}`}>{signal.verdict}</span>}
                 {signal?.outSpec && <span className="badge b-lossy mono">out {signal.outSpec}</span>}
               </div>

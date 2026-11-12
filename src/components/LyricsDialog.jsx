@@ -1,6 +1,8 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Icon from './Icon';
-import { Dialog, Segmented } from './ui';
+import { Dialog, Segmented, Toggle } from './ui';
+
+const readFollow = () => { try { return localStorage.getItem('lyrics-follow') !== '0'; } catch { return true; } };
 
 const SAVE_TO = [
   { value: 'tag', label: 'Tag' },
@@ -43,6 +45,14 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
   const original = useRef(m.lyrics || '');
   const history = useRef([]);
   const [pos, setPos] = useState(null);
+  const [caretNo, setCaretNo] = useState(0);   // the line with the cursor, shown as a band over the text
+  const [scrollY, setScrollY] = useState(0);
+  const [lineH, setLineH] = useState(20.8);
+  const [padTop, setPadTop] = useState(13);
+  const [seekDraft, setSeekDraft] = useState(null); // where the bar is dragged to, sent when it is let go
+  const [follow, setFollowState] = useState(readFollow); // a second band on the line the music is at
+  const setFollow = (v) => { setFollowState(v); try { localStorage.setItem('lyrics-follow', v ? '1' : '0'); } catch { /* this session only */ } };
+  const userScrolledAt = useRef(0);
   const isThis = playingPath === file?.path;
   useEffect(() => {
     if (!isThis) { setPos(null); return undefined; }
@@ -61,11 +71,43 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
     pendingCaret.current = null;
     ta.focus();
     ta.setSelectionRange(caret, caret);
+    setCaretNo(text.slice(0, caret).split(NL).length - 1);
     // keep that line in view
     const lineNo = text.slice(0, caret).split(NL).length - 1;
     const lh = parseFloat(getComputedStyle(ta).lineHeight) || 20;
     if (lineNo * lh < ta.scrollTop + lh || lineNo * lh > ta.scrollTop + ta.clientHeight - 3 * lh) ta.scrollTop = Math.max(0, lineNo * lh - ta.clientHeight / 2);
+    setScrollY(ta.scrollTop);
   }, [text]);
+  useLayoutEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    const cs = getComputedStyle(ta);
+    setLineH(parseFloat(cs.lineHeight) || 20.8);
+    setPadTop(ta.clientTop + (parseFloat(cs.paddingTop) || 0)); // where the first line starts, border included
+  }, []);
+  const followCaret = () => { const ta = taRef.current; if (ta) setCaretNo(ta.value.slice(0, ta.selectionStart).split(NL).length - 1); };
+  const lines = text.split(NL);
+  const currentLine = (lines[caretNo] || '').replace(STAMP, '').trim();
+  const duration = m.duration || 0;
+  // the synced lines, as marks along the seek bar
+  const marks = useMemo(() => (duration ? lines.map(parseStamp).filter(t => t != null && t <= duration) : []), [text, duration]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shownPos = seekDraft ?? (isThis ? pos || 0 : 0);
+  // the line the music is at: the latest stamp already reached. Past the last stamp it stays on that line.
+  const stamps = useMemo(() => lines.map(parseStamp), [text]); // eslint-disable-line react-hooks/exhaustive-deps
+  const playingNo = useMemo(() => {
+    if (!follow || !isThis || pos == null) return -1;
+    let best = -1;
+    stamps.forEach((t, i) => { if (t != null && t <= pos + 0.05 && (best < 0 || t >= stamps[best])) best = i; });
+    return best;
+  }, [follow, isThis, pos, stamps]);
+  // keep that line in view, unless you scrolled away a moment ago
+  useEffect(() => {
+    const ta = taRef.current;
+    if (playingNo < 0 || !ta || Date.now() - userScrolledAt.current < 3000) return;
+    const y = playingNo * lineH;
+    if (y < ta.scrollTop || y > ta.scrollTop + ta.clientHeight - 2 * lineH) ta.scrollTop = Math.max(0, y - ta.clientHeight / 3);
+  }, [playingNo, lineH]);
+  const commitSeek = () => { if (seekDraft != null && isThis) onSeek?.(seekDraft); setSeekDraft(null); };
   const edit = (next, caret) => {
     history.current.push(text);
     pendingCaret.current = caret;
@@ -185,11 +227,23 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
                 <Icon name={isThis && isPlaying ? 'pause' : 'play'} filled />
               </button>
               <button className="icon-btn sm" onClick={() => onSeek?.((pos || 0) + 5)} disabled={!isThis} title="Forward 5 s"><Icon name="next" /></button>
-              <span className="mono lyr-clock">{isThis ? fmtClock(pos) : 'Not playing'}</span>
+              <span className="mono lyr-clock">{isThis ? fmtClock(shownPos) : 'Not playing'}</span>
+            </div>
+            <div className="lyr-seek">
+              <div className="lyr-marks" aria-hidden="true">{marks.map((t, i) => <i key={i} style={{ left: `${(t / duration) * 100}%` }} />)}</div>
+              <input type="range" className="range full" min="0" max={duration || 1} step="0.01" value={shownPos} disabled={!isThis || !duration} aria-label="Position"
+                style={{ '--pct': `${duration ? Math.min(100, (shownPos / duration) * 100) : 0}%` }}
+                onChange={(e) => setSeekDraft(Number(e.target.value))} onPointerUp={commitSeek} onKeyUp={commitSeek} onBlur={commitSeek} />
+              <span className="mono lyr-dur">{duration ? fmtClock(duration).replace(/\.\d+$/, '') : ''}</span>
             </div>
             <button className="btn-primary lyr-syncbtn" onClick={syncLine} disabled={!isThis} title="Put the current time on the line with the cursor, then go to the next line (Ctrl+Enter)">
               Sync line <kbd>Ctrl+Enter</kbd>
             </button>
+            <div className="lyr-current" title="The line with the cursor: Sync line puts the time on it">
+              <span className="mono">Line {caretNo + 1}</span>
+              <b>{currentLine || (lines[caretNo]?.trim() ? lines[caretNo].trim() : 'Empty line')}</b>
+              <span className="lyr-follow" title="A green band follows the music, line by line, from the timestamps"><Toggle checked={follow} onChange={setFollow} label="Follow the music" /></span>
+            </div>
             <div className="lyr-tools">
               <span>Line</span>
               <button className="btn-ghost sm" onClick={() => nudgeLine(-0.1)} title="Line 0.1 s earlier">−0.1s</button>
@@ -203,15 +257,25 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
               <button className="btn-ghost sm" onClick={reset} title="Back to the lyrics the track had">Reset</button>
             </div>
           </div>
-          <textarea
-            ref={taRef}
-            onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); syncLine(); } }}
-            className="input mono"
-            value={text}
-            onChange={e => { history.current.push(text); setText(e.target.value); setPick(null); }}
-            placeholder={'Type or paste lyrics. Synced lines look like:\n[00:12.40]First line\n[00:16.10]Second line'}
-            spellCheck={false}
-          />
+          <div className="lyr-area">
+            {playingNo >= 0 && <div className="lyr-play" aria-hidden="true" style={{ transform: `translateY(${padTop + playingNo * lineH - scrollY}px)`, height: lineH }} />}
+            <div className="lyr-hl" aria-hidden="true" style={{ transform: `translateY(${padTop + caretNo * lineH - scrollY}px)`, height: lineH }} />
+            <textarea
+              ref={taRef}
+              onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); syncLine(); } }}
+              onSelect={followCaret}
+              onClick={followCaret}
+              onKeyUp={followCaret}
+              onScroll={(e) => setScrollY(e.currentTarget.scrollTop)}
+              onWheel={() => { userScrolledAt.current = Date.now(); }}
+              wrap="off"
+              className="input mono"
+              value={text}
+              onChange={e => { history.current.push(text); setText(e.target.value); setPick(null); followCaret(); }}
+              placeholder={'Type or paste lyrics. Synced lines look like:\n[00:12.40]First line\n[00:16.10]Second line'}
+              spellCheck={false}
+            />
+          </div>
           <small className="muted">{/^\s*\[\d/m.test(text) ? 'Synced (LRC): lines follow the music.' : 'Plain text: shown as a static list.'}</small>
         </div>
       </div>

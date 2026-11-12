@@ -658,8 +658,8 @@ html.np-cover-only .app.np-mode .np-body { padding-bottom: 0; }
 .meta-link { display: inline; }
 
 /* ===== Dashboard ===== */
-:root, [data-theme="dark"] { --q-hires: #ff7347; --q-lossless: #22a56c; --q-lossy: #4f8fe8; --q-mqa: #b48cff; }
-[data-theme="light"] { --q-hires: #a13e16; --q-lossless: #216b45; --q-lossy: #3a72c4; --q-mqa: #6a3fc4; }
+:root, [data-theme="dark"] { --q-hires: #ff7347; --q-lossless: #22a56c; --q-lossy: #4f8fe8; --q-mqa: #b48cff; --q-mqa-studio: #5aa9ff; }
+[data-theme="light"] { --q-hires: #a13e16; --q-lossless: #216b45; --q-lossy: #3a72c4; --q-mqa: #6a3fc4; --q-mqa-studio: #2f62b3; }
 .dash { display: flex; flex-direction: column; gap: 16px; padding-bottom: 24px; }
 .dash .page-head { margin-bottom: 0; }
 .dash-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
@@ -734,6 +734,23 @@ html.np-cover-only .app.np-mode .np-body { padding-bottom: 0; }
 .lyr-errors { font-size: 11.5px; color: var(--text-3); padding: 4px 6px; }
 .lyr-edit { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
 .lyr-edit textarea { flex: 1; resize: none; font-size: 13px; line-height: 1.6; padding: 12px 14px; min-height: 0; }
+/* the line with the cursor: a band over the text (one text line per row, so the band always fits) */
+.lyr-area { position: relative; flex: 1; min-height: 0; display: flex; overflow: hidden; border-radius: 12px; }
+.lyr-area textarea { width: 100%; white-space: pre; overflow-x: auto; }
+.lyr-hl { position: absolute; left: 1px; right: 1px; top: 0; pointer-events: none; z-index: 1; background: color-mix(in srgb, var(--accent) 16%, transparent); border-left: 3px solid var(--accent); }
+/* the line the music is at: green, under the cursor's band, gliding from line to line */
+.lyr-play { position: absolute; left: 1px; right: 1px; top: 0; pointer-events: none; z-index: 1; background: color-mix(in srgb, var(--ok) 20%, transparent); border-left: 3px solid var(--ok); transition: transform .18s var(--ease-out, ease); }
+.lyr-follow { display: inline-flex; align-items: center; margin-left: auto; flex: none; }
+.lyr-follow .toggle-label { font-size: 12px; font-weight: 600; color: var(--text-2); text-transform: none; letter-spacing: normal; }
+.lyr-current { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 2px 2px 0; }
+.lyr-current .mono { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+.lyr-current b { font-size: 14px; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* seek bar: where the synced lines are, as small marks */
+.lyr-seek { position: relative; display: flex; align-items: center; gap: 10px; }
+.lyr-seek .range { flex: 1; width: auto; }
+.lyr-marks { position: absolute; left: 0; right: 52px; top: 50%; height: 10px; margin-top: -5px; pointer-events: none; }
+.lyr-marks i { position: absolute; top: 0; width: 2px; height: 10px; margin-left: -1px; border-radius: 1px; background: var(--text-3); opacity: .45; }
+.lyr-dur { min-width: 42px; text-align: right; font-size: 11.5px; color: var(--text-3); }
 .lyrics-note { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 0 2px; flex-wrap: wrap; }
 .lyrics-note.found span { font-size: 12px; color: var(--text-2); }
 .np-empty .lyrics-note { margin-top: 10px; }
@@ -896,6 +913,19 @@ h4.whats-new-older { margin-top: 18px; }
 .btn-check:hover:not(:disabled) { background: color-mix(in srgb, var(--ok) 24%, transparent); }
 .btn-check:disabled { opacity: .5; cursor: default; }
 .btn-check .ico { width: 14px; height: 14px; }
-.balance-line .range { flex: 1; min-width: 0; width: auto; }
-.balance-line .balance-value { min-width: 116px; }
+/* Channel balance: a thumb that starts in the middle, colour from the centre to it, the value riding above it */
+.balance { --thumb: 16px; display: flex; align-items: center; gap: 14px; padding-top: 18px; }
+.balance-side { width: 12px; text-align: center; color: var(--text-3); font-size: 12px; }
+.balance-track { position: relative; flex: 1; min-width: 0; height: 22px; }
+/* where the thumb's centre is: it travels from half a thumb in to half a thumb from the end */
+.balance-track { --x: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--f)); }
+.balance-track::before { content: ""; position: absolute; left: 50%; top: 3px; bottom: 3px; width: 2px; margin-left: -1px; border-radius: 2px; background: var(--text-3); opacity: .7; }
+.balance-value { position: absolute; bottom: calc(100% + 2px); left: var(--x); transform: translateX(-50%); white-space: nowrap; font-size: 11.5px; color: var(--text-2); pointer-events: none; }
+.balance-track input { -webkit-appearance: none; appearance: none; position: relative; z-index: 1; width: 100%; height: 22px; margin: 0; background: transparent; cursor: pointer; }
+.balance-track input:focus-visible { outline: none; }
+.balance-track input::-webkit-slider-runnable-track { height: 4px; border-radius: 99px;
+  background: linear-gradient(to right, var(--surface-hover) 0 min(50%, var(--x)), var(--accent) min(50%, var(--x)) max(50%, var(--x)), var(--surface-hover) max(50%, var(--x)) 100%); }
+.balance-track input::-webkit-slider-thumb { -webkit-appearance: none; width: var(--thumb); height: var(--thumb); margin-top: -6px; border-radius: 50%; background: var(--text); border: 3px solid var(--accent); box-shadow: 0 1px 4px rgba(0, 0, 0, .35); transition: transform .15s var(--ease-out, ease); }
+.balance-track input:hover::-webkit-slider-thumb, .balance-track input:active::-webkit-slider-thumb { transform: scale(1.12); }
+.balance-track input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-soft); }
 .mqa-scan { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

@@ -1055,6 +1055,8 @@ ipcMain.handle('stop-audio', async () => {
 });
 
 async function setDeviceInternal(deviceId) {
+  // the first track can come before the list of outputs was read: read it now rather than refuse
+  if (deviceId !== '-1' && !mpvDevices.some(d => d.id === deviceId)) await listDevices();
   if (deviceId !== '-1' && !mpvDevices.some(d => d.id === deviceId)) throw new Error('Unknown audio device');
   currentDevice = deviceId;
   if (sock) await applyDevice(deviceId);

@@ -43,7 +43,7 @@ In **Settings > Playback**:
 - **Crossfade:** blends the end of one track into the next (in shared mode).
 - **Channel balance:** turns the left or right side down in steps of 0.5 dB, for uneven ears or headphones.
 - **Headphone crossfeed:** blends a little of each side into the other (Light, Medium or Strong), so hard-panned recordings are easier on headphones.
-- **MQA:** TeleCloud recognises MQA tracks and shows a violet **MQA** badge with the original rate. *Send to MQA DAC* sends them untouched so an MQA DAC can unfold them; *Play as plain PCM* plays them like any other file. **Find MQA tracks** checks the whole library; otherwise each track is checked the first time it plays.
+- **MQA:** TeleCloud recognises MQA tracks and shows an **MQA** badge (blue for MQA Studio) with the original rate. *Send to MQA DAC* sends them untouched so an MQA DAC can unfold them; *Play as plain PCM* plays them like any other file. **Find MQA tracks** checks the whole library; otherwise each track is checked the first time it plays.
 - **DSD playback:** *Native (ASIO)* sends DSD to your DAC as it is, through its ASIO driver. *DoP* sends it packed in PCM, in exclusive mode. *Convert to PCM* works with every DAC. If one way can't be used, TeleCloud falls back to the next and the signal path says why.
 - **Limit output format:** caps the sample rate and bit depth if your device cannot handle very high resolutions.
 
@@ -91,7 +91,7 @@ Each track shows small labels in the **Source** column. The info icon next to "S
 | Cloud | Only in TeleCloud. It streams from Telegram when you play it. |
 | Cloud + Cached | Only in TeleCloud, but already downloaded, so it plays instantly and offline. |
 
-The **Quality** column shows the format: for example **FLAC 24/96** for hi-res, **FLAC 16/44.1** for CD quality, **DSD64** for DSD, or **MP3 320** for lossy files (the number is the bitrate). MQA tracks also get a violet **MQA** badge with the original rate, such as **MQA 88.2**. The quality filter above the list shows only Hi-Res, DSD, MQA, a bit depth or a sample rate.
+The **Quality** column shows the format: for example **FLAC 24/96** for hi-res, **FLAC 16/44.1** for CD quality, **DSD64** for DSD, or **MP3 320** for lossy files (the number is the bitrate). MQA tracks also get a badge with the original rate: violet **MQA 88.2**, or blue **MQA Studio 88.2**. The quality filter above the list shows only Hi-Res, DSD, MQA, a bit depth or a sample rate.
 
 Albums can be sorted by title, artist, number of tracks, **Latest added** or **Oldest added**.
 

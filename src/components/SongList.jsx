@@ -371,7 +371,7 @@ const SongList = ({
                   </div>
                 </div>
                 <span className="t-album c-album">{linkAlbum ? (<MetaLinks file={file} artist={false} />) : (file.metadata?.album || '—')}{linkAlbum && (!file.metadata?.album || file.metadata.album === 'Unknown Album') && '—'}</span>
-                <span><span className={`badge b-${q.tier} mono`}>{q.label}</span>{mqaOf(file) && <span className="badge b-mqa mono" title={`${mqaOf(file).label}${mqaOf(file).rate ? `, ${khzText(mqaOf(file).rate)} original` : ''}`}>{mqaOf(file).short}</span>}</span>
+                <span className="q-cell"><span className={`badge b-${q.tier} mono`}>{q.label}</span>{mqaOf(file) && <span className={`badge ${mqaOf(file).cls} mono`} title={`${mqaOf(file).label}${mqaOf(file).rate ? `, ${khzText(mqaOf(file).rate)} original` : ''}`}>{mqaOf(file).short}</span>}</span>
                 <span className="t-src c-src" title={file.telegram_message_id && storageNames ? `In ${storageNames.get(String(file.telegram_channel_id)) || 'TeleCloud'}` : undefined}>{storageOf(file).map(s => SRC_BADGE[s])}{ctx.duplicates?.has(file.path) && <span className="badge b-cached" key="dup" title={`Extra copy of ${ctx.duplicates.get(file.path)}`}>Copy</span>}</span>
                 <span className="c-plays">
                   {ctx.playCounts?.[file.path] > 0 && (

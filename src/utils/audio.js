@@ -139,7 +139,7 @@ export const mqaOf = (file) => {
   if (!v) return null;
   const studio = v === 2;
   const rate = file.mqaRate || null;
-  return { studio, rate, label: studio ? 'MQA Studio' : 'MQA', short: `${studio ? 'MQA S' : 'MQA'}${rate ? ` ${khz(rate)}` : ''}` };
+  return { studio, rate, cls: studio ? 'b-mqa-studio' : 'b-mqa', label: studio ? 'MQA Studio' : 'MQA', short: `${studio ? 'MQA Studio' : 'MQA'}${rate ? ` ${khz(rate)}` : ''}` };
 };
 
 export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnabled, volume, audioSettings = {}, audioOut = null, stream = null, dsd = null, output = null }) => {

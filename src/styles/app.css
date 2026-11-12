@@ -37,7 +37,13 @@
 }
 .badge .ico { width: 11px; height: 11px; stroke-width: 2.2; }
 .b-hires { background: color-mix(in srgb, var(--q-hires) 15%, transparent); color: var(--q-hires); }
-.b-mqa { background: color-mix(in srgb, var(--q-mqa) 16%, transparent); color: var(--q-mqa); margin-left: 6px; }
+.b-mqa { background: color-mix(in srgb, var(--q-mqa) 16%, transparent); color: var(--q-mqa); }
+.b-mqa-studio { background: color-mix(in srgb, var(--q-mqa-studio) 16%, transparent); color: var(--q-mqa-studio); }
+/* in the player's format pill: just the word, in MQA's colour; what kind and the rate are on hover */
+.fmt-mqa { font-size: 11px; font-weight: 700; color: var(--q-mqa); padding-left: 8px; margin-left: 1px; border-left: 1px solid color-mix(in srgb, currentColor 35%, transparent); line-height: 1; }
+.fmt-mqa.studio { color: var(--q-mqa-studio); }
+/* the quality column: the format, then MQA under it, both from the left like every other tag */
+.q-cell { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 7px; }
 .b-lossless { background: var(--ok-soft); color: var(--ok); }
 .b-lossy, .b-local { background: var(--surface-2); color: var(--text-2); }
 .b-cloud { background: var(--info-soft); color: var(--info); }

@@ -145,7 +145,7 @@ const PlayerBar = ({
           <button className={`fmt-pill ${signal.quality.tier === 'lossy' ? 'plain' : ''}`} onClick={() => { setSignalOpen(o => !o); if (isQueueOpen) onToggleQueue(); }} title="Signal path">
             <span className={`bp ${signal.bitPerfect ? '' : 'off'}`} />
             <span className="mono">{signal.quality.label}</span>
-            {mqaOf(currentFile) && <span className="badge b-mqa mono">{mqaOf(currentFile).short}</span>}
+            {mqaOf(currentFile) && <span className={`fmt-mqa mono ${mqaOf(currentFile).studio ? 'studio' : ''}`} title={`${mqaOf(currentFile).label}${mqaOf(currentFile).rate ? `, ${Number((mqaOf(currentFile).rate / 1000).toFixed(1))} kHz original` : ''}`}>MQA</span>}
           </button>
         )}
         <button className={`icon-btn hide-sm np-hide ${eqEnabled ? 'on' : ''}`} onClick={onOpenEq} title="Equalizer"><Icon name="eq" /></button>

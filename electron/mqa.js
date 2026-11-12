@@ -6,7 +6,8 @@
 // XOR of the two channels, at the 16th bit from the top, carries a 36-bit sync word, then the original
 // sample rate and whether it is MQA Studio.
 const { app, BrowserWindow, ipcMain } = require('electron');
-const { execFile } = require('child_process');
+const { spawn } = require('child_process');
+const net = require('net');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -57,23 +58,98 @@ function candidate(row) {
   return fs.existsSync(row.path);
 }
 
-/** Decode the first seconds with mpv, exactly as they are, and look */
-function scanFile(file) {
+// ---------- the decoder: one mpv kept open while tracks are checked
+// Starting a program for every track makes Windows show its busy cursor the whole time a library is
+// checked, so one mpv decodes them all in turn (each into its own file), and closes after a quiet while.
+const DECODE_OPTS = ['--no-config', '--idle=yes', '--no-video', '--msg-level=all=no', '--ao=pcm', '--ao-pcm-waveheader=no',
+  '--audio-format=s32', '--audio-channels=stereo', '--audio-samplerate=0', '--replaygain=no', '--af=', '--volume=100', '--gapless-audio=no'];
+const IDLE_CLOSE = 20000;
+let dec = null;      // { proc, sock, ready, replies, onEvent }
+let decTurn = Promise.resolve();
+let decTimer = null;
+let decStarts = 0;   // for tests: how many times the decoder was started
+
+function closeDecoder() {
+  clearTimeout(decTimer);
+  if (!dec) return;
+  const d = dec;
+  dec = null;
+  try { d.sock?.destroy(); } catch { /* gone */ }
+  try { d.proc.kill(); } catch { /* gone */ }
+}
+
+function openDecoder() {
+  if (dec) return dec.ready;
   const { mpvPath } = require('./player');
-  const out = path.join(os.tmpdir(), `tc-mqa-${crypto.randomBytes(6).toString('hex')}.raw`);
-  return new Promise((resolve, reject) => {
-    execFile(mpvPath, [
-      '--no-config', '--no-video', '--msg-level=all=no', '--ao=pcm', `--ao-pcm-file=${out}`, '--ao-pcm-waveheader=no',
-      '--audio-format=s32', '--audio-channels=stereo', '--audio-samplerate=0', '--replaygain=no', '--af=', '--volume=100',
-      `--length=${SECONDS}`, '--', file,
-    ], { windowsHide: true, timeout: 30000 }, (err) => {
-      fs.readFile(out, (e2, buf) => {
-        fs.rm(out, { force: true }, () => {});
-        if (e2) { reject(err || e2); return; }
-        resolve(findMqa(buf));
+  const pipe = `\\\\.\\pipe\\telecloud-mqa-${process.pid}-${Date.now()}`;
+  const d = { replies: new Map(), onEvent: null, nextId: 0 };
+  dec = d;
+  decStarts++;
+  d.proc = spawn(mpvPath, [...DECODE_OPTS, `--input-ipc-server=${pipe}`], { windowsHide: true, stdio: 'ignore' });
+  d.proc.on('exit', () => { if (dec === d) dec = null; d.replies.forEach(r => r({ error: 'decoder closed' })); });
+  d.ready = (async () => {
+    for (let i = 0; i < 60; i++) {
+      await new Promise(r => setTimeout(r, 50));
+      if (dec !== d) throw new Error('The decoder did not start');
+      const sock = await new Promise((r) => { const s = net.createConnection(pipe, () => r(s)); s.on('error', () => r(null)); });
+      if (!sock) continue;
+      d.sock = sock;
+      let buf = '';
+      sock.on('data', (chunk) => {
+        buf += chunk;
+        let i;
+        while ((i = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, i);
+          buf = buf.slice(i + 1);
+          let m;
+          try { m = JSON.parse(line); } catch { continue; }
+          if (m.request_id && d.replies.has(m.request_id)) { d.replies.get(m.request_id)(m); d.replies.delete(m.request_id); } else if (m.event) d.onEvent?.(m);
+        }
       });
-    });
+      sock.on('error', () => {});
+      await decCommand(d, ['observe_property', 1, 'idle-active']);
+      return d;
+    }
+    closeDecoder();
+    throw new Error('The decoder did not start');
+  })();
+  return d.ready;
+}
+
+const decCommand = (d, command) => new Promise((resolve) => {
+  const id = ++d.nextId;
+  d.replies.set(id, resolve);
+  d.sock.write(`${JSON.stringify({ command, request_id: id })}\n`);
+});
+
+/** Decode the first seconds exactly as they are, and look. One track at a time through the shared decoder. */
+function scanFile(file) {
+  const job = decTurn.then(async () => {
+    clearTimeout(decTimer);
+    const out = path.join(os.tmpdir(), `tc-mqa-${crypto.randomBytes(6).toString('hex')}.raw`);
+    try {
+      const d = await openDecoder();
+      // done when mpv has closed the output again, so the file is complete
+      const done = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => { closeDecoder(); reject(new Error('timed out')); }, 30000);
+        let ended = false;
+        d.onEvent = (m) => {
+          if (m.event === 'end-file') { ended = true; if (m.reason === 'error') { clearTimeout(timer); reject(new Error(m.file_error || 'could not decode')); } }
+          if (m.event === 'property-change' && m.name === 'idle-active' && m.data === true && ended) { clearTimeout(timer); resolve(); }
+        };
+      });
+      const r = await decCommand(d, ['loadfile', file, 'replace', -1, `ao-pcm-file=${out},end=${SECONDS}`]);
+      if (r.error && r.error !== 'success') throw new Error(r.error);
+      await done;
+      return findMqa(await fs.promises.readFile(out));
+    } finally {
+      fs.promises.rm(out, { force: true }).catch(() => {});
+      clearTimeout(decTimer);
+      decTimer = setTimeout(closeDecoder, IDLE_CLOSE);
+    }
   });
+  decTurn = job.catch(() => {});
+  return job;
 }
 
 const send = (ch, p) => BrowserWindow.getAllWindows().forEach(w => { if (!w.isDestroyed()) w.webContents.send(ch, p); });
@@ -128,7 +204,7 @@ async function checkLibrary() {
 
 ipcMain.handle('mqa:check-library', () => checkLibrary());
 ipcMain.handle('mqa:stop', () => { if (job) job.stop = true; });
-app.on('before-quit', () => { if (job) job.stop = true; });
+app.on('before-quit', () => { if (job) job.stop = true; closeDecoder(); });
 
 /** For the player: is the track that is about to play MQA? Looks at the library row of a file or its cached copy. */
 function mqaOfPath(p) {
@@ -137,4 +213,4 @@ function mqaOfPath(p) {
   return row?.mqa || 0;
 }
 
-module.exports = { findMqa, originalRate, checkTrack, checkLibrary, mqaOfPath, candidate };
+module.exports = { findMqa, originalRate, checkTrack, checkLibrary, mqaOfPath, candidate, _decoderStarts: () => decStarts };

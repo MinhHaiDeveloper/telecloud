@@ -2,6 +2,16 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.0.0-beta.21',
+    items: [
+      'The lyrics editor shows the line you are on, has a seek bar with a mark for every synced line, and a green band can follow the music line by line.',
+      'Channel balance has a thumb that starts in the middle, the value rides above it, and a double-click centres it.',
+      'MQA Studio gets its own blue badge. The MQA badge sits under the format, and the quality help explains both.',
+      'The first track after starting TeleCloud plays straight through the output you chose, instead of shared mode for a moment.',
+      'Checking a library for MQA no longer makes Windows show a busy cursor, and it is faster.',
+    ],
+  },
+  {
     version: '1.0.0-beta.20',
     items: [
       'MQA is found in the audio itself, even without tags, and gets a violet badge and its own quality filter. It plays as plain PCM; Settings > Playback can send it untouched to an MQA DAC instead.',
