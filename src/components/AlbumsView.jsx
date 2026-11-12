@@ -5,7 +5,7 @@ import Cover from './Cover';
 import Icon from './Icon';
 import { Select, MoreMenu, BackButton, useDetailScroll } from './ui';
 import { qualityOf, formatDuration, sortAlbumTracks } from '../utils/audio';
-import { albumIndex, trackCount } from '../utils/albums';
+import { albumIndex, trackCount, arrivals } from '../utils/albums';
 import useRemembered from '../hooks/useRemembered';
 
 const SORTS = [
@@ -19,16 +19,6 @@ const SORTS = [
 
 const noThe = (s) => s.toLowerCase().replace(/^the /, '');
 
-/** When each album came into the library. Tracks added in one scan share a time: their order in the library decides. */
-const arrivals = (files, albums) => {
-  const pos = new Map(files.map((f, i) => [f.path, i]));
-  const at = new Map();
-  albums.forEach((a) => {
-    const time = Math.min(...a.songs.map(s => new Date(s.added_at || 0).getTime() || 0));
-    at.set(a, [time, Math.min(...a.songs.map(s => pos.get(s.path) ?? 0))]);
-  });
-  return (a, b) => (at.get(a)[0] - at.get(b)[0]) || (at.get(a)[1] - at.get(b)[1]);
-};
 
 const bestQuality = (songs) => songs.map(qualityOf).sort((a, b) => (b.bits * 1e6 + b.rate) - (a.bits * 1e6 + a.rate))[0];
 

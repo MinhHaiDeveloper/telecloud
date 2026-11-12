@@ -137,6 +137,17 @@ function buildIndex(files) {
 }
 const same = (a, b) => norm(a) === norm(b);
 
+/** When each album came into the library: oldest first. Tracks added in one scan share a time: their order in the library decides. */
+export const arrivals = (files, albums) => {
+  const pos = new Map(files.map((f, i) => [f.path, i]));
+  const at = new Map();
+  albums.forEach((a) => {
+    const time = Math.min(...a.songs.map(s => new Date(s.added_at || 0).getTime() || 0));
+    at.set(a, [time, Math.min(...a.songs.map(s => pos.get(s.path) ?? 0))]);
+  });
+  return (a, b) => (at.get(a)[0] - at.get(b)[0]) || (at.get(a)[1] - at.get(b)[1]);
+};
+
 export const trackCount = (n) => `${n.toLocaleString()} ${n === 1 ? 'track' : 'tracks'}`;
 
 const cache = new WeakMap();

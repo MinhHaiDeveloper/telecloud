@@ -2,6 +2,14 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.1.0-beta.2',
+    items: [
+      'Remote: albums sort by Latest added and Oldest added, like in the app, and each device remembers its choice.',
+      'Remote: Back goes to the same place in a list, with what was already loaded, and so does switching tabs.',
+      'Remote: long track names fit. The title gets the whole width and two lines, smaller as it grows; artist and album take a line each, and lyrics and favourite sit beside the quality.',
+    ],
+  },
+  {
     version: '1.1.0-beta.1',
     items: [
       'TeleCloud Remote: a phone, a tablet or another computer on your Wi-Fi controls the music from its browser. Scan the QR code in Settings > Remote; nothing to install.',

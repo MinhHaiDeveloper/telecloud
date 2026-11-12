@@ -347,7 +347,7 @@ async function handle(req, res) {
     const q = { kind: body.kind };
     if (typeof body.key === 'string') q.key = body.key.slice(0, 600);
     if (typeof body.q === 'string') q.q = body.q.slice(0, 120);
-    if (['name', 'artist', 'year'].includes(body.sort)) q.sort = body.sort;
+    if (['name', 'artist', 'latest', 'oldest'].includes(body.sort)) q.sort = body.sort;
     if (Number.isFinite(body.offset)) q.offset = Math.max(0, Math.min(1e6, Math.round(body.offset)));
     if (Number.isFinite(body.limit)) q.limit = Math.max(1, Math.min(60, Math.round(body.limit)));
     const r = await ask(q);

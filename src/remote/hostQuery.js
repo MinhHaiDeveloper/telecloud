@@ -1,7 +1,7 @@
 // TeleCloud Remote, on the host side: what a remote may browse, worked out from what the app already
 // holds in memory (the library, favourites, recently played, playlists). Results carry file paths;
 // electron/remote.js swaps them for opaque ids before anything leaves this computer.
-import { albumIndex, artistsOf, artistLabel } from '../utils/albums';
+import { albumIndex, artistsOf, artistLabel, arrivals } from '../utils/albums';
 import { qualityOf, mqaOf, sortAlbumTracks, storageOf } from '../utils/audio';
 
 const noThe = (s) => String(s || '').replace(/^the\s+/i, '').toLowerCase();
@@ -113,7 +113,9 @@ export function answer(ctx, req = {}) {
     case 'albums': {
       const list = [...idx.list];
       if (req.sort === 'artist') list.sort((a, b) => byName(a.artist, b.artist) || (a.year - b.year));
-      else if (req.sort === 'year') list.sort((a, b) => (b.year - a.year) || byName(a.name, b.name));
+      // added to the library, as Albums sorts them in the app
+      else if (req.sort === 'latest') { const older = arrivals(ctx.files, list); list.sort((a, b) => older(b, a)); }
+      else if (req.sort === 'oldest') list.sort(arrivals(ctx.files, list));
       else list.sort((a, b) => byName(a.name, b.name));
       const p = page(list, req);
       return { ...p, items: p.items.map(a => albumOut(a, ctx.dedupe)) };

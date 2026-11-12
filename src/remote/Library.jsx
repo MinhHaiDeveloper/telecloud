@@ -92,17 +92,17 @@ const Problem = ({ text }) => (text ? <p className="rm-empty">{text}</p> : null)
 const Loading = () => <div className="rm-more"><span className="rm-ring sm" /></div>;
 
 export default function Library({ s, act }) {
-  const [stack, setStack] = useState([{ v: 'home' }]);
+  // Pages stay open under the one shown (hidden, each with its own scroll), so Back finds a list
+  // exactly where it was left, with the pages already loaded
+  const nextId = useRef(1);
+  const [stack, setStack] = useState([{ v: 'home', id: 0 }]);
   const [dir, setDir] = useState('in');
   const [q, setQ] = useState('');
   const [query, setQuery] = useState('');
-  const scroller = useRef(null);
   const top = stack[stack.length - 1];
   useEffect(() => { const t = setTimeout(() => setQuery(q.trim()), 250); return () => clearTimeout(t); }, [q]);
-  // a page that opens starts at the top
-  useEffect(() => { if (scroller.current) scroller.current.scrollTop = 0; }, [stack.length, top.v, top.key]);
 
-  const push = (page) => { setDir('in'); setStack(x => [...x, page]); };
+  const push = (page) => { setDir('in'); setStack(x => [...x, { ...page, id: nextId.current++ }]); };
   const back = () => { setDir('out'); setStack(x => (x.length > 1 ? x.slice(0, -1) : x)); };
   const playingId = s?.track?.id;
   const paused = !s?.playing;
@@ -138,16 +138,18 @@ export default function Library({ s, act }) {
     </div>
   );
 
-  let body;
-  let title = TITLES[top.v] || top.name || 'Library';
-  if (top.v === 'home') { title = 'Library'; body = <Home query={query} push={push} row={row} albumCard={albumCard} />; }
-  else if (top.v === 'albums') body = <Albums albumCard={albumCard} />;
-  else if (top.v === 'artists') body = <Artists push={push} />;
-  else if (top.v === 'playlists') body = <Playlists push={push} />;
-  else if (top.v === 'favorites' || top.v === 'recent') body = <Tracks kind={top.v} row={row} listHead={listHead} />;
-  else if (top.v === 'album') body = <Album k={top.key} row={row} listHead={listHead} />;
-  else if (top.v === 'artist') body = <Artist k={top.key} albumCard={albumCard} listHead={listHead} />;
-  else if (top.v === 'playlist') body = <Playlist k={top.key} row={row} listHead={listHead} />;
+  const bodyOf = (p) => {
+    if (p.v === 'home') return <Home query={query} push={push} row={row} albumCard={albumCard} />;
+    if (p.v === 'albums') return <Albums albumCard={albumCard} />;
+    if (p.v === 'artists') return <Artists push={push} />;
+    if (p.v === 'playlists') return <Playlists push={push} />;
+    if (p.v === 'favorites' || p.v === 'recent') return <Tracks kind={p.v} row={row} listHead={listHead} />;
+    if (p.v === 'album') return <Album k={p.key} row={row} listHead={listHead} />;
+    if (p.v === 'artist') return <Artist k={p.key} albumCard={albumCard} listHead={listHead} />;
+    if (p.v === 'playlist') return <Playlist k={p.key} row={row} listHead={listHead} />;
+    return null;
+  };
+  const title = top.v === 'home' ? 'Library' : TITLES[top.v] || top.name || 'Library';
 
   return (
     <section className="rm-library card">
@@ -164,8 +166,10 @@ export default function Library({ s, act }) {
           {q && <button className="rm-icon sm" onClick={() => setQ('')} aria-label="Clear"><Icon name="close" /></button>}
         </label>
       )}
-      <div className="rm-lib-body" ref={scroller}>
-        <div key={`${stack.length}-${top.v}-${top.key || ''}`} className={`rm-page ${dir}`}>{body}</div>
+      <div className="rm-lib-body">
+        {stack.map((p, i) => (
+          <div key={p.id} className={`rm-page ${i === stack.length - 1 ? `top ${dir}` : 'under'}`} aria-hidden={i !== stack.length - 1}>{bodyOf(p)}</div>
+        ))}
       </div>
     </section>
   );
@@ -217,13 +221,18 @@ function Home({ query, push, row, albumCard }) {
   );
 }
 
+const SORTS = [['name', 'A–Z'], ['artist', 'Artist'], ['latest', 'Latest added'], ['oldest', 'Oldest added']];
+const savedSort = () => { try { const v = localStorage.getItem('rm-album-sort'); return SORTS.some(([k]) => k === v) ? v : 'name'; } catch { return 'name'; } };
+
 function Albums({ albumCard }) {
-  const [sort, setSort] = useState('name');
+  // kept on this device, like the app keeps its own sort
+  const [sort, setSortState] = useState(savedSort);
+  const setSort = (v) => { setSortState(v); try { localStorage.setItem('rm-album-sort', v); } catch { /* fine */ } };
   const p = usePaged('albums', sort);
   return (
     <>
       <div className="rm-sorts">
-        {[['name', 'A–Z'], ['artist', 'Artist'], ['year', 'Newest']].map(([v, l]) => (
+        {SORTS.map(([v, l]) => (
           <button key={v} className={sort === v ? 'on' : ''} onClick={() => setSort(v)}>{l}</button>
         ))}
         {p.total != null && <span className="mono">{p.total.toLocaleString()}</span>}

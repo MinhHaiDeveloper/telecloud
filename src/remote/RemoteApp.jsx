@@ -241,21 +241,32 @@ export default function RemoteApp() {
           : <Cover id={t?.id} className={`rm-art ${s?.playing ? 'playing' : ''}`} />}
       </div>
   );
+  // long names: the title gets the whole width and two lines, smaller the longer it is; artist and
+  // album one line each (pressed and held, the full text); an album named like the track isn't repeated
+  const titleSize = !t ? '' : t.title.length > 44 ? 'xl' : t.title.length > 26 ? 'l' : '';
+  const albumLine = t?.album && t.album.trim().toLowerCase() !== String(t.title || '').trim().toLowerCase() ? t.album : null;
   const metaEl = (
       <div className="rm-meta">
-        <div className="rm-meta-text">
-          <b key={t?.id || 'none'} className="rm-title">{t?.title || 'Nothing playing'}</b>
-          <span className="rm-sub">{t ? [t.artist, t.album].filter(Boolean).join(' · ') : 'Pick something in the library or in TeleCloud'}</span>
+        <b key={t?.id || 'none'} className={`rm-title ${titleSize}`}>{t?.title || 'Nothing playing'}</b>
+        {t ? (
+          <span className="rm-sub">
+            {t.artist && <span className="rm-artist">{t.artist}</span>}
+            {albumLine && <span className="rm-album">{albumLine}</span>}
+          </span>
+        ) : <span className="rm-sub"><span className="rm-album">Pick something in the library or in TeleCloud</span></span>}
+        <div className="rm-meta-row">
           <Badges t={t} />
+          <span className="rm-meta-tools">
+            <button className={`rm-icon lyr ${showLyrics ? 'on' : ''}`} onClick={toggleLyrics} aria-pressed={showLyrics} aria-label={showLyrics ? 'Show the cover' : 'Show the lyrics'} title={showLyrics ? 'Cover' : 'Lyrics'}>
+              <Icon name="lyrics" />
+            </button>
+            {t && (
+              <button className={`rm-icon cmd heart ${t.fav ? 'on' : ''}`} onClick={() => fav(t, !t.fav)} aria-label={t.fav ? 'Remove from favourites' : 'Add to favourites'} title="Favourite">
+                <Icon name="heart" filled={!!t.fav} />
+              </button>
+            )}
+          </span>
         </div>
-        <button className={`rm-icon lyr ${showLyrics ? 'on' : ''}`} onClick={toggleLyrics} aria-pressed={showLyrics} aria-label={showLyrics ? 'Show the cover' : 'Show the lyrics'} title={showLyrics ? 'Cover' : 'Lyrics'}>
-          <Icon name="lyrics" />
-        </button>
-        {t && (
-          <button className={`rm-icon cmd heart ${t.fav ? 'on' : ''}`} onClick={() => fav(t, !t.fav)} aria-label={t.fav ? 'Remove from favourites' : 'Add to favourites'} title="Favourite">
-            <Icon name="heart" filled={!!t.fav} />
-          </button>
-        )}
       </div>
   );
   const ctlEl = (
