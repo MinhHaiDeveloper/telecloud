@@ -56,7 +56,7 @@ async function get(url, { json = true, method = 'GET', timeout = 8000 } = {}) {
   const t = setTimeout(() => ctl.abort(), timeout);
   try {
     const r = await fetch(url, { method, headers: { 'User-Agent': UA }, signal: ctl.signal });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (!r.ok) throw require('./httpError')(r, url);
     return json ? await r.json() : r;
   } finally { clearTimeout(t); }
 }

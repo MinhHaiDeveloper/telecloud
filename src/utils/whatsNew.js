@@ -2,6 +2,17 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.1.0-beta.3',
+    items: [
+      'Remote: paired devices show the browser they really use, Samsung Internet, Edge, Firefox, Opera and more, or just "browser" when it is not known.',
+      "Remote: a phone coming back from the background no longer flashes \"Can't reach TeleCloud\"; it reconnects at once.",
+      'The Public network warning names your Wi-Fi, not the adapter.',
+      'Discord shows the artist picture you chose, straight away, also one chosen in an older version: TeleCloud finds that same picture online again. One you uploaded yourself shows none, rather than another picture.',
+      "A source that can't be reached says why in plain words, for example a VPN or security app answering instead of Last.fm.",
+      'Saved logs tell more: the channel, displays and graphics, audio outputs, MQA, Last.fm, the remote and its devices.',
+    ],
+  },
+  {
     version: '1.1.0-beta.2',
     items: [
       'Remote: albums sort by Latest added and Oldest added, like in the app, and each device remembers its choice.',

@@ -101,6 +101,11 @@ async function findArtist(name) {
   return url;
 }
 const artistOf = (t) => firstName(known(t?.artist, 'Unknown Artist'));
+/** A new artist picture was chosen (or removed): look it up again, now if it is showing */
+function artistChanged(name) {
+  for (const k of [...artistCache.keys()]) if (!name || k === String(name).toLowerCase()) artistCache.delete(k);
+  if (typeof updateArtist === 'function' && (!name || String(artistOf(showing())).toLowerCase() === String(name).toLowerCase())) updateArtist();
+}
 const albumOf = (t) => (t ? `${t.album}\u0000${t.albumArtist}` : '');
 
 // ---------- the last track played, kept for the next start
@@ -298,4 +303,4 @@ ipcMain.handle('discord:set-options', (e, patch) => setOptions(patch || {}));
 ipcMain.handle('discord:update', (e, s) => { update(s || {}); });
 app.on('before-quit', () => { clearTimeout(retryTimer); retryTimer = null; disconnect(); });
 
-module.exports = { buildActivity, fit, fill, options };
+module.exports = { buildActivity, fit, fill, options, artistChanged };

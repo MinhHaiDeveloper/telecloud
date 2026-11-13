@@ -84,7 +84,7 @@ const RemoteSettings = () => {
             )}
             {s.running && !s.url && <Callout tone="warn">This computer has no network address. Connect it to Wi-Fi or Ethernet.</Callout>}
             {publicNet.length > 0 && (
-              <Callout tone="warn">{publicNet.map(n => n.name).join(', ')} is set to a Public network, so Windows keeps other devices out. In Windows Settings &gt; Network, set it to Private.</Callout>
+              <Callout tone="warn">{publicNet.map(n => (n.adapter && n.adapter !== n.name ? `“${n.name}” (${n.adapter})` : `“${n.name}”`)).join(', ')} {publicNet.length > 1 ? 'are' : 'is'} set as a Public network, so Windows keeps other devices out. In Windows Settings &gt; Network &amp; internet, open it and choose Private.</Callout>
             )}
           </div>
         )}

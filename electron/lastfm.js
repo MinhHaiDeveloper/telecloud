@@ -52,9 +52,18 @@ async function call(method, params = {}, { signed = false, post = false } = {}) 
       method: post ? 'POST' : 'GET', body: post ? body : undefined, signal: ctl.signal,
       headers: { 'User-Agent': 'TeleCloud', ...(post ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}) },
     });
-    const j = await r.json().catch(() => ({}));
+    const text = await r.text().catch(() => '');
+    let j = {};
+    try { j = JSON.parse(text); } catch { /* not JSON: told below */ }
     if (j.error) { const e = new Error(j.message || `Last.fm error ${j.error}`); e.code = j.error; throw e; }
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (!r.ok || !text.trim().startsWith('{')) {
+      // what came back, for the log (no key or session is in an answer)
+      console.warn(`[Last.fm] ${p.method}: HTTP ${r.status} ${r.statusText || ''}, ${r.headers.get('content-type') || 'no type'}, ${text.length} bytes: ${text.replace(/\s+/g, ' ').slice(0, 160)}`);
+      // 600 and up is no HTTP status: something between this PC and Last.fm answered (a proxy, VPN, DNS filter or security app)
+      if (r.status >= 600 || r.status < 100) throw new Error(`Last.fm couldn't be reached: the network answered with code ${r.status} instead. A VPN, proxy or security app may be in the way; try again later`);
+      if (r.status >= 500) throw new Error(`Last.fm is having trouble (HTTP ${r.status}). Try again later`);
+      throw new Error(`Last.fm answered HTTP ${r.status}`);
+    }
     return j;
   } finally { clearTimeout(t); }
 }

@@ -1119,6 +1119,6 @@ app.on('before-quit', () => {
   try { proc?.kill(); } catch { /* ignore */ }
 });
 
-module.exports = { applyAudioSettings, buildEqFilter, capFilter, chainSpec, mpvPath, getProp, setStreamPrefix, parseBluetoothOutputs,
+module.exports = { listDevices, applyAudioSettings, buildEqFilter, capFilter, chainSpec, mpvPath, getProp, setStreamPrefix, parseBluetoothOutputs,
   // tests only: feed a message as if mpv sent it, and see what is playing
   _mpvMessage: (msg) => handleMessage(msg), _playing: () => ({ entry: currentEntryId, path: currentPath, refused: [...refused] }) };

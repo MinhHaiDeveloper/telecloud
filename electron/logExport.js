@@ -125,12 +125,22 @@ async function systemReport({ days, includeNames }) {
   const lines = [];
   const add = (k, v) => lines.push(`${k}: ${v}`);
   add('App version', app.getVersion());
+  add('Channel', require('../package.json').version.includes('-') ? 'TeleCloud Beta' : 'TeleCloud');
   add('Packaged', app.isPackaged);
+  add('Running for', `${Math.round(process.uptime() / 60)} min`);
   add('Electron', process.versions.electron);
   add('Windows', `${os.release()} ${os.arch()}`);
   add('Memory', `${Math.round(os.totalmem() / 1073741824)} GB, app using ${Math.round(process.memoryUsage().rss / 1048576)} MB (main process)`);
   add('CPU', `${os.cpus()?.[0]?.model || 'unknown'} x${os.cpus()?.length || 0}`);
   add('Language', app.getLocale());
+  try {
+    const { screen } = require('electron');
+    add('Displays', screen.getAllDisplays().map(d => `${d.size.width}x${d.size.height} at ${Math.round(d.scaleFactor * 100)}%${d.displayFrequency ? ` ${Math.round(d.displayFrequency)} Hz` : ''}${d.internal ? ' (built in)' : ''}`).join(', '));
+  } catch { /* no screen yet */ }
+  try {
+    const g = app.getGPUFeatureStatus();
+    add('Graphics', `compositing ${g.gpu_compositing}, rasterization ${g.rasterization}, video decode ${g.video_decode}`);
+  } catch { /* not ready */ }
   add('Time zone', Intl.DateTimeFormat().resolvedOptions().timeZone);
   add('Log period', typeof days === 'number' ? `last ${days} days` : 'chosen dates');
   add('Music names in the log', includeNames ? 'included' : 'hidden');
@@ -167,6 +177,29 @@ async function systemReport({ days, includeNames }) {
     const store = require('./telecloud/store');
     add('TeleCloud storages', store.storages.all().length);
   } catch { /* not set up */ }
+  lines.push('');
+  // audio outputs, as mpv sees them: their names help with DAC problems (no music in them)
+  try {
+    const devices = await Promise.race([require('./player').listDevices(), new Promise(r => setTimeout(() => r(null), 5000))]);
+    add('Audio outputs', devices ? devices.map(d => d.name || d.description || d.id).join(' | ') : 'not listed in time');
+  } catch (err) { add('Audio outputs', `not listed: ${err.message}`); }
+  try {
+    const rows = require('./database').getAllFiles();
+    add('MQA', `${rows.filter(r => r.mqa > 0).length} tracks (${rows.filter(r => r.mqa === 2).length} MQA Studio), ${rows.filter(r => r.mqa == null).length} not checked yet`);
+  } catch { /* no library */ }
+  try {
+    const l = require('./lastfm').status();
+    add('Last.fm', l.user ? `connected, scrobbling ${l.scrobble ? 'on' : 'off'}, ${l.pending} waiting` : (l.available ? 'not connected' : 'no app key in this build'));
+  } catch { /* not loaded */ }
+  // the remote: on or off, how many devices and which browsers (no addresses, names or keys)
+  try {
+    const remote = require('./remote');
+    const r = remote.status();
+    add('Remote', `${r.enabled ? 'on' : 'off'}${r.running ? ', running' : ''}, ${r.devices.length} paired (${r.devices.filter(d => d.readOnly).length} view only), keep awake ${r.keepAwake ? 'on' : 'off'}, ${r.addresses.length} network addresses (${r.addresses.filter(a => a.virtual).length} virtual)`);
+    if (r.devices.length) add('Remote devices', r.devices.map(d => `${d.label}${d.online ? ' (connected)' : ''}`).join(' | '));
+    const nets = await Promise.race([remote.networkProfile(), new Promise(res => setTimeout(() => res([]), 8000))]);
+    if (nets.length) add('Networks', nets.map(n => n.category).join(', '));
+  } catch { /* not loaded */ }
   return logger.redact(`${lines.join('\n')}\n`);
 }
 
@@ -253,4 +286,5 @@ ipcMain.handle('logs:clear', () => {
   return { success: true };
 });
 
-module.exports = { buildZip, zip, nameFinder };
+module.exports = { buildZip, zip, nameFinder, _systemReport: systemReport };
+

@@ -116,22 +116,41 @@ export default function RemoteApp() {
   }, [ro, say]);
 
   // ---- pair (when the link carries the key), then listen
+  // A phone that put the page in the background drops the connection; it comes back in a moment.
+  // So "can't reach" only shows when it stays gone a few seconds.
+  const lostTimer = useRef(null);
+  const markOnline = useCallback(() => { clearTimeout(lostTimer.current); lostTimer.current = null; setOnline(true); }, []);
+  const markLost = useCallback(() => {
+    if (lostTimer.current) return;
+    lostTimer.current = setTimeout(() => { lostTimer.current = null; setOnline(false); }, 4000);
+  }, []);
   const connect = useCallback(() => {
     esRef.current?.close();
     const es = new EventSource('/api/events');
     esRef.current = es;
     es.addEventListener('state', (e) => {
-      try { setS(JSON.parse(e.data)); recvAt.current = performance.now(); setOnline(true); } catch { /* skip */ }
+      try { setS(JSON.parse(e.data)); recvAt.current = performance.now(); markOnline(); } catch { /* skip */ }
     });
     es.addEventListener('me', (e) => { try { setMe(JSON.parse(e.data)); } catch { /* skip */ } });
-    es.onopen = () => setOnline(true);
+    es.onopen = markOnline;
     es.onerror = async () => {
-      setOnline(false);
+      markLost();
       // signed out (a new key, or removed): stop retrying and say so
       const r = await fetch('/api/hello').catch(() => null);
-      if (r && r.status === 401) { es.close(); setPhase('unpaired'); }
+      if (r && r.status === 401) { es.close(); clearTimeout(lostTimer.current); setPhase('unpaired'); }
     };
-  }, []);
+  }, [markOnline, markLost]);
+  // back in front: connect again at once, without waiting for the browser's own retry
+  useEffect(() => {
+    const onShow = () => {
+      if (document.visibilityState !== 'visible' || !esRef.current) return;
+      if (esRef.current.readyState !== EventSource.OPEN) connect();
+    };
+    document.addEventListener('visibilitychange', onShow);
+    window.addEventListener('pageshow', onShow);
+    window.addEventListener('online', onShow);
+    return () => { document.removeEventListener('visibilitychange', onShow); window.removeEventListener('pageshow', onShow); window.removeEventListener('online', onShow); clearTimeout(lostTimer.current); };
+  }, [connect]);
   useEffect(() => {
     (async () => {
       const m = /[#&]k=([\w-]+)/.exec(window.location.hash);

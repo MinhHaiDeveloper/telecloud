@@ -154,6 +154,7 @@ async function gifFromCloud(entry, buf) {
   saveIndex();
   setGifState(entry.name, { key: entry.key, at: entry.at });
   BrowserWindow.getAllWindows().forEach(w => w.webContents.send('artists:saved', { name: entry.name }));
+  try { require('./discord').artistChanged(entry.name); } catch { /* Discord off */ }
   return true;
 }
 /** The chat and the index follow a GIF that was added, replaced or removed */
@@ -229,7 +230,7 @@ async function get(url, { json = true, timeout = 8000 } = {}) {
   try {
     const r = await fetch(url, { headers: { 'User-Agent': UA }, signal: ctl.signal });
     if (r.status === 404) return null;
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (!r.ok) throw require('./httpError')(r, url);
     return json ? await r.json() : await r.text();
   } finally { clearTimeout(t); }
 }
@@ -478,11 +479,58 @@ async function youtube({ artist }) {
   return { results };
 }
 
+// ---------- the same picture online: a small fingerprint of each, compared bit by bit
+/** 64 bits: is each pixel of a 9 x 8 grey copy brighter than the one to its right */
+function fingerprint(buf) {
+  const img = nativeImage.createFromBuffer(buf);
+  if (img.isEmpty()) return null;
+  const px = img.resize({ width: 9, height: 8, quality: 'good' }).toBitmap();
+  const grey = (x, y) => { const i = (y * 9 + x) * 4; return px[i] * 0.114 + px[i + 1] * 0.587 + px[i + 2] * 0.299; };
+  const bits = [];
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) bits.push(grey(x, y) > grey(x + 1, y) ? 1 : 0);
+  return bits;
+}
+const differ = (a, b) => a.reduce((n, bit, i) => n + (bit !== b[i]), 0);
+const SAME = 10; // of 64 bits: the same picture, saved at another size or quality
+const RECHECK = 7 * 24 * 3600e3;
+
+async function sameOnline(name, known) {
+  if (known.looked && Date.now() - known.looked < RECHECK) return null;
+  const mine = fingerprint(await fs.promises.readFile(fileFor(name)));
+  if (!mine) return null;
+  const o = options();
+  let failed = false;
+  for (const id of o.order.filter(x => SOURCES[x].online && !o.disabled.includes(x) && x !== 'youtube')) {
+    let found = [];
+    try { found = (await providers[id]({ artist: name })).filter(r => r.score >= 0.9 && /^https:\/\//i.test(r.image?.url || '')).slice(0, 4); } catch { failed = true; continue; }
+    for (const r of found) {
+      // the smaller copy has the same shape as the one saved; the square thumbnail may be cut
+      const buf = await download(r.image.fallback || r.image.url).catch(() => null);
+      const theirs = buf && fingerprint(buf);
+      if (theirs && differ(mine, theirs) <= SAME) {
+        known.url = r.image.url;
+        delete known.looked;
+        saveIndex();
+        console.log(`[Artist] Found the chosen picture online on ${SOURCES[id].label || id}`);
+        return known.url;
+      }
+    }
+  }
+  if (!failed) { known.looked = Date.now(); saveIndex(); }
+  return null;
+}
+
 /** A public link to the artist's picture, for Discord. One chosen here first, then the online sources in order. */
 async function onlineArtistPicture(name) {
   if (!name || NOT_AN_ARTIST.test(name.trim())) return { url: null };
-  const chosen = loadIndex()[norm(name)]?.url;
-  if (chosen) return { url: chosen };
+  const known = loadIndex()[norm(name)];
+  if (known?.url) return { url: known.url };
+  // a picture chosen here before its address was kept, or one found in the tags: look for that same
+  // picture online, and remember where it is. Never another picture of the artist instead
+  if (known && (known.source === 'user' || known.source === 'tag')) {
+    const url = await sameOnline(name, known).catch(() => null);
+    return url ? { url } : { url: null, own: true };
+  }
   const o = options();
   let failed = false;
   for (const id of o.order.filter(x => SOURCES[x].online && !o.disabled.includes(x))) {
@@ -501,7 +549,7 @@ async function download(url) {
   const t = setTimeout(() => ctl.abort(), 25000);
   try {
     const r = await fetch(url, { headers: { 'User-Agent': UA }, signal: ctl.signal });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (!r.ok) throw require('./httpError')(r, url);
     const buf = Buffer.from(await r.arrayBuffer());
     if (buf.length > 30 * 1024 * 1024) throw new Error('The picture is too large');
     return buf;
@@ -539,6 +587,8 @@ function writeTag(file, jpeg, { onlyMissing = false } = {}) {
 }
 
 function announce(name, paths, files) {
+  // Discord shows the new picture now, not the one it looked up before
+  try { require('./discord').artistChanged(name); } catch { /* Discord off */ }
   BrowserWindow.getAllWindows().forEach((w) => {
     w.webContents.send('artists:saved', { name });
     if (files.length) w.webContents.send('covers:saved', { paths, files });
@@ -644,4 +694,4 @@ ipcMain.handle('artists:targets', (e, { name }) => targets(name));
 ipcMain.handle('artists:stop', () => { stopRequested = true; });
 ipcMain.handle('artists:pick', wrap(async (o, e) => ({ picked: await pick(e) })));
 
-module.exports = { pictureFor, motionFor, onlineArtistPicture, search, save, options, SOURCES, gifState, gifsInStorage, hasGifKey, wantsGif, gifFromCloud };
+module.exports = { _fingerprint: fingerprint, pictureFor, motionFor, onlineArtistPicture, search, save, options, SOURCES, gifState, gifsInStorage, hasGifKey, wantsGif, gifFromCloud };

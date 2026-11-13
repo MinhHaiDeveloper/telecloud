@@ -167,11 +167,29 @@ function setState(s) {
 }
 
 // ---------- devices
+// Most browsers also call themselves Chrome and Safari: the specific names are looked for first,
+// and one that isn't recognised is just "browser", never a guess
+const BROWSERS = [
+  [/SamsungBrowser\//, 'Samsung Internet'],
+  [/EdgA?\/|EdgiOS\/|Edg\//, 'Edge'],
+  [/OPR\/|OPiOS\/|OPT\/|Opera/, 'Opera'],
+  [/coc_coc_browser\//, 'Cốc Cốc'],
+  [/YaBrowser\//, 'Yandex Browser'],
+  [/Vivaldi\//, 'Vivaldi'],
+  [/MiuiBrowser\/|XiaoMi\//, 'Mi Browser'],
+  [/HuaweiBrowser\//, 'Huawei Browser'],
+  [/UCBrowser\//, 'UC Browser'],
+  [/DuckDuckGo\//, 'DuckDuckGo'],
+  [/FBAN|FBAV|Instagram|Zalo|Line\/|; wv\)/, 'in-app browser'],
+  [/Firefox\/|FxiOS\//, 'Firefox'],
+  [/CriOS\/|Chrome\//, 'Chrome'],
+  [/Safari\//, 'Safari'],
+];
 function deviceLabel(ua = '') {
   const os_ = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? (/Mobile/.test(ua) ? 'Android phone' : 'Android tablet or foldable')
     : /Windows/.test(ua) ? 'Windows PC' : /Macintosh/.test(ua) ? 'Mac' : /CrOS/.test(ua) ? 'Chromebook' : /Linux/.test(ua) ? 'Linux' : 'Device';
-  const br = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Firefox\//.test(ua) ? 'Firefox' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'browser';
-  return `${os_} · ${br}`;
+  const br = BROWSERS.find(([re]) => re.test(ua));
+  return `${os_} · ${br ? br[1] : 'browser'}`;
 }
 const cookieOf = (req) => (String(req.headers.cookie || '').split(/;\s*/).find(c => c.startsWith(`${COOKIE}=`)) || '').slice(COOKIE.length + 1);
 function deviceOf(req) {
@@ -339,7 +357,13 @@ async function handle(req, res) {
   if (!device) return send(res, 401, { error: 'Not paired' });
   touch(device);
 
-  if (req.method === 'GET' && p === '/api/hello') return send(res, 200, { host: hostInfo(), device: device.label, readOnly: !!device.readOnly });
+  if (req.method === 'GET' && p === '/api/hello') {
+    // the name follows the browser actually used (the same phone may open another browser)
+    const ua = String(req.headers['user-agent'] || '');
+    const label = deviceLabel(ua);
+    if (/^Mozilla\//.test(ua) && label !== device.label) { device.label = label; persist(); pushStatus(); }
+    return send(res, 200, { host: hostInfo(), device: device.label, readOnly: !!device.readOnly });
+  }
   if (req.method === 'POST' && p === '/api/browse') {
     if (req.headers['x-telecloud'] !== '1') return send(res, 400, { error: 'bad request' });
     const body = await readJson(req);
@@ -440,9 +464,16 @@ function pushStatus() {
 }
 function networkProfile() {
   return new Promise((resolve) => {
-    execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', 'Get-NetConnectionProfile | Select-Object InterfaceAlias,NetworkCategory | ConvertTo-Json -Compress'], { windowsHide: true, timeout: 8000 }, (err, out) => {
+    // Name is the network's own name (the Wi-Fi's SSID); InterfaceAlias is the adapter ("Wi-Fi 2")
+    execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', '[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-NetConnectionProfile | Select-Object Name,InterfaceAlias,NetworkCategory | ConvertTo-Json -Compress'], { windowsHide: true, timeout: 8000, encoding: 'utf8' }, (err, out) => {
       if (err) { resolve([]); return; }
-      try { const j = JSON.parse(out); resolve((Array.isArray(j) ? j : [j]).map(x => ({ name: x.InterfaceAlias, category: x.NetworkCategory === 1 || x.NetworkCategory === 'Private' ? 'Private' : x.NetworkCategory === 2 || x.NetworkCategory === 'DomainAuthenticated' ? 'Domain' : 'Public' }))); } catch { resolve([]); }
+      try {
+        const j = JSON.parse(out);
+        resolve((Array.isArray(j) ? j : [j]).map(x => ({
+          name: x.Name || x.InterfaceAlias, adapter: x.InterfaceAlias,
+          category: x.NetworkCategory === 1 || x.NetworkCategory === 'Private' ? 'Private' : x.NetworkCategory === 2 || x.NetworkCategory === 'DomainAuthenticated' ? 'Domain' : 'Public',
+        })));
+      } catch { resolve([]); }
     });
   });
 }
@@ -521,4 +552,4 @@ ipcMain.handle('remote:state', (e, s) => { player = e.sender; if (server) setSta
 app.whenReady().then(() => { if (load().enabled) start(); });
 app.on('before-quit', () => { stop(); playingNow = false; applyAwake(); });
 
-module.exports = { start, stop, status, _state: () => state, _ids: ids };
+module.exports = { start, stop, status, networkProfile, deviceLabel, _state: () => state, _ids: ids };
