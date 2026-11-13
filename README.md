@@ -39,6 +39,7 @@ Open **Settings > Library**, click **Add folder** and choose where your music li
 
 In **Settings > Playback**:
 
+- **When an album ends:** another album follows, the artist's next one by year or else the one beside it in Albums. Turn it off to stop at the end of the album.
 - **Output device:** pick your DAC or headphones. Devices marked *exclusive* give bit-perfect playback; *System default* shares the sound with other apps.
 - **ReplayGain:** evens out the volume between tracks or albums.
 - **Crossfade:** blends the end of one track into the next (in shared mode).
@@ -57,13 +58,17 @@ The **Signal path** panel on the right shows exactly what happens to the sound o
 - **Low memory mode** draws the interface without the graphics card. It uses much less memory; animations may be less smooth. The sound is not affected.
 - **Keep running in the tray when closed** hides the window instead of quitting, and the music keeps playing. Quit from the tray icon.
 
-### 3. Equalizer (optional)
+### 3. Shape the sound (optional)
 
-**Settings > Equalizer** has a 31-band equalizer. Drag the points on the curve or scroll over them, and changes are heard immediately.
+**Settings > Sound** holds everything that changes the sound. Each one is heard as you move it, and none of it is on until you turn it on, so playback stays bit-perfect otherwise.
 
-- **AutoEQ:** choose your headphones and a target sound, and TeleCloud builds a correction for you.
-- **Import and export** presets in the format used by Squiglink.
-- **Undo and redo** with `Ctrl+Z` and `Ctrl+Y`.
+- **Parametric EQ:** 31 bands. Drag the points on the curve or scroll over them. **AutoEQ** builds a correction from your headphones' measurement and a target sound. Import and export the Squiglink format, undo and redo with `Ctrl+Z` and `Ctrl+Y`. The **live spectrum** under the curve shows the music as it plays, after every filter.
+- **Tone:** Warmth (one slider from bright to warm), Bass, Treble, and **Loudness**, which brings back bass and treble as you turn TeleCloud down.
+- **Space:** stereo width from mono to wider than the recording, mono, left and right swapped, and polarity.
+- **Effects:** Night mode (quiet passages up, loud ones down), Air (shine above 6 kHz) and Tube warmth (soft even harmonics).
+- **Room or headphone correction:** load an impulse response (WAV) from REW, Dirac or a headphone tool, or a text file of frequency and gain.
+- **Prevent clipping** lowers the level by the biggest boost. If the sound still goes over 0 dBFS, the light in the signal path blinks red.
+- **A/B** plays the original at the same loudness, to hear what the settings really do.
 
 ### 4. Back up to TeleCloud (optional)
 

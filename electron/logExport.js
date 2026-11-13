@@ -167,6 +167,7 @@ async function systemReport({ days, includeNames }) {
     const eq = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'eq.json'), 'utf8'));
     add('Equalizer', JSON.stringify({ enabled: !!eq.enabled, bands: eq.bands?.length || 0, separatePerOutput: !!eq.perDevice, outputsWithTheirOwn: Object.keys(eq.profiles || {}).length }));
   } catch { add('Equalizer', 'defaults'); }
+  try { const snd = require('./player')._sound(); const sc = require('./soundChain'); add('Sound', sc.soundSummary(snd.soundState, { exclusive: false }).join(', ') || 'nothing on'); if (snd.clipShown) add('Clipping', 'yes, right now'); } catch { /* player not loaded */ }
   for (const [name, file, keys] of [['Lyrics', 'lyrics-settings.json', ['search', 'autoSave', 'saveTo', 'order', 'disabled']], ['Covers', 'cover-settings.json', ['search', 'autoSave', 'saveTo', 'order', 'disabled']], ['Artist pictures', 'artist-picture-settings.json', ['search', 'autoSave', 'order', 'disabled']], ['Discord', 'discord-settings.json', ['enabled', 'showPaused', 'onlineCover', 'showButton']]]) {
     try {
       const s = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), file), 'utf8'));

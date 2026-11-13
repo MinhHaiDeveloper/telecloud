@@ -374,7 +374,7 @@ export default function RemoteApp() {
           <div className="rm-sec-head"><b>Signal path</b></div>
           <ol>
             {s.steps.map((x, i) => (
-              <li key={`${i}-${x.label}`} className={x.state} style={{ '--i': i }}>
+              <li key={`${i}-${x.label}`} className={`${x.state} ${x.clip ? 'clip' : ''}`} style={{ '--i': i }} title={x.clip ? 'Clipping' : undefined}>
                 <i /><span>{x.label}</span><b className="mono">{x.value}</b>
               </li>
             ))}

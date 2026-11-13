@@ -41,6 +41,7 @@ const { getLibraryRoots, getTempDir, safeFileName, readSettings } = require('./p
 const { backgroundRefresh } = require('./music.js');
 const { applyAudioSettings } = require('./player.js');
 require('./spectrum.js');
+require('./soundCorrection.js');
 require('./autoeq.js');
 require('./stats.js');
 require('./lyrics.js');

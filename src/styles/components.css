@@ -139,7 +139,7 @@ input[type="number"].input::-webkit-inner-spin-button { opacity: .4; }
 .tile { text-align: left; min-width: 0; display: flex; flex-direction: column; }
 /* a big library: tiles off screen are not laid out or painted. The margin keeps the covers' shadows. */
 .tile-grid > .tile { content-visibility: auto; contain-intrinsic-size: auto 230px; overflow-clip-margin: 32px; }
-.tile .cover { width: 100%; aspect-ratio: 1; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 8px 20px rgba(0, 0, 0, .18); }
+.tile .cover { width: 100%; aspect-ratio: 1; border-radius: 12px; margin-bottom: 10px; box-shadow: var(--tile-shadow); }
 .tile .cover img { transition: transform .4s var(--ease-out); }
 .tile:hover .cover img { transform: scale(1.05); }
 .tile:active { transform: scale(.96); }
@@ -155,7 +155,10 @@ input[type="number"].input::-webkit-inner-spin-button { opacity: .4; }
 }
 .tile .play-fab .ico { width: 16px; height: 16px; fill: currentColor; stroke: none; }
 .tile:hover .play-fab { opacity: 1; transform: none; }
-.tile .cover-wrap { position: relative; }
+/* the cover's own space below it is the wrap's, so the button sits inside the picture, not on its edge */
+.tile .cover-wrap { position: relative; margin-bottom: 10px; }
+.tile .cover-wrap .cover { margin-bottom: 0; }
+.tile .cover-wrap .play-fab { right: 12px; bottom: 12px; }
 
 /* Playlist mosaic cover */
 .mosaic { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; width: 100%; height: 100%; }
@@ -191,7 +194,9 @@ input[type="number"].input::-webkit-inner-spin-button { opacity: .4; }
 }
 .settings-nav .nav-items > button:hover { color: var(--text); }
 .settings-nav .nav-items > button.on { color: var(--accent); }
-.settings-nav .indicator { left: 0; right: 0; border-radius: 10px; background: var(--accent-soft); }
+/* a bar that runs up and down beside the list, like the sidebar's */
+.settings-nav .indicator { left: 0; width: 3px; border-radius: 3px; background: var(--accent); z-index: 2; } /* above the item, so its hover can't hide it */
+.settings-nav .nav-items > button:hover { background: var(--surface); }
 .settings-body { min-width: 0; display: flex; flex-direction: column; gap: 22px; padding-bottom: 20px; animation: fadeIn .25s; }
 .set-section h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 1.1px; color: var(--text-3); font-weight: 700; margin: 0 0 10px 4px; display: flex; align-items: center; gap: 8px; }
 .set-section h3 .icon-btn { width: 24px; height: 24px; }
@@ -286,7 +291,10 @@ input[type="number"].input::-webkit-inner-spin-button { opacity: .4; }
 .legend .lg.target::before { border-top: 2px dashed var(--text-2); }
 .legend .lg.result::before { border-color: var(--ok); }
 .eq-canvas { position: relative; flex: 1; min-height: 0; user-select: none; touch-action: none; }
-.eq-canvas canvas { display: block; }
+.eq-canvas canvas { display: block; position: relative; }
+.eq-canvas canvas.eq-live { position: absolute; inset: 0; pointer-events: none; }
+.eq-live-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); font-weight: 600; cursor: pointer; }
+.eq-live-note { font-size: 11.5px; color: var(--text-3); padding: 4px 12px 0; }
 .eq-hint { font-size: 11.5px; color: var(--text-3); margin-top: 6px; }
 .eq-hint b { color: var(--text-2); font-weight: 700; }
 
@@ -962,3 +970,31 @@ h4.whats-new-older { margin-top: 18px; }
 .remote-device .dot.on { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
 .remote-device-name { font-size: 13px; font-weight: 600; }
 .remote-device small { flex: 1; font-size: 12px; }
+
+/* ===== Settings > Sound ===== */
+/* a slider with a resting point: colour from there to the thumb, the value riding above it */
+.dial { --thumb: 16px; display: flex; align-items: center; gap: 8px; width: 320px; max-width: 100%; padding-top: 16px; }
+.dial-side { color: var(--text-3); font-size: 11.5px; flex: none; width: 36px; text-align: center; } /* kept even when empty, so every track lines up */
+.dial-track { position: relative; flex: 1; min-width: 0; height: 22px;
+  --x: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--f));
+  --ox: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--o)); }
+.dial-track::before { content: ""; position: absolute; left: var(--ox); top: 4px; bottom: 4px; width: 2px; margin-left: -1px; border-radius: 2px; background: var(--text-3); opacity: .6; }
+.dial-value { position: absolute; bottom: calc(100% + 1px); left: var(--x); transform: translateX(-50%); white-space: nowrap; font-size: 11.5px; color: var(--text-2); pointer-events: none; }
+.dial-track input { -webkit-appearance: none; appearance: none; position: relative; z-index: 1; width: 100%; height: 22px; margin: 0; background: transparent; cursor: pointer; }
+.dial-track input:focus-visible { outline: none; }
+.dial-track input::-webkit-slider-runnable-track { height: 4px; border-radius: 99px;
+  background: linear-gradient(to right, var(--surface-hover) 0 min(var(--ox), var(--x)), var(--accent) min(var(--ox), var(--x)) max(var(--ox), var(--x)), var(--surface-hover) max(var(--ox), var(--x)) 100%); }
+.dial-track input::-webkit-slider-thumb { -webkit-appearance: none; width: var(--thumb); height: var(--thumb); margin-top: -6px; border-radius: 50%; background: var(--text); border: 3px solid var(--accent); box-shadow: 0 1px 4px rgba(0, 0, 0, .35); transition: transform .15s var(--ease-out, ease); }
+.dial-track input:hover::-webkit-slider-thumb, .dial-track input:active::-webkit-slider-thumb { transform: scale(1.12); }
+.dial-track input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-soft); }
+.curve-preview { flex: none; border-radius: 8px; background: var(--surface-2); }
+.curve-preview line { stroke: var(--border); stroke-width: 1; }
+.curve-preview path { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linejoin: round; }
+/* A/B: which one you hear, at a glance */
+.btn-ab { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px 5px 6px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); font-size: 12px; color: var(--text-3); font-weight: 600; }
+.btn-ab b { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11.5px; background: var(--surface-hover); color: var(--text-2); }
+.btn-ab b.on { background: var(--accent); color: var(--on-accent); }
+.btn-ab b.on + span { color: var(--text); }
+.btn-ab i { width: 1px; height: 16px; background: var(--border); margin: 0 4px; }
+.btn-ab.on { border-color: var(--accent); }
+@media (max-width: 1100px) { .dial { width: 220px; } }

@@ -86,6 +86,11 @@ let xfade = null;               // crossfade in progress for the current track
 // Filter chain bookkeeping: what mpv's "af" holds, so EQ edits can be sent as live commands
 let eqState = null;
 let appliedChain = null;
+// Settings > Sound (tone, space, effects, correction, A/B), checked by soundChain
+const sound = require('./soundChain');
+let soundState = null;
+let softVolume = 100;     // the software volume: loudness follows it, and it gives the clip light room
+let playerPaused = true;
 
 let mpvDevices = [];
 let currentDevice = '-1';
@@ -103,6 +108,7 @@ const REASONS = {
   eq: 'the EQ is on',
   balance: 'channel balance is on',
   crossfeed: 'crossfeed is on',
+  sound: 'sound effects are on',
   limit: 'above the output limit',
   max: 'above the highest DSD rate set for DoP',
   refused: 'the DAC refused DoP at this rate',
@@ -432,6 +438,8 @@ function handleMessage(msg) {
         devicesMayHaveChanged();
       } else if (msg.name === 'time-pos' && typeof msg.data === 'number') {
         maybeCrossfade(msg.data);
+        if (spectrumWanted) spectrumFollow(msg.data);
+        if (!meterTimer && appliedChain?.meter) watchMeter();
         // ~4 updates per second is plenty for the seek bar and synced lyrics
         const now = Date.now();
         if (now - lastTimeAt >= 250 || Math.abs(msg.data - lastTimeSent) >= 1) {
@@ -442,6 +450,9 @@ function handleMessage(msg) {
       } else if (msg.name === 'duration') {
         duration = typeof msg.data === 'number' ? msg.data : 0;
       } else if (msg.name === 'pause') {
+        playerPaused = !!msg.data;
+        watchMeter();
+        if (spectrumWanted) spectrumFollow(spectrumPos);
         send('player:state', { paused: !!msg.data });
       } else if (msg.name === 'audio-out-params' && msg.data) {
         // what really goes to the device: the first thing to look at when a DAC stays silent
@@ -642,8 +653,10 @@ function dspWhy() {
   if (normalizeEq(eqState)) return 'eq';
   if (currentAudioSettings.balance) return 'balance';
   if (CROSSFEED[currentAudioSettings.crossfeed]) return 'crossfeed';
+  if (soundState?.bypass || sound.soundActive(soundState, { exclusive: isExclusive() })) return 'sound';
   return null;
 }
+function isExclusive() { return !!currentDevice && currentDevice !== '-1'; }
 /** Left and right gains for a balance in dB: the louder side stays at 1, so nothing can clip */
 function balanceGains(db) {
   return { left: db > 0 ? 10 ** (-db / 20) : 1, right: db < 0 ? 10 ** (db / 20) : 1 };
@@ -669,14 +682,22 @@ function capFilter(s) {
  * click. Built from numbers only, never from a raw string out of the renderer.
  */
 function chainSpec({ crossfadeSlot = currentAudioSettings.crossfade > 0, extra = '' } = {}) {
-  const eq = normalizeEq(eqState);
+  const exclusive = isExclusive();
+  const sf = sound.soundFilters(soundState, { volume: exclusive ? 100 : softVolume, exclusive });
+  const bypass = !!soundState?.bypass; // A/B: the original, without the EQ and the sound settings
+  const eq = bypass ? null : normalizeEq(eqState);
+  const bal = currentAudioSettings.balance || 0;
+  const xfeed = CROSSFEED[currentAudioSettings.crossfeed];
+  // anything that changes the samples runs in float and is metered for the clip light
+  const processing = !!(eq || bal || xfeed || sf.key);
   const parts = [];
+  if (processing) parts.push(sound.FLOAT);
+  parts.push(...sf.pre);
   if (eq) {
     parts.push(`@pre:lavfi=[volume=volume=${eq.preamp}dB]`);
     eq.bands.forEach((b, i) => parts.push(`@b${i}:lavfi=[${b.kind}=f=${b.f}:width_type=q:w=${b.w}:g=${b.g}]`));
   }
-  const bal = currentAudioSettings.balance || 0;
-  const xfeed = CROSSFEED[currentAudioSettings.crossfeed];
+  parts.push(...sf.post);
   // both work on two channels: mono plays on both sides, as it would anyway
   if (bal || xfeed) parts.push('@stereo:lavfi=[aformat=channel_layouts=stereo]');
   if (bal) {
@@ -686,9 +707,10 @@ function chainSpec({ crossfadeSlot = currentAudioSettings.crossfade > 0, extra =
   if (xfeed) parts.push(`@xfeed:lavfi=[bs2b=profile=${xfeed}]`);
   if (crossfadeSlot) parts.push('@xf:lavfi=[volume=volume=1]');
   if (extra) parts.push(extra);
+  if (processing) parts.push(sound.METER);
   const cap = capFilter(currentAudioSettings);
   if (cap) parts.push(`@fmt:lavfi=[${cap}]`);
-  return { af: parts.join(','), eq, key: JSON.stringify([eq && eq.bands.map(b => b.kind), bal, xfeed, crossfadeSlot, cap]) };
+  return { af: parts.join(','), eq, soundLive: sf.live, meter: processing, key: JSON.stringify([eq && eq.bands.map(b => b.kind), bal, xfeed, crossfadeSlot, cap, sf.key]) };
 }
 
 /** EQ part only (used by tests and the spectrum preview). */
@@ -710,6 +732,11 @@ function liveCommands(from, to) {
   return cmds;
 }
 
+/** The sound settings' live values that changed, as af-command */
+function soundCommands(from = {}, to = {}) {
+  return Object.entries(to || {}).filter(([k, v]) => from?.[k]?.value !== v.value).map(([k, v]) => ['af-command', k, v.param, v.value, v.filter]);
+}
+
 /** Push the current chain to mpv: live commands when only values changed, else a rebuild. */
 async function applyChain() {
   if (!sock) return;
@@ -723,17 +750,20 @@ async function applyChain() {
     return;
   }
   const spec = chainSpec();
-  const live = appliedChain && (appliedChain.live || appliedChain.eq);
-  if (appliedChain && appliedChain.key === spec.key && spec.eq && live && currentEntryId) {
+  const builtEq = appliedChain && (appliedChain.live || appliedChain.eq);
+  const builtSound = appliedChain && (appliedChain.liveSound || appliedChain.soundLive);
+  if (appliedChain && appliedChain.key === spec.key && currentEntryId) {
     try {
-      for (const c of liveCommands(live, spec.eq)) await command(c);
-      appliedChain = { ...appliedChain, live: spec.eq };
+      const cmds = [...(spec.eq && builtEq ? liveCommands(builtEq, spec.eq) : []), ...soundCommands(builtSound, spec.soundLive)];
+      for (const c of cmds) await command(c);
+      appliedChain = { ...appliedChain, live: spec.eq || appliedChain.live, liveSound: spec.soundLive };
       return;
     } catch { /* filters not running (e.g. between files): rebuild below */ }
   }
-  if (appliedChain && appliedChain.af === spec.af && !appliedChain.live) return;
+  if (appliedChain && appliedChain.af === spec.af && !appliedChain.live && !appliedChain.liveSound) return;
   await setProp('af', spec.af);
   appliedChain = spec;
+  spectrumRestart();
 }
 
 // One chain update at a time; edits that arrive meanwhile are folded into the next run, so a
@@ -747,15 +777,81 @@ function scheduleChain() {
       chainDirty = false;
       await applyChain().catch(err => console.error('[Player] filter chain rejected:', err.message));
     } while (chainDirty);
-  })().finally(() => { chainRun = null; });
+  })().finally(() => { chainRun = null; watchMeter(); });
   return chainRun;
 }
 
 /** mpv rebuilds filters from the "af" string on some file changes; send the live values again. */
 async function resyncLiveEq() {
-  if (!appliedChain || !appliedChain.live || !appliedChain.eq) return;
-  for (const c of liveCommands(appliedChain.eq, appliedChain.live)) await command(c).catch(() => {});
+  if (!appliedChain) return;
+  const cmds = [
+    ...(appliedChain.live && appliedChain.eq ? liveCommands(appliedChain.eq, appliedChain.live) : []),
+    ...(appliedChain.liveSound ? soundCommands(appliedChain.soundLive, appliedChain.liveSound) : []),
+  ];
+  for (const c of cmds) await command(c).catch(() => {});
 }
+
+// ---------- the clip light: the peak after every filter, read a few times a second while playing
+let meterTimer = null;
+let meterBusy = false;
+let clipAt = 0;
+let clipShown = false;
+let clipLoggedAt = 0;
+function watchMeter() {
+  const want = !!(sock && appliedChain?.meter && !playerPaused && !native && currentEntryId);
+  if (want && !meterTimer) meterTimer = setInterval(readMeter, 80);
+  if (!want && meterTimer) { clearInterval(meterTimer); meterTimer = null; clipAt = 0; showClip(); }
+}
+function showClip() {
+  const on = Date.now() - clipAt < 2500; // stays lit a moment, so a short over is seen
+  if (on === clipShown) return;
+  clipShown = on;
+  send('player:clip', { clipping: on });
+  if (on && Date.now() - clipLoggedAt > 60000) { clipLoggedAt = Date.now(); console.log('[Player] Clipping: the EQ or the sound settings push the signal above 0 dBFS'); }
+}
+async function readMeter() {
+  if (meterBusy) return;
+  meterBusy = true;
+  try {
+    const r = await getProp('af-metadata/meter');
+    const d = r && typeof r === 'object' && 'data' in r ? r.data : r;
+    const peak = Number(d?.[sound.METER_KEY]);
+    if (sound.clips(peak, { volume: softVolume, exclusive: isExclusive() })) clipAt = Date.now();
+  } catch { /* between files */ } finally { meterBusy = false; }
+  showClip();
+}
+
+// ---------- the EQ page's live spectrum
+const spectrum = require('./liveSpectrum').create({
+  mpvPath,
+  onFrame: (bands) => send('spectrum:frame', bands),
+  onState: (st) => send('spectrum:state', st),
+});
+let spectrumWanted = false;
+let spectrumPos = 0;
+/** Follow the music: a new track, a seek or new filters start the analysis again from where it is */
+function spectrumFollow(pos) {
+  if (!spectrumWanted) return;
+  spectrumPos = pos;
+  const at = spectrum.startedAt();
+  const local = !!currentPath && !/^https?:/i.test(currentPath) && fs.existsSync(currentPath);
+  if (playerPaused || native || !local) {
+    if (at) spectrum.stop();
+    if (!local && currentPath) send('spectrum:state', { running: false, why: 'cloud' });
+    return;
+  }
+  const expected = at ? at.pos + (Date.now() - at.t0) / 1000 : null;
+  if (!at || at.path !== currentPath || Math.abs(expected - pos) > 0.8) {
+    spectrum.start({ path: currentPath, pos, af: chainSpec({ crossfadeSlot: false }).af });
+  }
+}
+function spectrumRestart() { if (spectrumWanted && spectrum.running()) { spectrum.stop(); spectrumFollow(spectrumPos); } }
+ipcMain.handle('spectrum:live', (event, on) => {
+  spectrumWanted = !!on;
+  if (!spectrumWanted) spectrum.stop();
+  else spectrumFollow(spectrumPos);
+  return spectrumWanted;
+});
 
 async function applyDevice(deviceId) {
   const exclusive = !!deviceId && deviceId !== '-1';
@@ -1031,7 +1127,19 @@ ipcMain.handle('seek-audio', async (event, timePos) => {
 
 ipcMain.handle('set-volume', async (event, vol) => {
   if (!(await live()) || (currentDevice && currentDevice !== '-1')) return;
-  await setProp('volume', num(vol, 0, 100, 100));
+  softVolume = num(vol, 0, 100, 100);
+  await setProp('volume', softVolume);
+  if (soundState?.loudness) await scheduleChain(); // the loudness boost follows the volume
+});
+
+// Settings > Sound
+ipcMain.handle('set-sound', async (event, s) => {
+  soundState = sound.normalizeSound(s);
+  const why = dspWhy();
+  if (native) { if (why) await nativeToMpv(REASONS[why]); return; }
+  if (!sock) await startMpv().catch(() => {});
+  if (!sock) return;
+  await scheduleChain();
 });
 
 // Mute is a separate switch, so it also works in exclusive mode where volume is locked
@@ -1060,6 +1168,7 @@ async function setDeviceInternal(deviceId) {
   if (deviceId !== '-1' && !mpvDevices.some(d => d.id === deviceId)) throw new Error('Unknown audio device');
   currentDevice = deviceId;
   if (sock) await applyDevice(deviceId);
+  if (sock && soundState) await scheduleChain(); // loudness and the clip light depend on exclusive mode
   if (deviceId === '-1' && entryPlans.get(currentEntryId)?.dop) await fallbackToPcm('shared');
   tellOutput();
 }
@@ -1119,6 +1228,6 @@ app.on('before-quit', () => {
   try { proc?.kill(); } catch { /* ignore */ }
 });
 
-module.exports = { listDevices, applyAudioSettings, buildEqFilter, capFilter, chainSpec, mpvPath, getProp, setStreamPrefix, parseBluetoothOutputs,
+module.exports = { listDevices, applyAudioSettings, buildEqFilter, capFilter, chainSpec, _sound: () => ({ soundState, softVolume, clipShown, meter: !!meterTimer, spectrum: spectrum.running() }), mpvPath, getProp, setStreamPrefix, parseBluetoothOutputs,
   // tests only: feed a message as if mpv sent it, and see what is playing
   _mpvMessage: (msg) => handleMessage(msg), _playing: () => ({ entry: currentEntryId, path: currentPath, refused: [...refused] }) };

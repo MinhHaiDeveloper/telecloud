@@ -2,6 +2,23 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.1.0-beta.4',
+    items: [
+      'Settings > Equalizer is now Sound, with Tone (Warmth, Bass, Treble, Loudness), Space (stereo width, mono, swap, polarity), Effects (Night mode, Air, Tube warmth) and room or headphone correction from an impulse response.',
+      'Clipping shows: when the EQ or the sound settings push the music over 0 dBFS, the light in the signal path blinks red. Prevent clipping lowers the level by the biggest boost.',
+      'A/B: hear the original at the same loudness, from Settings > Sound or the EQ page.',
+      'The EQ page has a live spectrum under the curve, showing the music after every filter as it plays.',
+      "When an album ends, another one plays: the artist's next album by year, or else the one beside it in Albums. It joins Up next as the last track starts, so there is no gap. Settings > Playback can turn it off.",
+      'Settings > Appearance > Reduce motion: buttons, pages and menus change at once instead of moving or bouncing.',
+      'The side panel on the right can be put away, with the panel button at the top, the one beside Now playing, or Ctrl+J. TeleCloud remembers it.',
+      'The Signal path card in the side panel can be Full, Compact (only the verdict, such as Bit-perfect) or Off, in Settings > Appearance.',
+      'The Settings list has a bar that runs up and down beside it, like the sidebar.',
+      'The play button on album covers sits inside the picture, not on its edge.',
+      'Light themes have softer, warmer shadows and fresher quality tags, so covers, cards and badges look lighter.',
+      'The Formats bar on Discover is longer, and a format with only a few tracks still shows.',
+    ],
+  },
+  {
     version: '1.1.0-beta.3',
     items: [
       'Remote: paired devices show the browser they really use, Samsung Internet, Edge, Firefox, Opera and more, or just "browser" when it is not known.',

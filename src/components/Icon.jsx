@@ -53,6 +53,7 @@ const PATHS = {
   undo: <><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-3" /></>,
   redo: <><path d="m15 14 5-5-5-5" /><path d="M20 9H9a5 5 0 0 0 0 10h3" /></>,
   upload: <path d="M12 21V9M7 14l5-5 5 5M5 3h14" />,
+  headphones: <><path d="M3 18v-6a9 9 0 0 1 18 0v6" /><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3zM3 19a2 2 0 0 0 2 2h1v-6H3z" /></>,
   panel: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></>,
   // the letters, drawn as strokes like the rest of the set (not the MQA logo)
   mqa: <g style={{ strokeWidth: 2.6 }}><path d="M1.6 17v-10l3 5.4 3-5.4v10" /><circle cx="12.3" cy="12" r="3.6" /><path d="M13.9 14.7l2 2.3M17.2 17l2.65-10 2.65 10M18.3 14h3.1" /></g>,

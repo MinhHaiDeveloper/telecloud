@@ -5,7 +5,7 @@ import Cover from './Cover';
 import Icon from './Icon';
 import { Select, MoreMenu, BackButton, useDetailScroll } from './ui';
 import { qualityOf, formatDuration, sortAlbumTracks } from '../utils/audio';
-import { albumIndex, trackCount, arrivals } from '../utils/albums';
+import { albumIndex, trackCount, sortAlbums } from '../utils/albums';
 import useRemembered from '../hooks/useRemembered';
 
 const SORTS = [
@@ -17,9 +17,6 @@ const SORTS = [
   { value: 'oldest', label: 'Oldest added' },
 ];
 
-const noThe = (s) => s.toLowerCase().replace(/^the /, '');
-
-
 const bestQuality = (songs) => songs.map(qualityOf).sort((a, b) => (b.bits * 1e6 + b.rate) - (a.bits * 1e6 + a.rate))[0];
 
 const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavorite, onAddPlaylist, favorites, onCheckSpectrum, selectedAlbum, setSelectedAlbum, onDeleteSong, onDeleteAlbum, onDownloadSong, onDownloadAlbum, onBackupMany, onBackupTo, storageNames, onRemoveFromCloud }) => {
@@ -27,17 +24,7 @@ const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavori
   const ctx = useContext(SongActions);
   useDetailScroll(selectedAlbum ? (selectedAlbum.key ?? selectedAlbum.name) : null);
 
-  const albums = useMemo(() => {
-    const list = [...albumIndex(musicFiles).list];
-    switch (sortBy) {
-      case 'name-desc': return list.sort((a, b) => noThe(b.name).localeCompare(noThe(a.name)));
-      case 'artist': return list.sort((a, b) => noThe(a.artist).localeCompare(noThe(b.artist)));
-      case 'tracks': return list.sort((a, b) => b.songs.length - a.songs.length);
-      case 'latest': { const older = arrivals(musicFiles, list); return list.sort((a, b) => older(b, a)); }
-      case 'oldest': return list.sort(arrivals(musicFiles, list));
-      default: return list.sort((a, b) => noThe(a.name).localeCompare(noThe(b.name)));
-    }
-  }, [musicFiles, sortBy]);
+  const albums = useMemo(() => sortAlbums(albumIndex(musicFiles).list, sortBy, musicFiles), [musicFiles, sortBy]);
 
   if (selectedAlbum) {
     // the album as it is in the library now (tracks change while it is open: cached, tagged, removed)

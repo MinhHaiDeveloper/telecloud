@@ -306,6 +306,9 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
 .rm-sp li.ok > i { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
 .rm-sp li.warn > i { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
 .rm-sp li.off { color: var(--text-3); }
+/* clipping after the EQ or the sound settings, as on the computer */
+@keyframes rmClip { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+.rm-sp li.clip > i { background: #ff3b30; box-shadow: 0 0 0 3px rgba(255, 59, 48, .22); animation: rmClip .6s steps(2, jump-none) infinite; }
 .rm-sp li > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rm-sp li > b { font-size: 11.5px; font-weight: 500; color: var(--text-2); }
 

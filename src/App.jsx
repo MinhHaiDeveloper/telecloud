@@ -17,13 +17,14 @@ import SearchView from './components/SearchView';
 import SettingsView from './components/SettingsView';
 import EqSettingsView from './components/EqSettingsView';
 import Modal from './components/Modal'; // Import the new Modal component
-import { albumIndex } from './utils/albums';
+import { albumIndex, albumAtEnd, nextAlbum } from './utils/albums';
 import { answer as remoteAnswer, resolveSource as remoteSource, trackOut as remoteTrackOut } from './remote/hostQuery';
 import { isTheme, themeKind } from './utils/themes';
 import useCoverAccent from './hooks/useCoverAccent';
-import { computeSignalPath, matchesSource, storageOf, qualityOf, findDuplicates, dedupeTracks, coverTargets, albumQuery, bumpCovers, bumpArtist, setCoverPreview, clearCoverPreview } from './utils/audio';
+import { sortAlbumTracks, computeSignalPath, matchesSource, storageOf, qualityOf, findDuplicates, dedupeTracks, coverTargets, albumQuery, bumpCovers, bumpArtist, setCoverPreview, clearCoverPreview } from './utils/audio';
 import { parseLyrics } from './components/LyricsView';
 import { DialogHost, confirmDialog, alertDialog, Progress } from './components/ui';
+import useSound, { soundSummary } from './hooks/useSound';
 import useEq from './hooks/useEq';
 import StorageDialog from './components/StorageDialog';
 import { SOURCE_HELP, QUALITY_HELP } from './utils/badges';
@@ -91,6 +92,8 @@ function App() {
   const [isShuffle, setIsShuffle] = useState(false);
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => readPref('tc-sidebar-collapsed') === '1');
+  // the right side panel (now playing, signal path, lyrics, up next) can be put away for more room
+  const [rightHidden, setRightHidden] = useState(() => readPref('tc-right-hidden') === '1');
   const [searchQuery, setSearchQuery] = useState('');
   const [isQueueOpen, setIsQueueOpen] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -120,6 +123,11 @@ function App() {
     await window.ipcRenderer.invoke('save-store', 'settings', { ...(Array.isArray(s) ? {} : s), ...patch });
   };
   const setSkipDuplicates = (v) => { setSkipDuplicatesState(v); return saveSetting({ skipDuplicates: v }); };
+  // when an album ends, another one follows: the artist's next album, else the one beside it in Albums
+  const [autoContinue, setAutoContinueState] = useState(true);
+  useEffect(() => { window.ipcRenderer.invoke('load-store', 'settings').then(s => { if (s && s.autoContinue === false) setAutoContinueState(false); }).catch(() => {}); }, []);
+  const setAutoContinue = (v) => { setAutoContinueState(v); return saveSetting({ autoContinue: v }); };
+  const continuedRef = useRef({ from: null, played: new Set(), album: false });
   // the Artists page: album artists only ('album', the default) or everyone credited ('all')
   const [artistFilter, setArtistFilterState] = useState('album');
   useEffect(() => { window.ipcRenderer.invoke('load-store', 'settings').then(s => { if (s?.artistFilter === 'all') setArtistFilterState('all'); }).catch(() => {}); }, []);
@@ -159,6 +167,7 @@ function App() {
     writePref(`tc-theme-${themeKind(theme)}`, theme); // what the top bar button comes back to
   }, [theme]);
   useEffect(() => writePref('tc-sidebar-collapsed', isSidebarCollapsed ? '1' : '0'), [isSidebarCollapsed]);
+  useEffect(() => writePref('tc-right-hidden', rightHidden ? '1' : '0'), [rightHidden]);
   useEffect(() => writePref('tc-lyrics-collapsed', lyricsCollapsed ? '1' : '0'), [lyricsCollapsed]);
 
   // Audio settings feed the signal path; they change from Settings, so refresh on navigation
@@ -192,6 +201,15 @@ function App() {
 
   // EQ (bands, history, AutoEQ choices; persisted and sent to the player by the hook)
   const eq = useEq(selectedDevice);
+  // Settings > Sound: tone, space, effects, correction, headroom, A/B
+  const snd = useSound(eq);
+  // the player says when the sound goes over 0 dBFS after the EQ and the sound settings
+  const [clipping, setClipping] = useState(false);
+  useEffect(() => {
+    const on = (e, d) => setClipping(!!d?.clipping);
+    window.ipcRenderer.on('player:clip', on);
+    return () => window.ipcRenderer.removeListener?.('player:clip', on);
+  }, []);
   const eqEnabled = eq.enabled;
   const setEqEnabled = eq.setEnabled;
 
@@ -204,7 +222,8 @@ function App() {
     volumeDown: 'ArrowDown',
     seekForward: 'Ctrl+ArrowRight',
     seekBackward: 'Ctrl+ArrowLeft',
-    toggleMute: 'M'
+    toggleMute: 'M',
+    togglePanel: 'Ctrl+J',
   });
   const [isMuted, setIsMuted] = useState(false);
 
@@ -419,7 +438,7 @@ function App() {
     const loadShortcuts = async () => {
       const settings = await window.ipcRenderer.invoke('load-store', 'settings');
       if (settings && settings.keyboardShortcuts) {
-        setKeyboardShortcuts(settings.keyboardShortcuts);
+        setKeyboardShortcuts(s => ({ ...s, ...settings.keyboardShortcuts })); // a shortcut added later keeps its default
       }
     };
     loadShortcuts();
@@ -756,6 +775,10 @@ function App() {
         if (unique !== listToPlay) { listToPlay = unique; indexToPlay = unique.findIndex(f => f.path === file.path); }
       }
       if (!keepQueue) {
+        // a queue of your own: albums can come round again. Only one that is a whole album goes on to
+        // another; a playlist, Library or search results stop at their end
+        const whole = albumAtEnd(listToPlay, musicFiles);
+        continuedRef.current = { from: null, played: new Set(), album: !!whole && listToPlay.every(f => albumIndex(musicFiles).byPath.get(f.path) === whole) };
         unshuffledQueueRef.current = listToPlay;
         if (isShuffle) {
           // Shuffle once: the chosen track first, the rest in random order (no repeats)
@@ -882,6 +905,27 @@ function App() {
     }
     setIsShuffle(s => !s);
   };
+
+  // The last track of a whole album has started: put the next album behind it, now, so it shows in
+  // Up next and mpv can load its first track ahead (no gap). Once for each track, so taking it out stays out.
+  useEffect(() => {
+    if (!autoContinue || !currentFile || loopMode !== 'none' || currentIndex !== playQueue.length - 1) return;
+    if (!continuedRef.current.album || continuedRef.current.from === currentFile.path) return;
+    const album = albumAtEnd(playQueue, musicFiles);
+    if (!album) return;
+    continuedRef.current.from = currentFile.path;
+    continuedRef.current.played.add(album.key);
+    let sortBy = 'name';
+    try { sortBy = localStorage.getItem('view:albums:sort') || 'name'; } catch { /* the default order */ }
+    const next = nextAlbum(album, musicFiles, { sortBy, played: continuedRef.current.played });
+    if (!next) return;
+    continuedRef.current.played.add(next.key);
+    let list = sortAlbumTracks(skipDuplicates ? dedupeTracks(next.songs) : next.songs);
+    if (isShuffle) list = shuffleArray(list);
+    setPlayQueue(q => [...q, ...list]);
+    if (unshuffledQueueRef.current) unshuffledQueueRef.current = [...unshuffledQueueRef.current, ...list];
+    showToast(`Up next: ${next.name} · ${next.artist}`, 'info');
+  }, [autoContinue, currentFile?.path, currentIndex, playQueue.length, loopMode, musicFiles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tell mpv which file comes next so the switch is gapless. A cloud-only track is opened as a
   // stream now, which also starts downloading it ahead of time.
@@ -1021,6 +1065,7 @@ function App() {
     seekForward: () => currentFile && handleSeek(currentTime + 5),
     seekBackward: () => currentFile && handleSeek(currentTime - 5),
     toggleMute: handleToggleMute,
+    togglePanel: () => setRightHidden(h => !h),
   };
 
   const handleDeleteSong = async (file, skipConfirm = false) => {
@@ -1300,7 +1345,8 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
   const cloudFiles = musicFiles.filter(f => storageOf(f).includes('cloud'));
   const queueFiles = live(playQueue.slice(currentIndex + 1));
   const visibleDevices = devices.filter(d => !disabledDevices.includes(d.deviceId || d.id));
-  const signal = computeSignalPath({ stream: stream && currentLive && stream.path === currentLive.path ? stream : null, file: currentLive, selectedDevice, devices: visibleDevices, eqEnabled, volume, audioSettings: { ...audioSettings, autoGain }, audioOut: isPlaying ? audioOut : null, dsd: dsdInfo && currentLive && dsdInfo.path === currentLive.path ? dsdInfo : null, output: outputInfo });
+  const signal = computeSignalPath({ stream: stream && currentLive && stream.path === currentLive.path ? stream : null, file: currentLive, selectedDevice, devices: visibleDevices, eqEnabled, volume, audioSettings: { ...audioSettings, autoGain }, audioOut: isPlaying ? audioOut : null, dsd: dsdInfo && currentLive && dsdInfo.path === currentLive.path ? dsdInfo : null, output: outputInfo,
+    sound: (snd.active || snd.ab) ? { ab: snd.ab, summary: soundSummary(snd.sound, { guard: snd.curve.guard, ab: snd.ab, exclusive: selectedDevice !== '-1' }) } : null, clipping: clipping && isPlaying });
   const remoteTrack = (f) => remoteTrackOut(f);
   // the lyrics shown here: from the tags, or just found online for this track
   const remoteLyrics = currentLive ? (currentLive.metadata?.lyrics || (lyricsFound?.path === currentLive.path ? lyricsFound.lyrics : '') || '') : '';
@@ -1309,7 +1355,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     notice: remoteNotice,
     art: remoteArt,
     lib: remoteLib,
-    steps: (signal?.steps || []).slice(0, 14).map(x => ({ label: x.label, value: x.value, state: x.state })),
+    steps: (signal?.steps || []).slice(0, 14).map(x => ({ label: x.label, value: x.value, state: x.state, clip: !!x.clip })),
     track: currentLive ? { ...remoteTrackOut(currentLive), fav: favorites.some(f => f.path === currentLive.path) } : null, playing: isPlaying, volume, muted: isMuted, shuffle: isShuffle, repeat: loopMode,
     queue: queueFiles.slice(0, 200).map(remoteTrack), exclusive: selectedDevice !== '-1',
     outputs: [{ id: '-1', name: 'System default' }, ...visibleDevices.map(d => ({ id: d.deviceId || d.id, name: (d.name || '').replace(/ \(WASAPI\)$/, '') }))],
@@ -1444,6 +1490,8 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     onQueueMany: handleQueueMany, onFavoriteMany: handleFavoriteMany, onDeleteMany: handleDeleteMany,
     openAlbum, openArtist, playCounts,
     duplicates, skipDuplicates, setSkipDuplicates, openDuplicates: () => navigate('duplicates'),
+    autoContinue, setAutoContinue,
+    snd, eq, clipping, openEq: () => openEq(), soundExclusive: selectedDevice !== '-1',
     artistFilter, setArtistFilter,
     dedupe: skipDuplicates ? (list) => dedupeTracks(list) : null,
     countUnique: (list) => (skipDuplicates ? list.filter(f => !duplicates.has(f.path)).length : list.length),
@@ -1620,7 +1668,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     <SongActions.Provider value={songActions}>
     {showFps && <FpsMeter />}
     <TitleBar subtitle={currentLive ? `${currentLive.metadata?.title || currentLive.name}${currentLive.metadata?.artist ? ` · ${currentLive.metadata.artist}` : ''}` : null} />
-    <div className={`app ${isSidebarCollapsed ? 'side-collapsed' : ''} ${wideView ? 'no-right' : ''} ${nowPlaying && currentFile && !nowPlaying.closing ? 'np-mode' : ''}`}>
+    <div className={`app ${isSidebarCollapsed ? 'side-collapsed' : ''} ${wideView ? 'no-right' : rightHidden ? 'right-hidden' : ''} ${nowPlaying && currentFile && !nowPlaying.closing ? 'np-mode' : ''}`}>
       <OverflowTooltip />
       <Sidebar
         currentView={currentView}
@@ -1655,6 +1703,8 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
             return isTheme(last) && themeKind(last) === other ? last : other;
           })}
           onOpenSettings={() => navigate('settings')}
+          panel={wideView ? null : !rightHidden}
+          onTogglePanel={() => setRightHidden(h => !h)}
         />
         {renderView()}
       </main>
@@ -1672,6 +1722,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
         onToggleLyrics={() => setLyricsCollapsed(c => !c)}
         onExpandLyrics={() => openNowPlaying('lyrics', 'panel')}
         onOpenNowPlaying={() => openNowPlaying(undefined, 'panel')}
+        onHide={() => setRightHidden(true)}
         queueFiles={queueFiles}
         onPlayQueued={handlePlayQueued}
         onMoveQueued={handleMoveQueued}

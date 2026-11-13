@@ -7,13 +7,16 @@ import Cover from './Cover';
 import LyricsView from './LyricsView';
 import SignalPathSteps from './SignalPathSteps';
 import QueueList from './QueueList';
+import { useAppearance } from '../utils/appearance';
 
 const RightPanel = ({
-  currentFile, currentTime, onSeek, signal, eqEnabled, setEqEnabled, onOpenEq,
+  currentFile, currentTime, onSeek, onHide, signal, eqEnabled, setEqEnabled, onOpenEq,
   lyricsCollapsed, onToggleLyrics, onExpandLyrics, onOpenNowPlaying, queueFiles = [], onPlayQueued, onMoveQueued,
-}) => (
+}) => {
+  const look = useAppearance();
+  return (
   <aside className="right">
-    <div className="section-head"><span>Now playing</span></div>
+    <div className="section-head"><span>Now playing</span>{onHide && <button className="icon-btn sm panel-hide" onClick={onHide} title="Hide the side panel" aria-label="Hide the side panel"><Icon name="panel" /></button>}</div>
     <button onClick={onOpenNowPlaying} disabled={!currentFile} title="Open now playing" style={{ display: 'block', width: '100%' }}>
       <Cover file={currentFile} className={`np-art ${currentFile ? 'clickable' : ''}`} key={currentFile?.path + (currentFile?.cache_path || '')} />
     </button>
@@ -23,13 +26,13 @@ const RightPanel = ({
     </div>
     <CoverNote file={currentFile} />
 
-    {currentFile && signal && (
-      <div className="card signal">
+    {currentFile && signal && look.signalPath !== 'off' && (
+      <div className={`card signal ${look.signalPath === 'compact' ? 'compact' : ''}`}>
         <div className="signal-head">
           <b>Signal path</b>
           <span className={`badge ${signal.bitPerfect ? 'b-lossless' : 'b-cached'}`}>{signal.verdict}</span>
         </div>
-        <SignalPathSteps signal={signal} eqEnabled={eqEnabled} setEqEnabled={setEqEnabled} onOpenEq={onOpenEq} />
+        {look.signalPath === 'full' && <SignalPathSteps signal={signal} eqEnabled={eqEnabled} setEqEnabled={setEqEnabled} onOpenEq={onOpenEq} />}
       </div>
     )}
 
@@ -57,6 +60,7 @@ const RightPanel = ({
       </>
     )}
   </aside>
-);
+  );
+};
 
 export default RightPanel;

@@ -157,3 +157,54 @@ export function albumIndex(files) {
   if (!idx) { idx = buildIndex(files); cache.set(files, idx); }
   return idx;
 }
+
+const noThe = (s) => String(s || '').toLowerCase().replace(/^the /, '');
+/** The Albums page's order for each of its sorts */
+export function sortAlbums(albums, sortBy, files) {
+  const list = [...albums];
+  switch (sortBy) {
+    case 'name-desc': return list.sort((a, b) => noThe(b.name).localeCompare(noThe(a.name)));
+    case 'artist': return list.sort((a, b) => noThe(a.artist).localeCompare(noThe(b.artist)));
+    case 'tracks': return list.sort((a, b) => b.songs.length - a.songs.length);
+    case 'latest': { const older = arrivals(files, list); return list.sort((a, b) => older(b, a)); }
+    case 'oldest': return list.sort(arrivals(files, list));
+    default: return list.sort((a, b) => noThe(a.name).localeCompare(noThe(b.name)));
+  }
+}
+
+// ---------- after an album: what plays next
+const trackKey = (f) => `${f.metadata?.disc || 1}|${f.metadata?.track || 0}|${noThe(f.metadata?.title || f.name)}`;
+
+/** The album the queue ends with, when all of it is there (in any order, so also shuffled). Null otherwise. */
+export function albumAtEnd(queue, files) {
+  if (!queue?.length) return null;
+  const { byPath } = albumIndex(files);
+  const album = byPath.get(queue[queue.length - 1].path);
+  if (!album) return null;
+  const have = new Set();
+  for (let i = queue.length - 1; i >= 0 && byPath.get(queue[i].path) === album; i--) have.add(trackKey(queue[i]));
+  const all = new Set(album.songs.map(trackKey));
+  return have.size >= all.size ? album : null;
+}
+
+/**
+ * The album to play after `album`: the same artist's next one by year, then the one beside it in the
+ * Albums list (in the order chosen there), going round to the start. Albums in `played` are skipped.
+ */
+export function nextAlbum(album, files, { sortBy = 'name', played = new Set() } = {}) {
+  const { list } = albumIndex(files);
+  const skip = (a) => a === album || played.has(a.key) || !a.songs.length;
+  if (album.owners.size && album.artist !== VARIOUS_ARTISTS) {
+    const mine = list.filter(a => [...album.owners].some(o => a.owners.has(o)))
+      .sort((a, b) => (a.year || 0) - (b.year || 0) || noThe(a.name).localeCompare(noThe(b.name)));
+    const later = mine.slice(mine.indexOf(album) + 1).find(a => !skip(a));
+    if (later) return later;
+  }
+  const order = sortAlbums(list, sortBy, files);
+  const at = order.indexOf(album);
+  for (let i = 1; i < order.length; i++) {
+    const a = order[(at + i) % order.length];
+    if (!skip(a)) return a;
+  }
+  return null;
+}

@@ -10,6 +10,8 @@ import LogsSettings from './LogsSettings';
 import LastfmSettings from './LastfmSettings';
 import UpdateStatus from './UpdateStatus';
 import DuplicatesSettings from './DuplicatesSettings';
+import ContinueSettings from './ContinueSettings';
+import SoundSettings from './SoundSettings';
 import PerformanceSettings from './PerformanceSettings';
 import AppearanceSettings from './AppearanceSettings';
 import RemoteSettings from './RemoteSettings';
@@ -22,7 +24,7 @@ const TABS = [
   { id: 'appearance', label: 'Appearance', icon: 'image' },
   { id: 'library', label: 'Library', icon: 'folder' },
   { id: 'playback', label: 'Playback', icon: 'speaker' },
-  { id: 'eq', label: 'Equalizer', icon: 'eq' },
+  { id: 'eq', label: 'Sound', icon: 'eq' },
   { id: 'keyboard', label: 'Keyboard', icon: 'lyrics' },
   { id: 'downloads', label: 'Downloads', icon: 'download' },
   { id: 'telecloud', label: 'TeleCloud Sync', icon: 'cloud' },
@@ -39,6 +41,7 @@ const SHORTCUT_LABELS = {
   seekForward: 'Seek forward 5s',
   seekBackward: 'Seek back 5s',
   toggleMute: 'Mute',
+  togglePanel: 'Show or hide the side panel',
 };
 
 const KEY_NAMES = { ArrowRight: '→', ArrowLeft: '←', ArrowUp: '↑', ArrowDown: '↓', ' ': 'Space' };
@@ -60,7 +63,7 @@ const SettingsView = ({
   const [downloadFolder, setDownloadFolder] = useState('');
   const [audioDevices, setAudioDevices] = useState([]);
   const [disabledDevices, setDisabledDevices] = useState([]);
-  const navRef = useSlidingIndicator('y', activeTab);
+  const navRef = useSlidingIndicator('y', activeTab, 8);
 
   // Audio settings
   const [replayGainEnabled, setReplayGainEnabled] = useState(false);
@@ -111,7 +114,8 @@ const SettingsView = ({
     volumeDown: 'ArrowDown',
     seekForward: 'Ctrl+ArrowRight',
     seekBackward: 'Ctrl+ArrowLeft',
-    toggleMute: 'M'
+    toggleMute: 'M',
+    togglePanel: 'Ctrl+J',
   });
   const [editingShortcut, setEditingShortcut] = useState(null);
 
@@ -141,7 +145,7 @@ const SettingsView = ({
       if (settings && settings.crossfeed) setCrossfeed(settings.crossfeed);
       if (settings && settings.mqaMode) setMqaMode(settings.mqaMode);
       if (settings && settings.asioDriver) setAsioDriver(settings.asioDriver);
-      if (settings && settings.keyboardShortcuts) setKeyboardShortcuts(settings.keyboardShortcuts);
+      if (settings && settings.keyboardShortcuts) setKeyboardShortcuts(s => ({ ...s, ...settings.keyboardShortcuts }));
       setSettingsLoaded(true);
 
       try {
@@ -360,6 +364,7 @@ const SettingsView = ({
       case 'playback':
         return (
           <>
+            <ContinueSettings />
             <section className="set-section">
               <h3>Output devices</h3>
               <div className="card set-card">
@@ -483,16 +488,7 @@ const SettingsView = ({
         );
 
       case 'eq':
-        return (
-          <section className="set-section">
-            <h3>Equalizer</h3>
-            <div className="card set-card">
-              <SettingRow icon="eq" title="Parametric EQ & AutoEQ" desc="31-band PEQ with measurement-to-target matching. Not bit-perfect while on.">
-                <button className="btn-primary" onClick={onOpenEq}>Open EQ</button>
-              </SettingRow>
-            </div>
-          </section>
-        );
+        return <SoundSettings />;
 
       case 'keyboard':
         return (

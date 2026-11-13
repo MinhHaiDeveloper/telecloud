@@ -8,7 +8,7 @@ const SOURCES = [
   { id: 'cloud', label: 'TeleCloud' },
 ];
 
-const Header = ({ searchQuery, onSearchChange, source, onSourceChange, onRefresh, isScanning, theme, onToggleTheme, onOpenSettings }) => {
+const Header = ({ searchQuery, onSearchChange, source, onSourceChange, onRefresh, isScanning, theme, onToggleTheme, onOpenSettings, panel, onTogglePanel }) => {
   const inputRef = useRef(null);
   const tabsRef = useSlidingIndicator('x', source);
 
@@ -57,6 +57,9 @@ const Header = ({ searchQuery, onSearchChange, source, onSourceChange, onRefresh
         <button className="icon-btn" onClick={onToggleTheme} title={theme === 'dark' ? 'Light theme' : 'Dark theme'} aria-label="Toggle theme">
           <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
         </button>
+        {panel !== null && panel !== undefined && (
+          <button className={`icon-btn panel-toggle ${panel ? 'on' : ''}`} onClick={onTogglePanel} title={panel ? 'Hide the side panel' : 'Show the side panel'} aria-label="Side panel" aria-pressed={panel}><Icon name="panel" /></button>
+        )}
         <button className="icon-btn" onClick={onOpenSettings} title="Settings" aria-label="Settings"><Icon name="settings" /></button>
       </div>
     </header>

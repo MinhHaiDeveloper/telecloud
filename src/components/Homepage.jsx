@@ -188,10 +188,10 @@ const Homepage = ({ musicFiles, recentPlayed = [], onPlay, onNavClick, setSelect
           <div className="card stat"><div><small>Tracks</small><b>{stats.tracks.toLocaleString()}</b></div><Icon name="music" /></div>
           <div className="card stat"><div><small>Hi-Res (&gt; 16-bit / 48 kHz)</small><b>{stats.hires.toLocaleString()}</b></div><span className="badge b-hires">{stats.hiresPct}%</span></div>
           <div className="card stat">
-            <div>
+            <div className="fmt-stat">
               <small>Formats</small>
               <div className="fmt-bar">
-                {stats.formats.map((f, i) => <i key={f.name} style={{ flex: Math.max(f.pct, 1), background: FORMAT_COLORS[i % FORMAT_COLORS.length] }} />)}
+                {stats.formats.map((f, i) => <i key={f.name} title={`${f.name} ${f.pct}%`} style={{ flex: `${Math.max(f.pct, 3)} 1 0`, background: FORMAT_COLORS[i % FORMAT_COLORS.length] }} />)}
               </div>
             </div>
             <div className="fmt-legend">

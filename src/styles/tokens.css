@@ -82,7 +82,13 @@
 
 /* A hairline around every cover, so a black one doesn't melt into a dark page, or a white one into a light page */
 :root { --cover-ring: rgba(255, 255, 255, .12); }
-[data-theme="light"], [data-theme="matcha"], [data-theme="sakura"] { --cover-ring: rgba(60, 40, 10, .12); }
+:root { --tile-shadow: 0 8px 20px rgba(0, 0, 0, .18); }
+/* Light themes: a grey shadow looks like dirt on cream, and a deep one makes cards feel heavy. Short, warm and faint */
+[data-theme="light"], [data-theme="matcha"], [data-theme="sakura"] {
+  --cover-ring: rgba(60, 40, 10, .12);
+  --tile-shadow: 0 3px 10px rgba(80, 60, 20, .10);
+}
+[data-theme="light"] { --shadow: 0 10px 28px rgba(110, 85, 30, .13); }
 
 /* Legacy names still used by inline styles in Settings / EQ / TeleCloud views */
 :root,
@@ -154,3 +160,23 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideIn { from { transform: translateX(110%); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes riseIn { from { transform: translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* Settings > Appearance > Reduce motion: things change at once instead of moving. What shows that
+   something is happening (spinners, the playing bars) and the lyrics keep going. */
+html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after {
+  transition-duration: 0s !important; transition-delay: 0s !important;
+  animation-duration: 0s !important; animation-delay: 0s !important;
+  scroll-behavior: auto !important;
+}
+html.reduce-motion .spinning, html.reduce-motion .ring, html.reduce-motion .spin, html.reduce-motion .eq-bars i { animation-duration: 1s !important; }
+/* a warning, not decoration: the clip light keeps blinking */
+html.reduce-motion .fmt-pill .bp.clip, html.reduce-motion .sp-step.clip i { animation-duration: .6s !important; }
+html.reduce-motion .lyric { transition-duration: .3s !important; }
+/* no shrinking on a press */
+html.reduce-motion button:active, html.reduce-motion .pressable:active, html.reduce-motion .nav-item:active,
+html.reduce-motion .album-tile:active, html.reduce-motion .tile:active, html.reduce-motion .track-row:active,
+html.reduce-motion .menu-item:active, html.reduce-motion .device-card:active, html.reduce-motion .mini:active,
+html.reduce-motion .hero-a:active, html.reduce-motion .select-btn:active, html.reduce-motion .radio-card:active,
+html.reduce-motion .theme-card:active { transform: none !important; }
+html.reduce-motion .album-tile:hover .cover img, html.reduce-motion .tile:hover .cover img { transform: none !important; }
+html.reduce-motion .tile .play-fab { transform: none !important; }

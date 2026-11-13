@@ -14,6 +14,14 @@
 }
 .app.no-right { grid-template-columns: var(--sidebar-w) minmax(0, 1fr) 0; }
 .app.no-right .right { display: none; }
+/* put away by the user: the column folds shut and the panel's content doesn't squeeze on the way */
+.app.right-hidden { grid-template-columns: var(--sidebar-w) minmax(0, 1fr) 0; }
+.app.right-hidden .right { visibility: hidden; border-left-width: 0; padding-left: 0; padding-right: 0; }
+.right { min-width: 0; }
+.app.right-hidden .right > * { width: calc(var(--right-w) - 40px); }
+.icon-btn.panel-toggle.on { color: var(--accent); }
+.section-head .panel-hide { color: var(--text-3); margin: -6px -6px -6px 0; }
+.section-head .panel-hide:hover { color: var(--text); }
 .app.side-collapsed { --sidebar-w: 72px; }
 
 .main {
@@ -246,7 +254,7 @@
   gap: 18px; margin-bottom: 28px;
 }
 .album-tile { text-align: left; min-width: 0; }
-.album-tile .cover { width: 100%; aspect-ratio: 1; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 8px 20px rgba(0, 0, 0, .18); }
+.album-tile .cover { width: 100%; aspect-ratio: 1; border-radius: 12px; margin-bottom: 10px; box-shadow: var(--tile-shadow); }
 .album-tile .cover img { transition: transform .4s var(--ease-out); }
 .album-tile:hover .cover img { transform: scale(1.05); }
 .album-tile:active { transform: scale(.96); }
@@ -270,7 +278,11 @@
 .stat small { font-size: 10.5px; text-transform: uppercase; color: var(--text-3); letter-spacing: 1px; font-weight: 700; }
 .stat b { display: block; font-size: 20px; font-weight: 800; }
 .stat > .ico { color: var(--text-3); width: 20px; height: 20px; }
-.fmt-bar { display: flex; height: 6px; border-radius: 99px; overflow: hidden; margin-top: 8px; width: 140px; background: var(--surface-2); }
+/* as wide as the card allows, and a format with few tracks still gets a piece you can see */
+.fmt-stat { flex: 1; min-width: 0; }
+.fmt-bar { display: flex; gap: 2px; height: 7px; border-radius: 99px; overflow: hidden; margin-top: 9px; width: 100%; min-width: 140px; max-width: 420px; background: var(--surface-2); }
+.fmt-bar i { min-width: 8px; }
+.fmt-legend { flex: none; }
 .fmt-legend { font-size: 11px; color: var(--text-3); text-align: right; line-height: 1.5; }
 
 /* ===== Track list ===== */
@@ -356,6 +368,8 @@
 .signal { padding: 14px; margin-bottom: 18px; }
 .signal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
 .signal-head b { font-size: 13px; }
+.signal.compact { padding: 11px 14px; }
+.signal.compact .signal-head { margin-bottom: 0; }
 .sp-steps { display: flex; flex-direction: column; gap: 10px; position: relative; }
 /* dot | label | value; the why goes under the label and value. The value stays on the label's first line. */
 .sp-step { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 12px; align-items: start; position: relative; font-size: 12.5px; line-height: 1.35; min-width: 0; }
@@ -486,6 +500,12 @@
 .fmt-pill.plain { background: var(--surface-2); color: var(--text-2); }
 .fmt-pill .bp { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
 .fmt-pill .bp.off { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+/* clipping after the EQ or the sound settings: the light blinks red */
+:root { --clip: #ff3b30; --clip-soft: rgba(255, 59, 48, .22); }
+[data-theme="light"], [data-theme="matcha"], [data-theme="sakura"] { --clip: #d42a1f; --clip-soft: rgba(212, 42, 31, .18); }
+@keyframes clipBlink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+.fmt-pill .bp.clip, .sp-step.clip i { background: var(--clip); box-shadow: 0 0 0 3px var(--clip-soft); animation: clipBlink .6s steps(2, jump-none) infinite; }
+.sp-step .sp-clip { color: var(--clip); }
 
 /* Custom range slider */
 .range {

@@ -14,7 +14,8 @@ const HIT = 13;
 const fmtHz = (f) => (f >= 1000 ? `${Number((f / 1000).toFixed(f >= 10000 ? 1 : 2))}k` : `${Math.round(f)}`);
 const fmtDb = (g) => `${g > 0 ? '+' : ''}${g.toFixed(1)} dB`;
 
-const EqGraph = ({ bands, measurement, target, smoothing = 1 / 12, yRange = 12, selected, onSelect, onChange, onCommit }) => {
+const EqGraph = ({ bands, measurement, target, smoothing = 1 / 12, yRange = 12, selected, onSelect, onChange, onCommit, spectrum = null, liveFreqs = null }) => {
+  const liveRef = useRef(null);
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -277,8 +278,45 @@ const EqGraph = ({ bands, measurement, target, smoothing = 1 / 12, yRange = 12, 
     return () => { el.removeEventListener('wheel', onWheel); clearTimeout(wheelCommit.current); };
   }, []);
 
+  // The live spectrum, under the curves: its own scale, 0 dBFS at the top and -96 at the bottom
+  useEffect(() => {
+    const cv = liveRef.current;
+    if (!cv || !size.w) return;
+    const dpr = window.devicePixelRatio || 1;
+    if (cv.width !== size.w * dpr || cv.height !== size.h * dpr) { cv.width = size.w * dpr; cv.height = size.h * dpr; }
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, size.w, size.h);
+    if (!spectrum?.length || !liveFreqs) return;
+    const css = getComputedStyle(cv);
+    const accent = css.getPropertyValue('--accent').trim() || '#f73';
+    const yLive = (d) => PAD.t + (Math.min(0, Math.max(-96, d)) / -96) * plotH;
+    // a smooth line through the middle of each band (quadratic curves between the midpoints)
+    const pts = spectrum.map((d, i) => [xOf(liveFreqs[i]), yLive(d)]);
+    const bottom = PAD.t + plotH;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(PAD.l, PAD.t, plotW, plotH); ctx.clip();
+    const trace = () => {
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length - 1; i++) {
+        const mx = (pts[i][0] + pts[i + 1][0]) / 2, my = (pts[i][1] + pts[i + 1][1]) / 2;
+        ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
+      }
+      ctx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+    };
+    ctx.beginPath(); trace();
+    ctx.lineTo(pts[pts.length - 1][0], bottom); ctx.lineTo(pts[0][0], bottom); ctx.closePath();
+    const grad = ctx.createLinearGradient(0, PAD.t, 0, bottom);
+    grad.addColorStop(0, accent); grad.addColorStop(1, 'transparent');
+    ctx.globalAlpha = 0.14; ctx.fillStyle = grad; ctx.fill();
+    ctx.beginPath(); trace();
+    ctx.globalAlpha = 0.4; ctx.strokeStyle = accent; ctx.lineWidth = 1.2; ctx.lineJoin = 'round'; ctx.stroke();
+    ctx.restore();
+  }, [spectrum, liveFreqs, size.w, size.h]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="eq-canvas" ref={wrapRef}>
+      <canvas ref={liveRef} className="eq-live" style={{ width: size.w, height: size.h }} aria-hidden="true" />
       <canvas
         ref={canvasRef}
         style={{ width: size.w, height: size.h, cursor: drag.current ? 'grabbing' : hover != null ? 'grab' : 'default' }}

@@ -1,4 +1,4 @@
-// How the full-screen view looks: saved on this computer, applied through CSS variables so the
+// How the app looks and moves, and the full-screen view: saved on this computer, applied through CSS variables so the
 // lyrics follow every change right away. The defaults keep the plain look: extras are opt-in.
 import { useSyncExternalStore } from 'react';
 
@@ -12,6 +12,9 @@ export const APPEARANCE_DEFAULTS = {
   lyricAlign: 'left',
   lyricGlow: false,
   lyricSpeed: 400, // ms from one line to the next
+  signalPath: 'full', // the side panel's Signal path card: 'full', 'compact' (the verdict only) or 'off'
+  // buttons, pages and menus change at once instead of moving; Windows' own "animation effects" setting decides at first
+  reduceMotion: typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
 };
 export const APPEARANCE_LIMITS = {
   tiltStrength: [3, 25],
@@ -23,8 +26,9 @@ export const APPEARANCE_LIMITS = {
 const clean = (raw) => {
   const out = { ...APPEARANCE_DEFAULTS };
   if (!raw || typeof raw !== 'object') return out;
-  for (const k of ['followCover', 'coverTilt', 'lyricGlow']) if (typeof raw[k] === 'boolean') out[k] = raw[k];
+  for (const k of ['followCover', 'coverTilt', 'lyricGlow', 'reduceMotion']) if (typeof raw[k] === 'boolean') out[k] = raw[k];
   if (['left', 'center', 'right'].includes(raw.lyricAlign)) out.lyricAlign = raw.lyricAlign;
+  if (['full', 'compact', 'off'].includes(raw.signalPath)) out.signalPath = raw.signalPath;
   for (const [k, [lo, hi]] of Object.entries(APPEARANCE_LIMITS)) {
     const n = Number(raw[k]);
     if (Number.isFinite(n)) out[k] = Math.min(hi, Math.max(lo, n));
@@ -44,6 +48,7 @@ function apply(a) {
   s.setProperty('--np-lyric-align', a.lyricAlign);
   s.setProperty('--np-lyric-speed', `${a.lyricSpeed}ms`);
   document.documentElement.classList.toggle('np-lyric-glow', a.lyricGlow);
+  document.documentElement.classList.toggle('reduce-motion', a.reduceMotion);
 }
 apply(current);
 

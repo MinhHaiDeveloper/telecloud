@@ -281,3 +281,16 @@
 .theme-prev .row i:last-child { width: 44%; height: 3px; }
 .theme-name { display: flex; align-items: center; gap: 6px; padding: 8px 10px; font-size: 13px; font-weight: 700; color: var(--text); }
 .theme-name .ico { width: 15px; height: 15px; margin-left: auto; color: var(--accent); }
+
+/* Light themes: quality tags in fresh colours. The fill is bright and the text deep, so they stay
+   readable without the washed-out look a dark colour gets at a low tint */
+/* doubled attribute: wins over :root wherever the bundler puts that rule */
+[data-theme="light"][data-theme], [data-theme="matcha"][data-theme], [data-theme="sakura"][data-theme] {
+  --q-hires: #a43404; --q-lossless: #0a6b3e; --q-lossy: #1f5fc4; --q-mqa: #6330d4; --q-mqa-studio: #1856c4;
+  --q-hires-fill: #ff6a2b; --q-lossless-fill: #1cc077; --q-lossy-fill: #3d8bff; --q-mqa-fill: #9160ff; --q-mqa-studio-fill: #2f86ff;
+}
+:is([data-theme="light"], [data-theme="matcha"], [data-theme="sakura"]) .b-hires { background: color-mix(in srgb, var(--q-hires-fill) 20%, var(--bg-app)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--q-hires-fill) 32%, transparent); }
+:is([data-theme="light"], [data-theme="matcha"], [data-theme="sakura"]) .b-mqa { background: color-mix(in srgb, var(--q-mqa-fill) 18%, var(--bg-app)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--q-mqa-fill) 30%, transparent); }
+:is([data-theme="light"], [data-theme="matcha"], [data-theme="sakura"]) .b-mqa-studio { background: color-mix(in srgb, var(--q-mqa-studio-fill) 18%, var(--bg-app)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--q-mqa-studio-fill) 30%, transparent); }
+:is([data-theme="light"], [data-theme="matcha"], [data-theme="sakura"]) .b-lossless { background: color-mix(in srgb, var(--q-lossless-fill) 18%, var(--bg-app)); color: var(--q-lossless); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--q-lossless-fill) 30%, transparent); }
+:is([data-theme="light"], [data-theme="matcha"], [data-theme="sakura"]) .b-cloud { background: color-mix(in srgb, var(--q-lossy-fill) 16%, var(--bg-app)); color: var(--q-lossy); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--q-lossy-fill) 28%, transparent); }

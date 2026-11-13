@@ -57,6 +57,9 @@ const INVOKE_CHANNELS = new Set([
     'select-music-folder',
     'set-audio-device',
     'set-eq',
+    'set-sound',
+    'sound:load-correction',
+    'spectrum:live',
     'set-mute',
     'set-volume',
     'start-watching',
@@ -142,6 +145,9 @@ const INVOKE_CHANNELS = new Set([
 
 const EVENT_CHANNELS = new Set([
     'analysis:progress',
+    'player:clip',
+    'spectrum:frame',
+    'spectrum:state',
     'library:partial',
     'stats:changed',
     'lyrics:saved',

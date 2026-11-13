@@ -142,7 +142,7 @@ export const mqaOf = (file) => {
   return { studio, rate, cls: studio ? 'b-mqa-studio' : 'b-mqa', label: studio ? 'MQA Studio' : 'MQA', short: `${studio ? 'MQA Studio' : 'MQA'}${rate ? ` ${khz(rate)}` : ''}` };
 };
 
-export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnabled, volume, audioSettings = {}, audioOut = null, stream = null, dsd = null, output = null }) => {
+export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnabled, volume, audioSettings = {}, audioOut = null, stream = null, dsd = null, output = null, sound = null, clipping = false }) => {
   const q = qualityOf(file);
   const exclusive = selectedDevice && selectedDevice !== '-1';
   const chosen = exclusive ? devices.find(d => d.id === selectedDevice) : null;
@@ -159,7 +159,8 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
   const mqaIntact = !!mqa && audioSettings.mqaMode === 'decoder' && !(stream && !stream.complete);
   const bal = mqaIntact ? 0 : Number(audioSettings.balance) || 0;
   const xfeed = !mqaIntact && audioSettings.crossfeed && audioSettings.crossfeed !== 'off' ? audioSettings.crossfeed : null;
-  const eqOn = !!eqEnabled && !mqaIntact;
+  const soundOn = !!sound && !mqaIntact;
+  const eqOn = !!eqEnabled && !mqaIntact && !sound?.ab; // A/B: the original, without the EQ
   const rgOn = rg && !mqaIntact;
   const SKIPPED = 'Skipped'; // the MQA step above says why
 
@@ -170,7 +171,7 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
     const fmt = String(audioOut.format).replace(/p$/, '');
     outBits = { s16: 16, s24: 24, s32: 32, float: 32, double: 64, u8: 8 }[fmt] || q.bits;
     // 24-bit PCM travels in 32-bit words; untouched it is still 24-bit audio
-    if (fmt === 's32' && q.bits > 1 && q.bits <= 24 && !eqOn && !rgOn && !bal && !xfeed) outBits = q.bits;
+    if (fmt === 's32' && q.bits > 1 && q.bits <= 24 && !eqOn && !rgOn && !bal && !xfeed && !soundOn) outBits = q.bits;
     resampled = !q.ext.startsWith('DSD') && q.rate > 0 && (outRate !== q.rate || (!!capBits && q.bits > capBits && outBits < q.bits));
   } else {
     resampled = (capRate && q.rate > capRate) || (capBits && q.bits > capBits);
@@ -198,7 +199,9 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
     ...(mqa ? [mqaIntact
       ? { label: mqa.label, detail: `${exclusive ? 'For an MQA DAC to unfold' : 'Needs WASAPI Exclusive to reach the DAC untouched'}${mqa.rate ? ` · ${khz(mqa.rate)} kHz original` : ''}`, value: 'Untouched', state: exclusive && volFull ? 'ok' : 'warn' }
       : { label: mqa.label, detail: audioSettings.mqaMode === 'decoder' ? 'Untouched once the track is on this computer' : 'Played as plain PCM', value: q.label.replace(q.ext, '').trim() || '—', state: 'off' }] : []),
-    { label: 'Parametric EQ', value: eqEnabled && mqaIntact ? SKIPPED : eqOn ? 'On' : 'Off', state: eqOn ? 'warn' : 'off', key: 'eq' },
+    { label: 'Parametric EQ', value: eqEnabled && mqaIntact ? SKIPPED : eqOn ? 'On' : 'Off', state: eqOn ? 'warn' : 'off', key: 'eq', clip: clipping && eqOn && !soundOn },
+    // Settings > Sound; its light blinks red while the sound goes over 0 dBFS
+    ...(sound ? [{ label: sound.ab ? 'A/B: original' : 'Sound', detail: mqaIntact ? null : sound.summary.join(' · ') || null, value: mqaIntact ? SKIPPED : 'On', state: soundOn ? 'warn' : 'off', key: 'sound', clip: clipping && soundOn }] : []),
     { label: 'ReplayGain', value: rg && mqaIntact ? SKIPPED : !rg ? 'Off' : audioSettings.replayGain === 'auto' ? `Auto · ${audioSettings.autoGain || 'track'}` : audioSettings.replayGain, state: rgOn ? 'warn' : 'off' },
     ...(Number(audioSettings.balance) ? [{ label: 'Channel balance', value: mqaIntact ? SKIPPED : `${bal < 0 ? 'Left' : 'Right'} +${Math.abs(bal).toFixed(1)} dB`, state: bal ? 'warn' : 'off' }] : []),
     ...(audioSettings.crossfeed && audioSettings.crossfeed !== 'off' ? [{ label: 'Headphone crossfeed', value: mqaIntact ? SKIPPED : xfeed[0].toUpperCase() + xfeed.slice(1), state: xfeed ? 'warn' : 'off' }] : []),
@@ -216,7 +219,7 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
   ];
 
   // DSD is turned into PCM before it leaves the app, so it is never the original bits
-  const filtered = eqOn || rgOn || !!bal || !!xfeed;
+  const filtered = eqOn || rgOn || !!bal || !!xfeed || soundOn;
   const bitPerfect = !!file && nativeDsd && !filtered ? true : !!file && !bluetooth && (!isDsd || dop) && q.lossless && exclusive && !filtered && !crossfade && !resampled && volFull;
   let verdict = 'Idle';
   if (file) {
@@ -226,7 +229,7 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
     else if (!exclusive) verdict = 'Shared mode';
     else verdict = 'Processed';
   }
-  return { steps, bitPerfect, verdict, quality: q, deviceName, exclusive, outSpec, bluetooth };
+  return { steps, bitPerfect, verdict, quality: q, deviceName, exclusive, outSpec, bluetooth, clipping: !!clipping && (eqOn || soundOn || !!bal || !!xfeed) };
 };
 
 // ---- Duplicate tracks: the same album in two folders must not play or list every song twice

@@ -1,4 +1,5 @@
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import SongActions from './songActions';
 import EqGraph from './EqGraph';
 import Icon from './Icon';
 import { Toggle, Segmented, Select, Callout, Dialog, BackButton, MoreMenu, alertDialog } from './ui';
@@ -146,7 +147,45 @@ const readTextFile = (e) => new Promise((resolve) => {
   reader.readAsText(file);
 });
 
+// the live spectrum's bands: as electron/liveSpectrum.js makes them
+const LIVE_FREQS = Array.from({ length: 120 }, (_, i) => 20 * Math.pow(1000, (i + 0.5) / 120));
+
+/** What is playing, analysed after every filter, while the EQ page is open and the switch is on */
+function useLiveSpectrum(on) {
+  const [bands, setBands] = useState(null);
+  const [why, setWhy] = useState(null);
+  const held = useRef(null);
+  useEffect(() => {
+    if (!on) { setBands(null); return undefined; }
+    const ipc = window.ipcRenderer;
+    const onFrame = (e, b) => {
+      // rise at once, fall gently: easier to read than raw frames
+      const prev = held.current;
+      held.current = Array.isArray(b) ? b.map((v, i) => (prev && prev[i] - 1.8 > v ? prev[i] - 1.8 : v)) : null;
+      setBands(held.current);
+      setWhy(null);
+    };
+    const onState = (e, st) => { if (st?.why) { setWhy(st.why); setBands(null); held.current = null; } };
+    ipc.on('spectrum:frame', onFrame);
+    ipc.on('spectrum:state', onState);
+    ipc.invoke('spectrum:live', true);
+    return () => {
+      ipc.invoke('spectrum:live', false);
+      ipc.removeListener?.('spectrum:frame', onFrame);
+      ipc.removeListener?.('spectrum:state', onState);
+      held.current = null;
+    };
+  }, [on]);
+  return { bands, why };
+}
+
 const EqSettingsView = ({ onBack, eq, deviceName }) => {
+  const ctx = useContext(SongActions);
+  const snd = ctx?.snd;
+  const [liveOn, setLiveOn] = useState(() => readPref('tc-eq-live', true));
+  useEffect(() => writePref('tc-eq-live', liveOn), [liveOn]);
+  const live = useLiveSpectrum(liveOn);
+  useEffect(() => () => snd?.setAb(false), []); // eslint-disable-line react-hooks/exhaustive-deps
   const { perDevice, setPerDevice, enabled, setEnabled, bands, setBands, preamp, setPreamp, auto, setAuto, history, commit, apply, jump, undo, redo } = eq;
   const [selected, setSelected] = useState(null);
   const [collapsed, setCollapsed] = useState(() => readPref('tc-eq-bands-collapsed', false));
@@ -317,6 +356,11 @@ const EqSettingsView = ({ onBack, eq, deviceName }) => {
           />
           <button className="btn-ghost" onClick={reset}><Icon name="refresh" />Reset</button>
           <button className="icon-btn" onClick={() => setShowGuide(true)} title="Guide"><Icon name="info" /></button>
+          {snd && (
+            <button className={`btn-ab ${snd.ab ? 'on' : ''}`} onClick={() => snd.setAb(!snd.ab)} aria-pressed={snd.ab} title="Hear the original without the EQ and the sound settings, at the same loudness">
+              <b className={snd.ab ? '' : 'on'}>A</b><b className={snd.ab ? 'on' : ''}>B</b><span>{snd.ab ? 'Original' : 'Processed'}</span>
+            </button>
+          )}
           <Toggle checked={enabled} onChange={setEnabled} label={enabled ? 'EQ on' : 'EQ off'} />
         </div>
       </div>
@@ -343,13 +387,19 @@ const EqSettingsView = ({ onBack, eq, deviceName }) => {
               </div>
               <div className="grp">
                 {(auto.measurement || auto.target) && <Select variant="ghost" value={smoothing} onChange={setSmoothing} options={SMOOTH_OPTIONS} align="right" />}
+                <label className="eq-live-toggle" title="The music after every filter, as it plays">
+                  <Toggle checked={liveOn} onChange={setLiveOn} />
+                  <span>Live spectrum</span>
+                </label>
                 <Segmented size="sm" value={yRange} onChange={setYRange} options={[12, 24, 36].map(v => ({ value: v, label: `±${v}` }))} />
               </div>
             </div>
             <EqGraph
               bands={bands} measurement={auto.measurement?.data} target={auto.target?.data} smoothing={smoothing}
               yRange={yRange} selected={selected} onSelect={setSelected} onChange={onGraphChange} onCommit={commit}
+              spectrum={live.bands} liveFreqs={LIVE_FREQS}
             />
+            {liveOn && live.why === 'cloud' && <div className="eq-live-note">The live spectrum needs the track on this computer: it shows once a TeleCloud track is cached.</div>}
             <div className="eq-hint">Drag a dot to move it · <b>Shift</b> gain only · <b>Alt</b> frequency only · scroll on a dot for Q · double-click to flatten</div>
           </div>
 

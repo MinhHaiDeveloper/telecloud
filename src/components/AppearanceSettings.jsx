@@ -64,6 +64,18 @@ const AppearanceSettings = ({ theme, setTheme }) => {
       </section>
 
       <section className="set-section">
+        <h3>Layout and motion</h3>
+        <div className="card set-card">
+          <SettingRow icon="speaker" title="Signal path in the side panel" desc="Full shows each step from the file to your output. Compact keeps only the verdict, such as Bit-perfect. The player bar still has the full path.">
+            <Segmented size="sm" value={a.signalPath} onChange={(v) => setAppearance({ signalPath: v })} options={[{ value: 'full', label: 'Full' }, { value: 'compact', label: 'Compact' }, { value: 'off', label: 'Off' }]} />
+          </SettingRow>
+          <SettingRow icon="check" title="Reduce motion" desc="Buttons, pages, menus and highlights change at once instead of moving or bouncing. Lyrics still scroll, and loading spinners still turn.">
+            <Toggle checked={a.reduceMotion} onChange={(v) => setAppearance({ reduceMotion: v })} />
+          </SettingRow>
+        </div>
+      </section>
+
+      <section className="set-section">
         <div className="head-row">
           <h3>Full-screen cover</h3>
         </div>
