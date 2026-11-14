@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Icon from './Icon';
+import SleepTimer from './SleepTimer';
 import MetaLinks from './MetaLinks';
 import Cover from './Cover';
 import SignalPathSteps from './SignalPathSteps';
@@ -17,7 +18,7 @@ const useOutside = (open, ref, onClose) => {
 };
 
 const PlayerBar = ({
-  currentFile, isPlaying, currentTime, onSeek, onTogglePlay, onNext, onPrev,
+  currentFile, isPlaying, currentTime, onSeek, onTogglePlay, onNext, onPrev, sleepLabel, onSetSleep,
   volume, onVolumeChange, muted, onToggleMute, selectedDevice,
   loopMode, onToggleLoop, isShuffle, onToggleShuffle,
   isQueueOpen, onToggleQueue, queueFiles = [], onClearQueue, onRemoveFromQueue, onSaveQueueAsPlaylist, onPlayQueued, onMoveQueued,
@@ -148,6 +149,7 @@ const PlayerBar = ({
             {mqaOf(currentFile) && <span className={`fmt-mqa mono ${mqaOf(currentFile).studio ? 'studio' : ''}`} title={`${mqaOf(currentFile).label}${mqaOf(currentFile).rate ? `, ${Number((mqaOf(currentFile).rate / 1000).toFixed(1))} kHz original` : ''}`}>MQA</span>}
           </button>
         )}
+        {onSetSleep && <SleepTimer label={sleepLabel} active={!!sleepLabel} hasTrack={!!currentFile} onSet={onSetSleep} />}
         <button className={`icon-btn hide-sm np-hide ${eqEnabled ? 'on' : ''}`} onClick={onOpenEq} title="Equalizer"><Icon name="eq" /></button>
         <button className={`icon-btn hide-sm ${muted ? 'on' : ''}`} onClick={onToggleMute} title={muted ? 'Unmute (M)' : 'Mute (M)'}>
           <Icon name={muted || (volume === 0 && !exclusive) ? 'mute' : 'volume'} />

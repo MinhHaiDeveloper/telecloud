@@ -73,6 +73,8 @@ const SettingsView = ({
   const [channelBalance, setChannelBalance] = useState(0);
   const [balanceDraft, setBalanceDraft] = useState(0); // follows the slider; saved when it is let go
   const [crossfeed, setCrossfeed] = useState('off');
+  const [releaseOnPause, setReleaseOnPause] = useState(false); // other apps may use the DAC while paused
+  const [pauseFade, setPauseFade] = useState(false);
   const [mqaMode, setMqaMode] = useState('plain');
   const [mqaScan, setMqaScan] = useState(null);
   const [asioDriver, setAsioDriver] = useState('');
@@ -143,6 +145,8 @@ const SettingsView = ({
       if (settings && settings.dopMax) setDopMax(settings.dopMax);
       if (settings && Number.isFinite(settings.channelBalance)) { setChannelBalance(settings.channelBalance); setBalanceDraft(settings.channelBalance); }
       if (settings && settings.crossfeed) setCrossfeed(settings.crossfeed);
+      if (settings && settings.releaseOnPause) setReleaseOnPause(true);
+      if (settings && settings.pauseFade) setPauseFade(true);
       if (settings && settings.mqaMode) setMqaMode(settings.mqaMode);
       if (settings && settings.asioDriver) setAsioDriver(settings.asioDriver);
       if (settings && settings.keyboardShortcuts) setKeyboardShortcuts(s => ({ ...s, ...settings.keyboardShortcuts }));
@@ -180,6 +184,8 @@ const SettingsView = ({
       newSettings.asioDriver = asioDriver;
       newSettings.channelBalance = channelBalance;
       newSettings.crossfeed = crossfeed;
+      newSettings.releaseOnPause = releaseOnPause;
+      newSettings.pauseFade = pauseFade;
       newSettings.mqaMode = mqaMode;
       newSettings.keyboardShortcuts = keyboardShortcuts;
       await ipcRenderer.invoke('save-store', 'settings', newSettings);
@@ -196,12 +202,14 @@ const SettingsView = ({
         balance: channelBalance,
         crossfeed,
         mqaMode,
+        releaseOnPause,
+        pauseFade,
       };
       await ipcRenderer.invoke('apply-audio-settings', audio);
       onAudioSettingsChange?.(audio);
     };
     saveAudioSettings();
-  }, [settingsLoaded, replayGainEnabled, replayGainMode, crossfadeEnabled, crossfadeDuration, maxSamplingEnabled, maxBitDepth, maxSampleRate, dsdMode, dopMax, asioDriver, channelBalance, crossfeed, mqaMode, keyboardShortcuts]);
+  }, [settingsLoaded, replayGainEnabled, replayGainMode, crossfadeEnabled, crossfadeDuration, maxSamplingEnabled, maxBitDepth, maxSampleRate, dsdMode, dopMax, asioDriver, channelBalance, crossfeed, mqaMode, releaseOnPause, pauseFade, keyboardShortcuts]);
 
   const toggleDevice = async (deviceId) => {
     const ipcRenderer = window.ipcRenderer;
@@ -427,6 +435,12 @@ const SettingsView = ({
                   </div>
                 </div>
 
+                <SettingRow icon="speaker" title="Let other apps use the DAC while paused" desc="In WASAPI Exclusive and native DSD, TeleCloud holds the DAC, so a video or a game is silent even while the music is paused. On: a few seconds after a pause, the DAC is free; Play takes it back and carries on from the same moment.">
+                  <Toggle checked={releaseOnPause} onChange={setReleaseOnPause} />
+                </SettingRow>
+                <SettingRow icon="volume" title="Fade on play and pause" desc="A short fade instead of a hard stop and start. Never while the signal path is bit-perfect: then pause and play stay instant.">
+                  <Toggle checked={pauseFade} onChange={setPauseFade} />
+                </SettingRow>
                 <SettingRow icon="eq" title="Headphone crossfeed" desc="Blends a little of each channel into the other, as speakers in a room do, so hard-panned recordings are easier on headphones. Not bit-perfect while on.">
                   <Segmented size="sm" value={crossfeed} onChange={setCrossfeed} options={[{ value: 'off', label: 'Off' }, { value: 'light', label: 'Light' }, { value: 'medium', label: 'Medium' }, { value: 'strong', label: 'Strong' }]} />
                 </SettingRow>

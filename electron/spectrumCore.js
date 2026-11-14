@@ -46,7 +46,7 @@ function makeFft(n) {
 /** Stream decoded samples. Resolves with the output sample rate once mpv reports it. */
 function decode(mpvPath, filePath, { format = 'f32', channels = 'mono', lengthSec } = {}, onData) {
   const fmt = format === 's32' ? ['--of=s32le', '--oac=pcm_s32le'] : ['--of=f32le', '--oac=pcm_f32le'];
-  const args = ['--no-config', '--no-video', '--load-scripts=no', '--ytdl=no', '--msg-level=all=info', ...fmt, '--o=-'];
+  const args = ['--no-config', '--no-video', '--media-controls=no', '--load-scripts=no', '--ytdl=no', '--msg-level=all=info', ...fmt, '--o=-'];
   if (channels === 'mono') args.push('--audio-channels=mono');
   if (lengthSec) args.push(`--length=${lengthSec}`);
   args.push('--', filePath);

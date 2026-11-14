@@ -2,6 +2,17 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.1.0-beta.5',
+    items: [
+      "TeleCloud is in Windows' media controls: the box by the volume keys and the lock screen show the track and cover, with Play, Pause, Next, Previous and seeking. The keyboard's media keys work with TeleCloud in the background.",
+      'Previous, Play/Pause and Next on the taskbar thumbnail, and in the tray menu.',
+      'Sleep timer, from the moon in the player bar, the tray or the remote: in minutes, at the end of this track, at the end of the album, or after a number of tracks. The last 10 seconds fade out, and a stop at the end of a track leaves the next one ready.',
+      'Settings > Playback > Let other apps use the DAC while paused: in WASAPI Exclusive and native DSD, a video or a game can play while TeleCloud is paused, and Play carries on from the same moment.',
+      'Settings > Playback > Fade on play and pause, never while the signal path is bit-perfect.',
+      "The remote's signal path now blinks red when the sound clips, as the computer's does.",
+    ],
+  },
+  {
     version: '1.1.0-beta.4',
     items: [
       'Settings > Equalizer is now Sound, with Tone (Warmth, Bass, Treble, Loudness), Space (stereo width, mono, swap, polarity), Effects (Night mode, Air, Tube warmth) and room or headphone correction from an impulse response.',

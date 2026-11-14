@@ -39,6 +39,8 @@ Open **Settings > Library**, click **Add folder** and choose where your music li
 
 In **Settings > Playback**:
 
+- **Let other apps use the DAC while paused:** in WASAPI Exclusive and native DSD, the DAC is free a few seconds after a pause; Play takes it back from the same moment.
+- **Fade on play and pause:** a short fade, never while playback is bit-perfect.
 - **When an album ends:** another album follows, the artist's next one by year or else the one beside it in Albums. Turn it off to stop at the end of the album.
 - **Output device:** pick your DAC or headphones. Devices marked *exclusive* give bit-perfect playback; *System default* shares the sound with other apps.
 - **ReplayGain:** evens out the volume between tracks or albums.
@@ -57,6 +59,12 @@ The **Signal path** panel on the right shows exactly what happens to the sound o
 
 - **Low memory mode** draws the interface without the graphics card. It uses much less memory; animations may be less smooth. The sound is not affected.
 - **Keep running in the tray when closed** hides the window instead of quitting, and the music keeps playing. Quit from the tray icon.
+
+### Controls outside the window
+
+- **Windows media controls:** the box by the volume keys and the lock screen show what plays, with its cover, and control it. The keyboard's media keys work while TeleCloud is in the background.
+- **Taskbar and tray:** Previous, Play/Pause and Next on the taskbar thumbnail and in the tray menu.
+- **Sleep timer:** the moon in the player bar (also in the tray and the remote): minutes, the end of this track or album, or after a number of tracks. The last 10 seconds fade out.
 
 ### 3. Shape the sound (optional)
 

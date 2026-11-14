@@ -156,7 +156,7 @@ async function releaseMpv() {
 async function startNative(filePath, plan, startSec = 0, paused = false) {
   await releaseMpv();
   const id = ++nativeIds;
-  native = { id, path: filePath, rate: plan.info.rate, channels: plan.info.channels, driver: currentAudioSettings.asioDriver, paused, pos: startSec, queued: null, starting: true };
+  native = { id, path: filePath, rate: plan.info.rate, channels: plan.info.channels, driver: currentAudioSettings.asioDriver, paused, pos: startSec, queued: null, starting: true, info: plan.info };
   currentEntryId = `asio:${id}`;
   currentPath = filePath;
   entryPlans.set(currentEntryId, { path: filePath, native: true, rate: plan.info.rate, driver: native.driver, reason: null, verified: true });
@@ -452,6 +452,7 @@ function handleMessage(msg) {
       } else if (msg.name === 'pause') {
         playerPaused = !!msg.data;
         watchMeter();
+        if (!released) scheduleRelease();
         if (spectrumWanted) spectrumFollow(spectrumPos);
         send('player:state', { paused: !!msg.data });
       } else if (msg.name === 'audio-out-params' && msg.data) {
@@ -580,6 +581,9 @@ function startMpv() {
     '--keep-open=no',
     '--initial-audio-sync=no',
     '--audio-stream-silence=yes',
+    // mpv puts itself in Windows' media controls by default, as "Unknown app" with its own picture:
+    // TeleCloud does that itself (media.js), with its name and the album cover
+    '--media-controls=no',
     '--cache=yes',
     '--demuxer-readahead-secs=20',
     '--demuxer-max-bytes=64MiB',
@@ -894,7 +898,7 @@ async function startCrossfade(t, X) {
   if (xfade !== state) return;
   const fade = `@fade:lavfi=[afade=t=out:st=${startAt.toFixed(3)}:d=${X}]`;
   const tail = spawn(mpvPath, [
-    '--no-config', '--no-video', '--no-input-terminal', '--msg-level=all=error,cplayer=info', '--term-status-msg=',
+    '--no-config', '--no-video', '--no-input-terminal', '--media-controls=no', '--msg-level=all=error,cplayer=info', '--term-status-msg=',
     `--start=${startAt.toFixed(3)}`, `--volume=${volume}`, `--replaygain=${replaygain}`,
     `--af=${chainSpec({ crossfadeSlot: false, extra: fade }).af}`, '--audio-device=auto', '--', outgoing,
   ], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
@@ -1035,6 +1039,15 @@ ipcMain.handle('get-audio-devices', () => listDevices());
 ipcMain.handle('play-audio', async (event, { filePath, deviceId, startPaused } = {}) => {
   console.log(`[Player] Play ${filePath}`);
   checkPlayable(filePath);
+  cancelFade();
+  if (released) {
+    // a new track: the DAC comes back first, nothing to seek to
+    const wasNative = released.native;
+    released = null;
+    clearTimeout(releaseTimer);
+    if (!wasNative && sock) await setProp('ao', process.env.TELECLOUD_MPV_AO || '').catch(() => {});
+    send('player:released', false);
+  }
   if (deviceId !== undefined && String(deviceId) !== currentDevice) await setDeviceInternal(String(deviceId)).catch(() => {});
   const plan = DSD_FILE.test(filePath) ? await dsdPlan(filePath, { mayRelease: true }) : null;
   nextEntryId = null;
@@ -1106,19 +1119,134 @@ ipcMain.handle('player:set-next', async (event, filePath) => {
   }
 });
 
-ipcMain.handle('pause-audio', async (event, paused) => {
+ipcMain.handle('pause-audio', async (event, paused, opts = {}) => {
+  cancelFade();
   if (native) {
+    if (!paused && released) { native.paused = false; await reclaimDac(); send('player:state', { paused: false }); return; }
     native.paused = !!paused;
     await (paused ? asio.pause() : asio.resume());
     send('player:state', { paused: !!paused });
+    scheduleRelease();
     return;
   }
   if (!(await live())) return;
   if (paused) cancelCrossfade();
-  await setProp('pause', !!paused);
+  // a short fade, only when the renderer says the chain is not bit-perfect anyway
+  const fade = !!opts?.fade && currentAudioSettings.pauseFade;
+  if (paused) {
+    if (fade) await rampVolume(0, PAUSE_FADE_MS).catch(() => {});
+    await setProp('pause', true);
+    if (fade) await setProp('volume', isExclusive() ? 100 : softVolume).catch(() => {});
+    playerPaused = true;
+    scheduleRelease();
+  } else {
+    if (released) await reclaimDac({ keepPaused: true });
+    if (fade) await setProp('volume', 0).catch(() => {});
+    await setProp('pause', false);
+    if (fade) await rampVolume(isExclusive() ? 100 : softVolume, PAUSE_FADE_MS).catch(() => {});
+  }
 });
 
+// ---------- fades: play/pause and the sleep timer ramp the volume, then put it back
+const PAUSE_FADE_MS = 220;
+let fadeRun = 0;
+function cancelFade() {
+  if (!fading) return;
+  fadeRun++;
+  const back = fading.restore;
+  fading = null;
+  setProp('volume', back).catch(() => {});
+}
+let fading = null;
+/** Move mpv's volume to `to` over `ms`, in small steps; a newer fade or any action stops it */
+async function rampVolume(to, ms) {
+  const run = ++fadeRun;
+  const from = Number((await getProp('volume').catch(() => null))?.data ?? (isExclusive() ? 100 : softVolume));
+  const steps = Math.max(1, Math.round(ms / 20));
+  for (let i = 1; i <= steps; i++) {
+    if (run !== fadeRun) return false;
+    await setProp('volume', from + ((to - from) * i) / steps).catch(() => {});
+    await new Promise(r => setTimeout(r, ms / steps));
+  }
+  return run === fadeRun;
+}
+/** Sleep timer: fade out over `seconds`, pause, and put the volume back for next time */
+ipcMain.handle('player:fade-out', async (event, seconds) => {
+  const sec = num(seconds, 0, 60, 10);
+  if (native) { native.paused = true; await asio.pause(); send('player:state', { paused: true }); scheduleRelease(); return { done: true }; }
+  if (!(await live())) return { done: false };
+  const restore = isExclusive() ? 100 : softVolume;
+  fading = { restore };
+  const done = await rampVolume(0, sec * 1000);
+  if (!done) return { done: false };
+  fading = null;
+  await setProp('pause', true);
+  playerPaused = true;
+  await setProp('volume', restore).catch(() => {});
+  scheduleRelease();
+  return { done: true };
+});
+ipcMain.handle('player:fade-cancel', () => { cancelFade(); return true; });
+
+// ---------- Settings > Playback: let other apps use the DAC while paused. Only matters where the DAC is
+// held: WASAPI Exclusive, or native DSD through ASIO. A few seconds' wait, so a quick pause/play doesn't
+// make the DAC relock.
+const RELEASE_AFTER = Number(process.env.TELECLOUD_RELEASE_AFTER_MS) || 3000;
+let releaseTimer = null;
+let released = null; // { pos, native } while the DAC is free
+function scheduleRelease() {
+  clearTimeout(releaseTimer);
+  releaseTimer = null;
+  const paused = native ? native.paused : playerPaused;
+  if (!paused || released || !currentAudioSettings.releaseOnPause || !currentEntryId) return;
+  if (!native && !isExclusive()) return; // shared mode never keeps other apps out
+  releaseTimer = setTimeout(() => { releaseDac().catch(err => console.warn('[Player] Could not release the DAC:', err.message)); }, RELEASE_AFTER);
+}
+async function releaseDac() {
+  releaseTimer = null;
+  if (released) return;
+  if (native) {
+    if (!native.paused) return;
+    released = { native: true, pos: native.pos };
+    native.queued = null;
+    await asio.stop().catch(() => {});
+  } else {
+    if (!sock || !playerPaused || !currentEntryId) return;
+    const t = await getProp('time-pos').catch(() => null);
+    const pos = Number(t && typeof t === 'object' ? t.data : t);
+    released = { pos: Number.isFinite(pos) ? pos : null };
+    await setProp('ao', 'null');
+  }
+  console.log('[Player] Paused: the DAC is free for other apps until play');
+  send('player:released', true);
+}
+/** Take the DAC back, at the moment where the music stopped (a seek while released moves that moment) */
+async function reclaimDac({ keepPaused = false } = {}) {
+  clearTimeout(releaseTimer);
+  releaseTimer = null;
+  if (!released) return;
+  const r = released;
+  released = null;
+  if (r.native && native) {
+    try {
+      await asio.play({ driver: native.driver, start: r.pos, ...nativeInfo(native.info, native.id, native.path) });
+      if (keepPaused || native.paused) await asio.pause();
+    } catch (err) {
+      console.warn(`[Player] Native DSD could not take the DAC back: ${err.message}`);
+      await nativeToMpv('the DAC could not be taken back').catch(() => {});
+    }
+  } else if (sock) {
+    await setProp('ao', process.env.TELECLOUD_MPV_AO || '');
+    // the output's buffer was dropped with it: go back to exactly where it was
+    if (Number.isFinite(r.pos)) await command(['seek', r.pos, 'absolute', 'exact']).catch(() => {});
+  }
+  console.log('[Player] The DAC is TeleCloud\'s again');
+  send('player:released', false);
+}
+
 ipcMain.handle('seek-audio', async (event, timePos) => {
+  cancelFade();
+  if (released) { released.pos = num(timePos, 0, 86400); if (native) native.pos = released.pos; return; } // heard from there on play
   if (native) { native.pos = num(timePos, 0, 86400); native.queued = null; await asio.seek(native.pos); return; }
   if (!(await live())) return;
   cancelCrossfade();
@@ -1127,6 +1255,7 @@ ipcMain.handle('seek-audio', async (event, timePos) => {
 
 ipcMain.handle('set-volume', async (event, vol) => {
   if (!(await live()) || (currentDevice && currentDevice !== '-1')) return;
+  cancelFade(); // a hand on the volume stops a fade
   softVolume = num(vol, 0, 100, 100);
   await setProp('volume', softVolume);
   if (soundState?.loudness) await scheduleChain(); // the loudness boost follows the volume
@@ -1153,6 +1282,8 @@ ipcMain.handle('set-mute', async (event, on) => {
 
 ipcMain.handle('stop-audio', async () => {
   cancelCrossfade();
+  cancelFade();
+  if (released) { const wasNative = released.native; released = null; clearTimeout(releaseTimer); if (!wasNative && sock) await setProp('ao', process.env.TELECLOUD_MPV_AO || '').catch(() => {}); send('player:released', false); }
   if (native) { native = null; await asio.stop().catch(() => {}); }
   currentEntryId = null;
   currentPath = null;
@@ -1166,8 +1297,10 @@ async function setDeviceInternal(deviceId) {
   // the first track can come before the list of outputs was read: read it now rather than refuse
   if (deviceId !== '-1' && !mpvDevices.some(d => d.id === deviceId)) await listDevices();
   if (deviceId !== '-1' && !mpvDevices.some(d => d.id === deviceId)) throw new Error('Unknown audio device');
+  if (released) await reclaimDac({ keepPaused: true }); // the new output starts from where the music is
   currentDevice = deviceId;
   if (sock) await applyDevice(deviceId);
+  scheduleRelease();
   if (sock && soundState) await scheduleChain(); // loudness and the clip light depend on exclusive mode
   if (deviceId === '-1' && entryPlans.get(currentEntryId)?.dop) await fallbackToPcm('shared');
   tellOutput();
@@ -1203,7 +1336,11 @@ async function applyAudioSettings(settings) {
     balance: Math.round(num(settings?.balance, -12, 12) * 2) / 2,
     crossfeed: CROSSFEED[settings?.crossfeed] ? settings.crossfeed : 'off',
     mqaMode: settings?.mqaMode === 'decoder' ? 'decoder' : 'plain',
+    releaseOnPause: !!settings?.releaseOnPause,
+    pauseFade: !!settings?.pauseFade,
   };
+  if (!currentAudioSettings.releaseOnPause) reclaimDac({ keepPaused: true }).catch(() => {});
+  else scheduleRelease();
   logGain();
   if (!currentAudioSettings.crossfade) cancelCrossfade();
   if (sock) await applyAudioSettingsToMpv().catch(err => console.error('[Player] settings rejected:', err.message));
@@ -1228,6 +1365,6 @@ app.on('before-quit', () => {
   try { proc?.kill(); } catch { /* ignore */ }
 });
 
-module.exports = { listDevices, applyAudioSettings, buildEqFilter, capFilter, chainSpec, _sound: () => ({ soundState, softVolume, clipShown, meter: !!meterTimer, spectrum: spectrum.running() }), mpvPath, getProp, setStreamPrefix, parseBluetoothOutputs,
+module.exports = { listDevices, applyAudioSettings, buildEqFilter, capFilter, chainSpec, _sound: () => ({ soundState, softVolume, clipShown, meter: !!meterTimer, spectrum: spectrum.running() }), _release: () => ({ released, timer: !!releaseTimer, fading: !!fading, settings: { releaseOnPause: currentAudioSettings.releaseOnPause, pauseFade: currentAudioSettings.pauseFade } }), mpvPath, getProp, setStreamPrefix, parseBluetoothOutputs,
   // tests only: feed a message as if mpv sent it, and see what is playing
   _mpvMessage: (msg) => handleMessage(msg), _playing: () => ({ entry: currentEntryId, path: currentPath, refused: [...refused] }) };

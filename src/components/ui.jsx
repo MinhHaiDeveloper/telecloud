@@ -56,7 +56,7 @@ export const Segmented = ({ value, options, onChange, size }) => {
   );
 };
 
-const useClickOutside = (open, ref, onClose) => {
+export const useClickOutside = (open, ref, onClose) => {
   useEffect(() => {
     if (!open) return undefined;
     const handler = (e) => { if (!ref.current?.contains(e.target)) onClose(); };

@@ -64,7 +64,7 @@ function create({ mpvPath, onFrame, onState = () => {} }) {
 
   function start({ path, pos = 0, af = '' }) {
     stop();
-    const args = ['--no-config', '--no-video', '--load-scripts=no', '--ytdl=no', '--msg-level=all=error',
+    const args = ['--no-config', '--no-video', '--media-controls=no', '--load-scripts=no', '--ytdl=no', '--msg-level=all=error',
       `--start=${Math.max(0, pos).toFixed(3)}`, '--audio-channels=mono', `--audio-samplerate=${RATE}`,
       '--of=f32le', '--oac=pcm_f32le', '--o=-'];
     if (af) args.push(`--af=${af}`);

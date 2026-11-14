@@ -369,6 +369,14 @@ export default function RemoteApp() {
         <input type="checkbox" checked={!!s?.eq} onChange={(e) => send('eq', { on: e.target.checked })} />
         <i />
       </label>
+      <div className="rm-sleep">
+        <div className="rm-sleep-head"><span><Icon name="moon" />Sleep timer</span>{s?.sleep && <b className="mono">{s.sleep}</b>}</div>
+        <div className="rm-sleep-chips">
+          {[[15, '15 min'], [30, '30 min'], [60, '1 hour']].map(([m, l]) => <button key={m} className="cmd" onClick={() => send('sleep', { value: { minutes: m } })}>{l}</button>)}
+          <button className="cmd" disabled={!t} onClick={() => send('sleep', { value: { kind: 'track' } })}>End of track</button>
+          {s?.sleep && <button className="cmd off" onClick={() => send('sleep', { value: null })}>Off</button>}
+        </div>
+      </div>
       {t && s?.steps?.length > 0 && (
         <div className="rm-sp">
           <div className="rm-sec-head"><b>Signal path</b></div>

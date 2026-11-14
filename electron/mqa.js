@@ -61,7 +61,7 @@ function candidate(row) {
 // ---------- the decoder: one mpv kept open while tracks are checked
 // Starting a program for every track makes Windows show its busy cursor the whole time a library is
 // checked, so one mpv decodes them all in turn (each into its own file), and closes after a quiet while.
-const DECODE_OPTS = ['--no-config', '--idle=yes', '--no-video', '--msg-level=all=no', '--ao=pcm', '--ao-pcm-waveheader=no',
+const DECODE_OPTS = ['--no-config', '--idle=yes', '--no-video', '--media-controls=no', '--msg-level=all=no', '--ao=pcm', '--ao-pcm-waveheader=no',
   '--audio-format=s32', '--audio-channels=stereo', '--audio-samplerate=0', '--replaygain=no', '--af=', '--volume=100', '--gapless-audio=no'];
 const IDLE_CLOSE = 20000;
 let dec = null;      // { proc, sock, ready, replies, onEvent }

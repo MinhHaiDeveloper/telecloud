@@ -19,7 +19,7 @@ const { execFile } = require('child_process');
 const MAX_DEVICES = 10;
 const COOKIE = 'tc_remote';
 const DIST = path.join(__dirname, '..', 'dist');
-const COMMANDS = new Set(['toggle', 'next', 'prev', 'seek', 'volume', 'mute', 'shuffle', 'repeat', 'jump', 'remove', 'move', 'eq', 'output', 'play', 'queue', 'fav']);
+const COMMANDS = new Set(['toggle', 'next', 'prev', 'seek', 'volume', 'mute', 'shuffle', 'repeat', 'jump', 'remove', 'move', 'eq', 'output', 'play', 'queue', 'fav', 'sleep']);
 const SOURCES = new Set(['album', 'artist', 'playlist', 'favorites', 'recent', 'search']);
 const BROWSE = new Set(['home', 'search', 'albums', 'album', 'artists', 'artist', 'playlists', 'playlist', 'favorites', 'recent', 'lyrics']);
 
@@ -160,7 +160,8 @@ function setState(s) {
     art: Math.max(0, Number(s.art) || 0), // covers or artist pictures changed: their addresses change with it
     lib: Math.max(0, Number(s.lib) || 0), // the library, favourites or playlists changed: lists are asked for again
     notice: s.notice && typeof s.notice.text === 'string' ? { text: clip(s.notice.text, 300), at: Number(s.notice.at) || 0 } : null,
-    steps: (Array.isArray(s.steps) ? s.steps.slice(0, 14) : []).map(x => ({ label: clip(String(x?.label ?? ''), 80), value: clip(String(x?.value ?? ''), 60), state: ['ok', 'warn', 'off'].includes(x?.state) ? x.state : 'off' })),
+    steps: (Array.isArray(s.steps) ? s.steps.slice(0, 14) : []).map(x => ({ label: clip(String(x?.label ?? ''), 80), value: clip(String(x?.value ?? ''), 60), state: ['ok', 'warn', 'off'].includes(x?.state) ? x.state : 'off', clip: !!x?.clip })),
+    sleep: s.sleep ? clip(String(s.sleep), 40) : null, // the sleep timer, as the host shows it
   };
   stateAt = Date.now();
   broadcast('state', { ...state, host: hostInfo() });
@@ -307,6 +308,14 @@ function validArgs(cmd, a = {}) {
       return { source, path: p, shuffle: cmd === 'play' && !!a.shuffle, next: cmd === 'queue' && !!a.next };
     }
     case 'fav': { const p = ids.get(String(a.id || '')); return p ? { path: p, on: !!a.on } : null; }
+    case 'sleep': {
+      const v = a.value;
+      if (v == null) return { value: null };
+      const m = num(v.minutes, 1, 720);
+      if (m != null) return { value: { minutes: Math.round(m) } };
+      if (v.kind === 'track' || v.kind === 'album') return { value: { kind: v.kind } };
+      return null;
+    }
     case 'output': {
       const id = String(a.id || '');
       return id === '-1' || (state?.outputs || []).some(o => o.id === id) ? { id } : null;

@@ -142,7 +142,7 @@ export const mqaOf = (file) => {
   return { studio, rate, cls: studio ? 'b-mqa-studio' : 'b-mqa', label: studio ? 'MQA Studio' : 'MQA', short: `${studio ? 'MQA Studio' : 'MQA'}${rate ? ` ${khz(rate)}` : ''}` };
 };
 
-export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnabled, volume, audioSettings = {}, audioOut = null, stream = null, dsd = null, output = null, sound = null, clipping = false }) => {
+export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnabled, volume, audioSettings = {}, audioOut = null, stream = null, dsd = null, output = null, sound = null, clipping = false, released = false }) => {
   const q = qualityOf(file);
   const exclusive = selectedDevice && selectedDevice !== '-1';
   const chosen = exclusive ? devices.find(d => d.id === selectedDevice) : null;
@@ -213,8 +213,8 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
     { label: 'Software volume', value: exclusive || nativeDsd ? 'Bypassed' : `${volume}%`, state: volFull || nativeDsd ? 'ok' : 'warn' },
     // Bluetooth sends no PCM: the headphones' codec (SBC, AAC, aptX, LDAC) compresses it again
     ...(bluetooth && !nativeDsd ? [{ label: 'Bluetooth', detail: 'Compressed again by the headphones\' codec', value: 'Lossy', state: 'warn' }] : []),
-    nativeDsd ? { label: dsd.driver, detail: 'ASIO', value: q.label, state: 'ok' }
-      : exclusive ? { label: deviceName.replace(/ \(WASAPI\)$/, ''), detail: 'WASAPI Exclusive', value: outSpec, state: 'ok' }
+    nativeDsd ? { label: dsd.driver, detail: released ? 'ASIO · free for other apps while paused' : 'ASIO', value: q.label, state: 'ok' }
+      : exclusive ? { label: deviceName.replace(/ \(WASAPI\)$/, ''), detail: released ? 'WASAPI Exclusive · free for other apps while paused' : 'WASAPI Exclusive', value: outSpec, state: 'ok' }
         : { label: 'System default', detail: `${output?.name ? `${output.name} · ` : ''}Shared mode, mixed by Windows`, value: outSpec, state: 'warn' },
   ];
 

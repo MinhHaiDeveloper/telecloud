@@ -166,6 +166,7 @@ function createWindow() {
   });
 
   require('./tray').attach(win);
+  require('./media').attach(win); // Windows media controls, media keys, taskbar buttons
   const sendState = () => { if (!win.isDestroyed()) win.webContents.send('window:state', { maximized: win.isMaximized(), fullscreen: win.isFullScreen(), focused: win.isFocused() }); };
   ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'focus', 'blur', 'restore'].forEach(ev => win.on(ev, sendState));
 
@@ -205,6 +206,8 @@ app.whenReady().then(async () => {
       balance: s.channelBalance,
       crossfeed: s.crossfeed,
       mqaMode: s.mqaMode,
+      releaseOnPause: s.releaseOnPause,
+      pauseFade: s.pauseFade,
     });
   } catch (err) {
     console.error('Could not apply saved audio settings:', err.message);

@@ -422,3 +422,14 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* the sleep timer, under the EQ switch */
+.rm-sleep { margin-top: 12px; padding: 12px 2px 4px; border-top: 1px solid var(--border); }
+.rm-sleep-head { display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+.rm-sleep-head span { display: inline-flex; align-items: center; gap: 10px; }
+.rm-sleep-head .ico { width: 18px; height: 18px; color: var(--text-2); }
+.rm-sleep-head b { color: var(--accent); font-size: 13px; }
+.rm-sleep-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.rm-sleep-chips button { padding: 8px 13px; border-radius: 999px; background: var(--surface-2); font-size: 13px; font-weight: 600; color: var(--text); }
+.rm-sleep-chips button:disabled { opacity: .45; }
+.rm-sleep-chips button.off { color: var(--danger, #e5484d); }

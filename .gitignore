@@ -41,4 +41,6 @@ release/
 electron/lastfm-key.json
 electron/youtube-key.json
 native/asio/bin/
+native/media/bin/
+native/media/obj/
 native/asio/obj/

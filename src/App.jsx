@@ -210,6 +210,13 @@ function App() {
     window.ipcRenderer.on('player:clip', on);
     return () => window.ipcRenderer.removeListener?.('player:clip', on);
   }, []);
+  // while paused, the DAC can be free for other apps; taking it back means sending the next track again
+  const [dacReleased, setDacReleased] = useState(false);
+  useEffect(() => {
+    const on = (e, v) => { setDacReleased(!!v); if (!v) setAdvanceTick(t => t + 1); };
+    window.ipcRenderer.on('player:released', on);
+    return () => window.ipcRenderer.removeListener?.('player:released', on);
+  }, []);
   const eqEnabled = eq.enabled;
   const setEqEnabled = eq.setEnabled;
 
@@ -764,7 +771,7 @@ function App() {
     window.ipcRenderer.on('telecloud-sync:stream', onStream);
     return () => window.ipcRenderer.removeListener('telecloud-sync:stream', onStream);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const playMusic = async (file, index, contextList = null, { keepQueue = false } = {}) => {
+  const playMusic = async (file, index, contextList = null, { keepQueue = false, startPaused = false } = {}) => {
     const token = ++playTokenRef.current;
     try {
       let listToPlay = contextList || musicFiles;
@@ -814,7 +821,7 @@ function App() {
       if (token !== playTokenRef.current) return;
       setStream(streaming ? { path: file.path, ranges: [], speed: 0 } : fromCloudCache ? { path: file.path, ranges: [], complete: true } : null);
       // --- Play with MPV (works for local files and URLs) ---
-      await ipcRenderer.invoke('play-audio', { filePath, deviceId: selectedDevice });
+      await ipcRenderer.invoke('play-audio', { filePath, deviceId: selectedDevice, startPaused });
       if (token !== playTokenRef.current) return;
 
       // Volume for exclusive vs software
@@ -827,7 +834,7 @@ function App() {
       setCurrentFile(file);
       setPlayQueue(listToPlay);
       setCurrentIndex(indexToPlay);
-      setIsPlaying(true);
+      setIsPlaying(!startPaused);
       setCurrentTime(0);
       addToRecent(file);
     } catch (err) {
@@ -853,8 +860,105 @@ function App() {
     if (!currentFile) return;
     const pause = isPlaying;
     setIsPlaying(!pause);
-    window.ipcRenderer.invoke('pause-audio', pause);
+    window.ipcRenderer.invoke('pause-audio', pause, { fade: !signalRef.current?.bitPerfect });
+    if (pause && sleepRef.current) cancelSleep('paused');
   };
+
+  // ---- Sleep timer: in N minutes, at the end of this track, after N tracks, at the end of the album.
+  // The last ~10 seconds fade out; a track-based stop leaves the next track ready, paused.
+  const [sleep, setSleepState] = useState(null);
+  const sleepRef = useRef(null);
+  sleepRef.current = sleep;
+  const signalRef = useRef(null);
+  const SLEEP_FADE = 10;
+  const albumKeyOf = (f) => (f ? albumIndex(musicFiles).byPath.get(f.path)?.key || null : null);
+  const setSleep = (opt) => {
+    if (!opt) { cancelSleep(); return; }
+    let next = null;
+    if (opt.minutes) next = { kind: 'time', endsAt: Date.now() + opt.minutes * 60000, minutes: opt.minutes };
+    else if (opt.kind === 'track' && currentFile) next = { kind: 'track', path: currentFile.path };
+    else if (opt.kind === 'album' && currentFile) next = { kind: 'album', key: albumKeyOf(currentFile) };
+    else if (opt.kind === 'tracks' && currentFile) next = { kind: 'tracks', left: Math.max(1, Math.min(50, opt.count || 1)), path: currentFile.path };
+    if (!next) return;
+    window.ipcRenderer.invoke('player:fade-cancel').catch(() => {});
+    sleepFading.current = false;
+    setSleepState(next);
+  };
+  const sleepFading = useRef(false);
+  const cancelSleep = (why) => {
+    if (!sleepRef.current) return;
+    sleepFading.current = false;
+    window.ipcRenderer.invoke('player:fade-cancel').catch(() => {});
+    setSleepState(null);
+    if (why === 'paused') showToast('Sleep timer cancelled', 'info');
+  };
+  // after N tracks: count each new track
+  useEffect(() => {
+    if (sleep?.kind !== 'tracks' || !currentFile || currentFile.path === sleep.path) return;
+    setSleepState(x => (x?.kind === 'tracks' ? { ...x, left: Math.max(1, x.left - 1), path: currentFile.path } : x));
+  }, [currentFile?.path]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Does the music stop when this track ends? */
+  const sleepStopsAfterThis = (() => {
+    if (!sleep || !currentFile) return false;
+    if (sleep.kind === 'track') return sleep.path === currentFile.path;
+    if (sleep.kind === 'tracks') return sleep.left <= 1;
+    if (sleep.kind === 'album') {
+      const nextIdx = currentIndex + 1 < playQueue.length ? currentIndex + 1 : -1;
+      return albumKeyOf(currentFile) !== sleep.key || nextIdx < 0 || albumKeyOf(playQueue[nextIdx]) !== sleep.key;
+    }
+    return false;
+  })();
+  /** The timer is done: paused, with the next track ready when the stop was at the end of one */
+  const finishSleep = (atTrackEnd) => {
+    sleepFading.current = false;
+    setSleepState(null);
+    setIsPlaying(false);
+    if (atTrackEnd) {
+      const idx = currentIndex + 1 < playQueue.length ? currentIndex + 1 : (loopMode === 'all' && playQueue.length ? 0 : -1);
+      if (idx >= 0) playMusic(playQueue[idx], idx, playQueue, { keepQueue: true, startPaused: true });
+      else { window.ipcRenderer.invoke('stop-audio'); setCurrentTime(0); }
+    }
+    console.log('[Sleep] Timer done: music paused');
+  };
+  const startSleepFade = (seconds, atTrackEnd) => {
+    if (sleepFading.current) return;
+    sleepFading.current = true;
+    window.ipcRenderer.invoke('player:fade-out', seconds).then((r) => {
+      if (!sleepFading.current) return;
+      if (r?.done) finishSleep(atTrackEnd);
+      else { sleepFading.current = false; setSleepState(null); showToast('Sleep timer cancelled', 'info'); }
+    }).catch(() => { sleepFading.current = false; });
+  };
+  // in N minutes: fade over the last 10 seconds
+  const [sleepNow, setSleepNow] = useState(Date.now());
+  useEffect(() => {
+    if (sleep?.kind !== 'time') return undefined;
+    const id = setInterval(() => {
+      const left = sleepRef.current?.endsAt - Date.now();
+      setSleepNow(Date.now());
+      if (!(left > 0) || !isPlayingRef.current) {
+        if (!(left > 0)) { if (!sleepFading.current) finishSleep(false); }
+        return;
+      }
+      if (left <= SLEEP_FADE * 1000) startSleepFade(left / 1000, false);
+    }, 500);
+    return () => clearInterval(id);
+  }, [sleep?.kind, sleep?.endsAt]); // eslint-disable-line react-hooks/exhaustive-deps
+  // at the end of a track: fade over its last 10 seconds
+  useEffect(() => {
+    if (!sleepStopsAfterThis || !isPlaying) return;
+    const dur = currentFile?.metadata?.duration || 0;
+    if (dur > 0 && dur - currentTime <= SLEEP_FADE && dur - currentTime > 0.2) startSleepFade(dur - currentTime, true);
+  }, [sleepStopsAfterThis, currentTime, isPlaying]); // eslint-disable-line react-hooks/exhaustive-deps
+  const isPlayingRef = useRef(false);
+  isPlayingRef.current = isPlaying;
+  const sleepLabel = !sleep ? null
+    : sleep.kind === 'time' ? (() => { const sec = Math.max(0, Math.round((sleep.endsAt - sleepNow) / 1000)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; })()
+      : sleep.kind === 'track' ? 'End of track'
+        : sleep.kind === 'album' ? 'End of album'
+          : `${sleep.left} ${sleep.left === 1 ? 'track' : 'tracks'}`;
+  // the tray and the remotes show it too
+  useEffect(() => { window.ipcRenderer.invoke('sleep:set', sleep ? { label: sleepLabel, kind: sleep.kind } : null).catch(() => {}); }, [sleep, sleep && sleepLabel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Index that follows `idx` in the queue, or -1 at the end (loop "all" wraps around)
   const followingIndex = (idx) => {
@@ -885,6 +989,7 @@ function App() {
 
   // Only reached when mpv had nothing queued (e.g. the next track is cloud-only)
   const handleTrackEnded = () => {
+    if (sleepStopsAfterThis) { finishSleep(true); return; }
     if (loopMode === 'one' && currentFile) playMusic(currentFile, currentIndex, playQueue, { keepQueue: true });
     else handleNext();
   };
@@ -929,7 +1034,7 @@ function App() {
 
   // Tell mpv which file comes next so the switch is gapless. A cloud-only track is opened as a
   // stream now, which also starts downloading it ahead of time.
-  const upcomingFile = !currentFile ? null
+  const upcomingFile = !currentFile || sleepStopsAfterThis ? null
     : loopMode === 'one' ? currentFile
     : (followingIndex(currentIndex) >= 0 ? playQueue[followingIndex(currentIndex)] : null);
   const upcomingIsCloud = !!upcomingFile && ((upcomingFile.storage_type || 'local') === 'cloud' || upcomingFile.path.startsWith('tc://'));
@@ -1316,6 +1421,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     return () => { ipc.removeListener?.('remote:status', onStatus); ipc.removeListener?.('remote:command', onCommand); ipc.removeListener?.('remote:query', onQuery); };
   }, []);
   const remoteOnRef = useRef(false);
+
   // Settings > Remote can keep the computer awake while music plays
   useEffect(() => { window.ipcRenderer.invoke('power:playing', !!isPlaying).catch(() => {}); }, [isPlaying]);
   remoteOnRef.current = remoteOn;
@@ -1332,6 +1438,22 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     window.ipcRenderer.invoke('remote:state', { ...s, position: currentTime }).catch(() => {});
   });
 
+  // Windows media controls (flyout, lock screen), media keys and the taskbar buttons
+  useEffect(() => {
+    const f = currentLive;
+    window.ipcRenderer.invoke('media:state', f ? {
+      path: f.path, title: f.metadata?.title || f.name, artist: f.metadata?.artist || '', album: f.metadata?.album || '',
+      playing: isPlaying, duration: f.metadata?.duration || 0, position: currentTime,
+      hasNext: followingIndex(currentIndex) >= 0, hasPrev: true, art: remoteArt,
+    } : null).catch(() => {});
+  }, [currentLive?.path, currentLive?.metadata?.title, currentLive?.metadata?.artist, isPlaying, Math.floor(currentTime / 5), playQueue.length, currentIndex, loopMode, remoteArt]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const on = (e, c) => mediaCmdRef.current?.(c);
+    window.ipcRenderer.on('media:command', on);
+    return () => window.ipcRenderer.removeListener?.('media:command', on);
+  }, []);
+  const mediaCmdRef = useRef(null);
+
   if (isCheckingAuth) {
     return <div className="app" />;
   }
@@ -1346,7 +1468,8 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
   const queueFiles = live(playQueue.slice(currentIndex + 1));
   const visibleDevices = devices.filter(d => !disabledDevices.includes(d.deviceId || d.id));
   const signal = computeSignalPath({ stream: stream && currentLive && stream.path === currentLive.path ? stream : null, file: currentLive, selectedDevice, devices: visibleDevices, eqEnabled, volume, audioSettings: { ...audioSettings, autoGain }, audioOut: isPlaying ? audioOut : null, dsd: dsdInfo && currentLive && dsdInfo.path === currentLive.path ? dsdInfo : null, output: outputInfo,
-    sound: (snd.active || snd.ab) ? { ab: snd.ab, summary: soundSummary(snd.sound, { guard: snd.curve.guard, ab: snd.ab, exclusive: selectedDevice !== '-1' }) } : null, clipping: clipping && isPlaying });
+    sound: (snd.active || snd.ab) ? { ab: snd.ab, summary: soundSummary(snd.sound, { guard: snd.curve.guard, ab: snd.ab, exclusive: selectedDevice !== '-1' }) } : null, clipping: clipping && isPlaying, released: dacReleased && !isPlaying });
+  signalRef.current = signal;
   const remoteTrack = (f) => remoteTrackOut(f);
   // the lyrics shown here: from the tags, or just found online for this track
   const remoteLyrics = currentLive ? (currentLive.metadata?.lyrics || (lyricsFound?.path === currentLive.path ? lyricsFound.lyrics : '') || '') : '';
@@ -1359,7 +1482,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     track: currentLive ? { ...remoteTrackOut(currentLive), fav: favorites.some(f => f.path === currentLive.path) } : null, playing: isPlaying, volume, muted: isMuted, shuffle: isShuffle, repeat: loopMode,
     queue: queueFiles.slice(0, 200).map(remoteTrack), exclusive: selectedDevice !== '-1',
     outputs: [{ id: '-1', name: 'System default' }, ...visibleDevices.map(d => ({ id: d.deviceId || d.id, name: (d.name || '').replace(/ \(WASAPI\)$/, '') }))],
-    output: selectedDevice, eq: !!eqEnabled, verdict: signal?.verdict, bitPerfect: !!signal?.bitPerfect, theme,
+    output: selectedDevice, eq: !!eqEnabled, verdict: signal?.verdict, bitPerfect: !!signal?.bitPerfect, theme, sleep: sleepLabel,
   } : null;
   const isScanning = scanProgress?.status === 'inProgress';
   const wideView = currentView === 'settings' || currentView === 'eq-settings';
@@ -1408,6 +1531,20 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
 
   // a command from a remote: the same handlers as the buttons here. Queue commands name the track too,
   // so one sent just as the queue changed can't hit the wrong track.
+  // the Windows media controls, media keys, taskbar and tray: the same handlers as the buttons here
+  mediaCmdRef.current = (c) => {
+    switch (c?.cmd) {
+      case 'toggle': handleTogglePlay(); break;
+      case 'play': if (!isPlaying) handleTogglePlay(); break;
+      case 'pause': if (isPlaying) handleTogglePlay(); break;
+      case 'stop': if (isPlaying) handleTogglePlay(); break;
+      case 'next': handleNext(); break;
+      case 'prev': keyActionsRef.current.previous?.(); break;
+      case 'seek': if (currentFile && Number.isFinite(c.time)) handleSeek(c.time); break;
+      case 'sleep': setSleep(c.value || null); break;
+      default: break;
+    }
+  };
   remoteCmdRef.current = (cmd, a) => {
     const upcoming = playQueue.slice(currentIndex + 1);
     const at = (i, p) => (upcoming[i]?.path === p ? i : upcoming.findIndex(f => f.path === p));
@@ -1416,6 +1553,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
       case 'next': handleNext(); break;
       case 'prev': keyActionsRef.current.previous?.(); break;
       case 'seek': if (currentFile) handleSeek(a.time); break;
+      case 'sleep': setSleep(a.value || null); break;
       case 'volume': handleVolumeChange(a.volume); break;
       case 'mute': setMuted(!!a.on); break;
       case 'shuffle': handleToggleShuffle(); break;
@@ -1748,6 +1886,8 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
       )}
 
       <PlayerBar
+        sleepLabel={sleepLabel}
+        onSetSleep={setSleep}
         currentFile={currentLive}
         isPlaying={isPlaying}
         currentTime={currentTime}

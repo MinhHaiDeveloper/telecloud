@@ -1,15 +1,16 @@
 {
   "name": "telecloud",
-  "version": "1.1.0-beta.4",
+  "version": "1.1.0-beta.5",
   "description": "Hi-res music player with encrypted, unlimited backup to your own Telegram",
   "main": "electron/main.js",
   "scripts": {
     "dev": "cross-env NODE_ENV=development concurrently \"vite\" \"wait-on http://localhost:3000 && electron .\"",
-    "build": "npm run build:asio && vite build && electron-builder",
+    "build": "npm run build:asio && npm run build:media && vite build && electron-builder",
     "build:beta": "node scripts/release.js beta",
     "build:release": "node scripts/release.js release",
     "clean": "if exist dist rmdir /s /q dist && if exist dist-electron rmdir /s /q dist-electron",
-    "build:asio": "native\\asio\\build.cmd"
+    "build:asio": "native\\asio\\build.cmd",
+    "build:media": "native\\media\\build.cmd"
   },
   "build": {
     "appId": "com.telecloud.app",
@@ -35,6 +36,10 @@
       {
         "from": "native/asio/bin/tc-asio.exe",
         "to": "tc-asio.exe"
+      },
+      {
+        "from": "native/media/bin/tc-media.exe",
+        "to": "tc-media.exe"
       },
       {
         "from": "native/asio/sdk/LICENSE-ASIO-SDK.txt",

@@ -41,6 +41,17 @@ try {
   }
   console.warn('tc-asio.exe could not be rebuilt; packing the one already built.');
 }
+// Windows media controls: tc-media.exe, built the same way
+const mediaExe = path.join(ROOT, 'native', 'media', 'bin', 'tc-media.exe');
+try {
+  execSync(`cmd /c native\\media\\build.cmd ${channel}`, { cwd: ROOT, stdio: 'inherit' }); // the name and icon the media flyout shows
+} catch {
+  if (!fs.existsSync(mediaExe)) {
+    console.error('tc-media.exe could not be built: install the Visual Studio C++ build tools (x64) with the Windows SDK.');
+    process.exit(1);
+  }
+  console.warn('tc-media.exe could not be rebuilt; packing the one already built.');
+}
 execSync('npx vite build', { cwd: ROOT, stdio: 'inherit' });
 // a beta installs as TeleCloud Beta, with its own icon and installer name, so the two are never mixed up
 // (the same app id: installing one replaces the other, and both keep the one library)
