@@ -5,6 +5,7 @@ import MetaLinks from './MetaLinks';
 import LyricsNote from './LyricsNote';
 import CoverNote from './CoverNote';
 import Cover from './Cover';
+import LiquidCover from './LiquidCover';
 import LyricsView, { parseLyrics } from './LyricsView';
 import QueueList from './QueueList';
 import { formatTime, qualityOf, formatBytes, mqaOf } from '../utils/audio';
@@ -161,7 +162,7 @@ function useCoverTilt(rootRef, active, strength) {
  * Full-window "now playing". Big artwork in the middle; the Lyrics / Queue buttons open a
  * side panel (50/50). With no panel open, the art is centred with details about the track.
  */
-const NowPlayingFullscreen = ({ currentFile, currentTime, onSeek, signal, queueFiles = [], onPlayQueued, onMoveQueued, onRemoveQueued, initialPanel, origin = 'player', closeRequested, onClosingStart, onClose }) => {
+const NowPlayingFullscreen = ({ currentFile, currentTime, playing = true, onSeek, signal, queueFiles = [], onPlayQueued, onMoveQueued, onRemoveQueued, initialPanel, origin = 'player', closeRequested, onClosingStart, onClose }) => {
   const hasLyrics = !!parseLyrics(currentFile?.metadata?.lyrics).lines.length;
   const [panel, setPanel] = useState(initialPanel !== undefined ? initialPanel : (hasLyrics ? 'lyrics' : null));
   const [phase, setPhase] = useState('entering'); // entering → open → leaving
@@ -269,7 +270,7 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, onSeek, signal, queueF
 
       <div className="np-body">
         <div className="np-hero">
-          <Cover file={currentFile} className="np-cover" key={`c-${currentFile?.path}`} />
+          <LiquidCover file={currentFile} className="np-cover" coverKey={`c-${currentFile?.path}`} />
           <div className="np-info np-fade">
             <h1 title={m.title || currentFile?.name}>{m.title || currentFile?.name || 'Nothing playing'}</h1>
             <div className="np-sub"><MetaLinks file={currentFile} /></div>
@@ -293,7 +294,7 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, onSeek, signal, queueF
         <div className="np-panel np-fade">
           <div className="np-panel-inner">
             {panel === 'lyrics' && (hasLyrics
-              ? <><LyricsView lyrics={m.lyrics} currentTime={currentTime} onSeek={onSeek} className="np-lyrics" scrollMs={look.lyricSpeed} /><LyricsNote file={currentFile} /></>
+              ? <><LyricsView lyrics={m.lyrics} currentTime={currentTime} playing={playing} onSeek={onSeek} className="np-lyrics" scrollMs={look.lyricSpeed} /><LyricsNote file={currentFile} /></>
               : (
                 <div className="np-empty">
                   <Icon name="lyrics" />

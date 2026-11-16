@@ -3,7 +3,7 @@ import Icon from './Icon';
 import { coverUrl } from '../utils/audio';
 
 // Album art from the media:// protocol, falling back to a placeholder when the file has none
-const Cover = ({ file, src, className = '', style, alt = '' }) => {
+const Cover = ({ file, src, className = '', style, alt = '', children }) => {
   // re-render when a cover was saved or found, wherever this one is on screen
   const [, refresh] = useState(0);
   useEffect(() => {
@@ -23,6 +23,7 @@ const Cover = ({ file, src, className = '', style, alt = '' }) => {
       ) : (
         <div className="cover-fallback"><Icon name="music" /></div>
       )}
+      {children}
     </div>
   );
 };

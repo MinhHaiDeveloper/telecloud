@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Icon from './Icon';
 import SleepTimer from './SleepTimer';
+import WaveSeek, { useWaveform } from './WaveSeek';
 import MetaLinks from './MetaLinks';
 import Cover from './Cover';
+import LiquidCover from './LiquidCover';
 import SignalPathSteps from './SignalPathSteps';
 import QueueList from './QueueList';
 import { formatTime, mqaOf } from '../utils/audio';
@@ -18,7 +20,7 @@ const useOutside = (open, ref, onClose) => {
 };
 
 const PlayerBar = ({
-  currentFile, isPlaying, currentTime, onSeek, onTogglePlay, onNext, onPrev, sleepLabel, onSetSleep,
+  currentFile, isPlaying, currentTime, onSeek, onTogglePlay, onNext, onPrev, sleepLabel, onSetSleep, waveFile, waveOn,
   volume, onVolumeChange, muted, onToggleMute, selectedDevice,
   loopMode, onToggleLoop, isShuffle, onToggleShuffle,
   isQueueOpen, onToggleQueue, queueFiles = [], onClearQueue, onRemoveFromQueue, onSaveQueueAsPlaylist, onPlayQueued, onMoveQueued,
@@ -34,6 +36,7 @@ const PlayerBar = ({
 
   const duration = currentFile?.metadata?.duration || 0;
   const pct = duration ? Math.min(100, (currentTime / duration) * 100) : 0;
+  const peaks = useWaveform(waveFile, !!waveOn);
 
   // The player reports the position ~4 times a second; between reports the seek bar keeps moving
   // on its own every frame (no React render), so it glides at any refresh rate (60, 144, 180 Hz…)
@@ -52,6 +55,7 @@ const PlayerBar = ({
         const t = Math.min(duration, c.t + Math.min(0.5, (performance.now() - c.at) / 1000));
         el.value = String(t);
         el.style.setProperty('--pct', `${(t / duration) * 100}%`);
+        el.parentElement?.style.setProperty('--pct', `${(t / duration) * 100}%`); // the waveform's played part
       }
       // nothing shows until the bar reaches its next pixel
       timer = setTimeout(tick, Math.min(1000, Math.max(33, (duration * 1000) / Math.max(1, el?.clientWidth || 1))));
@@ -68,7 +72,7 @@ const PlayerBar = ({
     <footer className="player">
       <div className="p-track">
         <button className="cover-btn" onClick={onOpenNowPlaying} disabled={!currentFile} title="Open now playing" style={{ borderRadius: 8 }}>
-          <Cover file={currentFile} className={currentFile ? 'clickable' : ''} key={currentFile?.path + (currentFile?.cache_path || '')} />
+          <LiquidCover file={currentFile} className={currentFile ? 'clickable' : ''} coverKey={currentFile?.path + (currentFile?.cache_path || '')} />
         </button>
         <div className="meta">
           <b>{currentFile?.metadata?.title || currentFile?.name || 'Nothing playing'}</b>
@@ -100,18 +104,21 @@ const PlayerBar = ({
         </div>
         <div className="p-seek">
           <span className="mono">{formatTime(currentTime)}</span>
-          <input
-            ref={seekRef}
-            type="range" className={`range ${buffer ? 'buffered' : ''}`} min="0" max={duration || 100} step="any"
-            value={Math.min(currentTime || 0, duration || 100)}
-            style={{ '--pct': `${pct}%`, ...(buffer ? { '--buffer': buffer } : {}) }}
-            onPointerDown={() => { seeking.current = true; }}
-            onPointerUp={() => { seeking.current = false; }}
-            onPointerCancel={() => { seeking.current = false; }}
-            onChange={(e) => onSeek && onSeek(Math.floor(parseFloat(e.target.value) * 10) / 10)}
-            disabled={!currentFile}
-            aria-label="Seek"
-          />
+          <div className={`seek-wrap ${peaks ? 'has-wave' : ''}`} style={{ '--pct': `${pct}%` }}>
+            {waveOn && <WaveSeek peaks={peaks} />}
+            <input
+              ref={seekRef}
+              type="range" className={`range ${buffer ? 'buffered' : ''}`} min="0" max={duration || 100} step="any"
+              value={Math.min(currentTime || 0, duration || 100)}
+              style={{ '--pct': `${pct}%`, ...(buffer ? { '--buffer': buffer } : {}) }}
+              onPointerDown={() => { seeking.current = true; }}
+              onPointerUp={() => { seeking.current = false; }}
+              onPointerCancel={() => { seeking.current = false; }}
+              onChange={(e) => { e.target.parentElement?.style.setProperty('--pct', `${(parseFloat(e.target.value) / (duration || 1)) * 100}%`); if (onSeek) onSeek(Math.floor(parseFloat(e.target.value) * 10) / 10); }}
+              disabled={!currentFile}
+              aria-label="Seek"
+            />
+          </div>
           <span className="mono">{formatTime(duration)}</span>
         </div>
       </div>

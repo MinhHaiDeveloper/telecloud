@@ -1,34 +1,45 @@
 import React, { useMemo, useEffect, useRef } from 'react';
 
-const TIME_TAG = /\[(\d{1,2}):(\d{2}(?:\.\d{1,3})?)\]/g;
+import { parseLyrics, wordEnd } from '../utils/lyrics';
 
-// Parse LRC-style synced lyrics, falling back to plain lines
-export const parseLyrics = (lyrics) => {
-  if (!lyrics) return { isSynced: false, lines: [] };
-  const result = [];
-  let hasTime = false;
-  lyrics.split(/\r?\n/).forEach((line, index) => {
-    const times = [];
-    let match;
-    TIME_TAG.lastIndex = 0;
-    while ((match = TIME_TAG.exec(line)) !== null) {
-      hasTime = true;
-      times.push(parseInt(match[1], 10) * 60 + parseFloat(match[2]));
-    }
-    const text = line.replace(TIME_TAG, '').trim();
-    if (times.length) times.forEach(t => result.push({ time: t, text: text || '♪' }));
-    else if (!hasTime && text) result.push({ time: index, text });
-  });
-  return hasTime
-    ? { isSynced: true, lines: result.sort((a, b) => a.time - b.time) }
-    : { isSynced: false, lines: result };
+// LRC, Enhanced LRC (a time per word) and TTML are read in utils/lyrics.js
+export { parseLyrics };
+
+/**
+ * The line being sung, word by word: each word fills from left to right over its own time. The player
+ * reports the position a few times a second; in between it is carried on every frame here (at most
+ * 0.6 s ahead), straight on the DOM, so nothing re-renders while it moves.
+ */
+export const WordLine = ({ line, nextTime, currentTime, playing = true, className = 'words' }) => {
+  const box = useRef(null);
+  const clock = useRef({ t: currentTime, at: performance.now() });
+  const paint = () => {
+    const el = box.current;
+    if (!el) return;
+    const c = clock.current;
+    const now = playing ? c.t + Math.min(0.6, (performance.now() - c.at) / 1000) : c.t;
+    el.querySelectorAll(':scope > .w').forEach((span, i) => {
+      const a = line.words[i].time, b = wordEnd(line, i, nextTime);
+      const p = now <= a ? 0 : now >= b ? 1 : (now - a) / (b - a);
+      span.style.setProperty('--p', p.toFixed(3));
+    });
+  };
+  useEffect(() => { clock.current = { t: currentTime, at: performance.now() }; paint(); }, [currentTime]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!playing) { paint(); return undefined; }
+    let id = 0;
+    const loop = () => { paint(); id = requestAnimationFrame(loop); };
+    id = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(id);
+  }, [playing, line]); // eslint-disable-line react-hooks/exhaustive-deps
+  return <span ref={box} className={className}>{line.words.map((w, i) => <span key={i} className="w">{w.text}</span>)}</span>;
 };
 
 /**
  * Lyrics list that keeps the active line centred inside its own scroll container
  * (never scrolls the page around it). Clicking a synced line seeks to it.
  */
-const LyricsView = ({ lyrics, currentTime, onSeek, className = 'lyrics-scroll', scrollMs }) => {
+const LyricsView = ({ lyrics, currentTime, onSeek, className = 'lyrics-scroll', scrollMs, playing = true }) => {
   const scrollRef = useRef(null);
   const moving = useRef(0); // the running glide (see below)
   const userScrollUntil = useRef(0);
@@ -86,11 +97,13 @@ const LyricsView = ({ lyrics, currentTime, onSeek, className = 'lyrics-scroll', 
           <div
             key={idx}
             data-index={idx}
-            className={`lyric ${idx === activeIndex ? 'active' : ''} ${parsed.isSynced && idx < activeIndex ? 'past' : ''}`}
+            className={`lyric ${line.words ? 'has-words' : ''} ${idx === activeIndex ? 'active' : ''} ${parsed.isSynced && idx < activeIndex ? 'past' : ''}`}
             style={parsed.isSynced && onSeek ? { cursor: 'pointer' } : undefined}
             onClick={parsed.isSynced && onSeek ? () => { userScrollUntil.current = 0; onSeek(Math.floor(line.time)); } : undefined}
           >
-            {line.text}
+            {idx === activeIndex && line.words
+              ? <WordLine line={line} nextTime={parsed.lines[idx + 1]?.time} currentTime={currentTime} playing={playing} />
+              : line.text}
           </div>
         ))}
       </div>

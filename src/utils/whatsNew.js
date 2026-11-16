@@ -2,6 +2,19 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.1.0-beta.6',
+    items: [
+      "A waveform seek bar: the track's loudness over time behind the seek bar, worked out once per file. Settings > Appearance can turn it off.",
+      'Lyrics word by word: Enhanced LRC (a time for each word) and TTML light up word by word as they are sung, in the side panel, full screen, the floating lyrics and the remote. Word timings saved as JSON can be pasted or opened (Open file… in the lyrics editor) and become Enhanced LRC.',
+      "A new album's cover pours in like liquid over the last one, with waves rolling in behind the edge and a swell ahead of it, in the side panel, full screen and the player bar. Within one album, or with Reduce motion, it simply changes.",
+      'The saved log now says which Appearance and Playback switches are on (Reduce motion, waveform, side panel, releasing the DAC, fades), the media controls, and the floating lyrics, so problems are easier to follow.',
+      'Floating lyrics: a small window over every other one with the line being sung and the next. Drag it anywhere; lock it and clicks go through. From the lyrics card, the tray or Settings > Appearance.',
+      'TeleCloud can be your default music player: choose it in "Open with" for FLAC, MP3, WAV, DSF and other music files. A file opened from Explorer plays at once in Now Playing, also from outside your music folders, without being added to the library.',
+      'On a Galaxy Z Fold, a long title no longer pushes the open book past its page: the cover makes room.',
+      "Explorer's thumbnail of a FLAC keeps showing the album cover after an artist picture is saved. Windows shows a file's last picture, so the cover now always comes last. Tracks saved before keep the old order until their artist picture or cover is saved again.",
+    ],
+  },
+  {
     version: '1.1.0-beta.5',
     items: [
       "TeleCloud is in Windows' media controls: the box by the volume keys and the lock screen show the track and cover, with Play, Pause, Next, Previous and seeking. The keyboard's media keys work with TeleCloud in the background.",

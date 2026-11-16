@@ -12,6 +12,7 @@ export const APPEARANCE_DEFAULTS = {
   lyricAlign: 'left',
   lyricGlow: false,
   lyricSpeed: 400, // ms from one line to the next
+  waveSeek: true, // the track's waveform behind the seek bar
   signalPath: 'full', // the side panel's Signal path card: 'full', 'compact' (the verdict only) or 'off'
   // buttons, pages and menus change at once instead of moving; Windows' own "animation effects" setting decides at first
   reduceMotion: typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
@@ -26,7 +27,7 @@ export const APPEARANCE_LIMITS = {
 const clean = (raw) => {
   const out = { ...APPEARANCE_DEFAULTS };
   if (!raw || typeof raw !== 'object') return out;
-  for (const k of ['followCover', 'coverTilt', 'lyricGlow', 'reduceMotion']) if (typeof raw[k] === 'boolean') out[k] = raw[k];
+  for (const k of ['followCover', 'coverTilt', 'lyricGlow', 'reduceMotion', 'waveSeek']) if (typeof raw[k] === 'boolean') out[k] = raw[k];
   if (['left', 'center', 'right'].includes(raw.lyricAlign)) out.lyricAlign = raw.lyricAlign;
   if (['full', 'compact', 'off'].includes(raw.signalPath)) out.signalPath = raw.signalPath;
   for (const [k, [lo, hi]] of Object.entries(APPEARANCE_LIMITS)) {

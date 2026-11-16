@@ -33,6 +33,28 @@ const LyricsPreview = () => {
   return <LyricsView lyrics={PREVIEW} currentTime={time + 0.5} className="np-lyrics appearance-preview" scrollMs={lyricSpeed} />;
 };
 
+/** The floating lyrics window's switches: open, and locked (clicks go through it) */
+const FloatingLyricsRows = () => {
+  const [st, setSt] = useState({ open: false, locked: false });
+  useEffect(() => {
+    const ipc = window.ipcRenderer;
+    ipc.invoke('lyrics-float:status').then(s => s && setSt(s)).catch(() => {});
+    const on = (e, s) => s && setSt(s);
+    ipc.on('lyrics-float:changed', on);
+    return () => ipc.removeListener?.('lyrics-float:changed', on);
+  }, []);
+  return (
+    <>
+      <SettingRow icon="pip" title="Floating lyrics" desc="A small window over everything else with the line being sung and the next one. Drag it where you like; it remembers. Also from the lyrics card and the tray.">
+        <Toggle checked={st.open} onChange={(v) => window.ipcRenderer.invoke('lyrics-float:toggle', v)} />
+      </SettingRow>
+      <SettingRow icon="eye" title="Lock floating lyrics" muted={!st.open} desc="Clicks go through it to the window behind, so it never gets in the way. Unlock here or from the tray.">
+        <Toggle checked={st.locked} onChange={(v) => window.ipcRenderer.invoke('lyrics-float:lock', v)} />
+      </SettingRow>
+    </>
+  );
+};
+
 /** Settings → Appearance: the theme, and the extras for the full-screen view */
 const AppearanceSettings = ({ theme, setTheme }) => {
   const a = useAppearance();
@@ -68,6 +90,10 @@ const AppearanceSettings = ({ theme, setTheme }) => {
         <div className="card set-card">
           <SettingRow icon="speaker" title="Signal path in the side panel" desc="Full shows each step from the file to your output. Compact keeps only the verdict, such as Bit-perfect. The player bar still has the full path.">
             <Segmented size="sm" value={a.signalPath} onChange={(v) => setAppearance({ signalPath: v })} options={[{ value: 'full', label: 'Full' }, { value: 'compact', label: 'Compact' }, { value: 'off', label: 'Off' }]} />
+          </SettingRow>
+          <FloatingLyricsRows />
+          <SettingRow icon="spectrum" title="Waveform seek bar" desc="The track's loudness over time behind the seek bar, worked out once per file. TeleCloud tracks get theirs once they are cached.">
+            <Toggle checked={a.waveSeek} onChange={(v) => setAppearance({ waveSeek: v })} />
           </SettingRow>
           <SettingRow icon="check" title="Reduce motion" desc="Buttons, pages, menus and highlights change at once instead of moving or bouncing. Lyrics still scroll, and loading spinners still turn.">
             <Toggle checked={a.reduceMotion} onChange={(v) => setAppearance({ reduceMotion: v })} />

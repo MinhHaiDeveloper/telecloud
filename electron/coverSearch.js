@@ -293,7 +293,7 @@ function writeTag(file, jpeg, { onlyMissing = false, onlyIfEmbedded = false } = 
     const had = all.length > artist.length;
     if ((onlyMissing && had) || (onlyIfEmbedded && !had)) return false;
     const pic = Picture.fromFullData(ByteVector.fromByteArray(jpeg), PictureType.FrontCover, 'image/jpeg', '');
-    f.tag.pictures = [pic, ...artist];
+    f.tag.pictures = [...artist, pic]; // the cover last: Windows' thumbnail for a FLAC is its last picture
     f.save();
     return true;
   } finally { f.dispose(); }

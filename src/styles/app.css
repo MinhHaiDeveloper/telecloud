@@ -423,6 +423,14 @@
 }
 .lyric.past { opacity: .85; }
 .lyric.active { color: var(--text); transform: scale(1.04); }
+/* word by word: each word fills with the line's colour as it is sung, the rest waits a shade lighter */
+.lyric .words .w {
+  --on: var(--text); --off: color-mix(in srgb, var(--text) 50%, transparent);
+  text-shadow: none;
+  background: linear-gradient(90deg, var(--on) 0 calc(var(--p, 0) * 100%), var(--off) calc(var(--p, 0) * 100%) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+html.np-lyric-glow .np-lyrics .lyric.active .w { text-shadow: none; filter: drop-shadow(0 0 10px color-mix(in srgb, var(--text) 45%, transparent)); }
 .lyrics-lines.plain .lyric { color: var(--text-2); }
 .lyrics-scroll .lyric { font-size: 14px; }
 .lyrics-empty { color: var(--text-3); font-size: 13px; padding: 24px 0; text-align: center; font-style: italic; }
@@ -491,6 +499,17 @@
 .play-btn:active:not(:disabled) { transform: scale(.86); }
 .play-btn .ico { width: 18px; height: 18px; fill: currentColor; stroke: none; }
 .p-seek { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--text-3); }
+/* the waveform behind the seek bar: grey to come, the accent played; the bar's own track steps aside */
+.seek-wrap { position: relative; flex: 1; display: flex; align-items: center; min-width: 0; height: 16px; transition: height .25s var(--ease-out); --wave-rest: color-mix(in srgb, var(--text) 22%, transparent); }
+.seek-wrap.has-wave { height: 28px; }
+.seek-wrap .range { position: relative; z-index: 1; height: 100%; }
+.wave { position: absolute; inset: 0; opacity: 0; transition: opacity .35s; pointer-events: none; }
+.wave.ready { opacity: 1; }
+.wave canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.wave-played { clip-path: inset(0 calc(100% - var(--pct, 0%)) 0 0); }
+.seek-wrap.has-wave .range::-webkit-slider-runnable-track { height: 100%; background: transparent; }
+.seek-wrap.has-wave .range.buffered::-webkit-slider-runnable-track { background: transparent; }
+.seek-wrap.has-wave .range::-webkit-slider-thumb { width: 3px; height: 28px; margin-top: 0; border-radius: 2px; background: var(--text); }
 .p-right { display: flex; align-items: center; justify-content: flex-end; gap: 4px; position: relative; }
 .fmt-pill {
   display: flex; align-items: center; gap: 6px; padding: 6px 10px; margin-right: 6px;

@@ -40,7 +40,13 @@ export default function Lyrics({ trackId, rev, pos, onSeek }) {
       <p key={`${trackId}-${i}`} data-i={i}
         className={`rm-lyr-line ${!st.synced ? 'plain' : i === active ? 'on' : i < active ? 'past' : ''}`}
         onClick={st.synced && onSeek ? () => { userAt.current = 0; onSeek(l.time); } : undefined}>
-        {l.text}
+        {i === active && l.words?.length
+          ? l.words.map((w, k) => {
+            const end = k + 1 < l.words.length ? l.words[k + 1].time : (l.end ?? st.lines[i + 1]?.time ?? w.time + 1);
+            const p = pos <= w.time ? 0 : pos >= end ? 1 : (pos - w.time) / (end - w.time);
+            return <span key={k} className="w" style={{ '--p': p.toFixed(3) }}>{w.text}</span>;
+          })
+          : l.text}
       </p>
     ));
   }

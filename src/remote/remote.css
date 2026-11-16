@@ -334,6 +334,9 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
 .rm-l-fold .rm-leaf.right .rm-slot.on { animation: pageTurn .5s var(--ease) both; transform-origin: left center; }
 .rm-l-fold .rm-leaf.right > .rm-pill { margin-top: 2px; }
 .rm-l-fold .rm-art { width: min(100%, 40vh); }
+/* the left page: the cover takes the room the title leaves, so a two-line title never pushes past the page */
+.rm-l-fold .rm-leaf.left .rm-art-wrap:not(.lyrics) { flex: 1 1 0; min-height: 96px; align-items: center; container-type: size; }
+.rm-l-fold .rm-leaf.left .rm-art-wrap:not(.lyrics) .rm-art { width: min(100cqw, 100cqh, 40vh); }
 .rm-l-fold .rm-lyrics { width: min(100%, 40vh); }
 .rm-l-fold .rm-title { font-size: 23px; }
 .rm-l-fold .rm-title.l { font-size: 20px; }
@@ -433,3 +436,9 @@ button { -webkit-user-select: none; user-select: none; touch-action: manipulatio
 .rm-sleep-chips button { padding: 8px 13px; border-radius: 999px; background: var(--surface-2); font-size: 13px; font-weight: 600; color: var(--text); }
 .rm-sleep-chips button:disabled { opacity: .45; }
 .rm-sleep-chips button.off { color: var(--danger, #e5484d); }
+
+/* word by word, as in the app: each word fills as it is sung */
+.rm-lyr-line.on .w {
+  background: linear-gradient(90deg, var(--text) 0 calc(var(--p, 0) * 100%), color-mix(in srgb, var(--text) 38%, transparent) calc(var(--p, 0) * 100%) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none;
+}

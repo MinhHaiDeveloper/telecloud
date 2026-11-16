@@ -244,7 +244,7 @@ function describe(s) {
 }
 
 const sendToUi = (ch, payload) => {
-  const win = BrowserWindow.getAllWindows()[0];
+  const win = require('./mainWindow').get();
   if (win && !win.isDestroyed()) win.webContents.send(ch, payload);
 };
 
@@ -484,7 +484,7 @@ ipcMain.handle('show-in-folder', async (event, filePath) => {
 });
 
 ipcMain.handle('check-file-exists', async (event, filePath) => {
-  if (!(isInLibrary(filePath) || isInAppStorage(filePath))) return false;
+  if (!(isInLibrary(filePath) || isInAppStorage(filePath) || require('./paths').isOpened(filePath))) return false; // a file Windows opened in TeleCloud counts
   try {
     await fs.promises.access(filePath);
     return true;

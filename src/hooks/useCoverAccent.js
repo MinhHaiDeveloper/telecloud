@@ -8,13 +8,13 @@ import { coverUrl } from '../utils/audio';
  * Must run after the effect that sets data-theme, because the result depends on the theme's colours.
  * The old colour stays until the new one is ready, so a track change doesn't flash the theme's accent.
  */
-export default function useCoverAccent(file, theme) {
-  const { followCover } = useAppearance();
+export default function useCoverAccent(file, theme, sidePanel = true) {
+  const { followCover, reduceMotion, waveSeek } = useAppearance();
   const path = file?.path;
   const revision = file ? coverUrl(file) : ''; // changes when the cover is replaced
   useEffect(() => {
-    window.ipcRenderer.invoke('logs:appearance', { theme, followCover }).catch(() => {});
-  }, [theme, followCover]);
+    window.ipcRenderer.invoke('logs:appearance', { theme, followCover, reduceMotion, waveSeek, sidePanel }).catch(() => {});
+  }, [theme, followCover, reduceMotion, waveSeek, sidePanel]);
   useEffect(() => {
     if (!followCover || !path) { clearCoverAccent(); return undefined; }
     let stale = false;

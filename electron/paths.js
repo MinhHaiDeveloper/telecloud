@@ -81,10 +81,20 @@ function isInAppStorage(p) {
 }
 
 /** A path the player / analyser may open: an audio file in the library or in our cache. */
+// Files Windows handed to TeleCloud (Open with, a double-click when it is the default player): playable
+// even outside the music folders, but only those exact files
+const opened = new Set();
+function allowOpened(p) {
+  if (!isAbsoluteFilePath(p) || !AUDIO_EXTENSIONS.has(path.extname(p).toLowerCase())) return false;
+  opened.add(real(p));
+  return true;
+}
+const isOpened = (p) => isAbsoluteFilePath(p) && opened.has(real(p));
+
 function isPlayablePath(p) {
   if (!isAbsoluteFilePath(p)) return false;
   if (!AUDIO_EXTENSIONS.has(path.extname(p).toLowerCase())) return false;
-  return isInLibrary(p) || isInAppStorage(p);
+  return isInLibrary(p) || isInAppStorage(p) || isOpened(p);
 }
 
 function assertPlayable(p) {
@@ -107,6 +117,8 @@ module.exports = {
   getTempDir,
   isInside,
   isInLibrary,
+  allowOpened,
+  isOpened,
   isInAppStorage,
   isPlayablePath,
   assertPlayable,

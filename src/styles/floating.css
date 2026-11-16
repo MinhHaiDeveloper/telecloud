@@ -1,0 +1,30 @@
+/* ===== The floating lyrics window ===== */
+/* Transparent over the desktop: the words carry their own shadow so they read on any background,
+   and a soft panel shows behind them only while the mouse is on the window (not when locked). */
+html.floating-lyrics, html.floating-lyrics body, html.floating-lyrics #root { background: transparent !important; height: 100%; margin: 0; overflow: hidden; }
+.fl {
+  height: 100%; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center;
+  padding: 10px 22px 14px; border-radius: 18px; -webkit-app-region: drag; user-select: none;
+  transition: background .25s;
+  --fl-text: #fff; --fl-dim: rgba(255, 255, 255, .55);
+}
+.fl:not(.locked):hover { background: rgba(14, 14, 18, .62); }
+.fl-bar { position: absolute; top: 8px; left: 16px; right: 10px; display: flex; align-items: center; gap: 6px; opacity: 0; transition: opacity .2s; }
+.fl:not(.locked):hover .fl-bar { opacity: 1; }
+.fl-title { flex: 1; min-width: 0; font-size: 12px; color: rgba(255, 255, 255, .7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fl-btn { -webkit-app-region: no-drag; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: rgba(255, 255, 255, .12); }
+.fl-btn:hover { background: rgba(255, 255, 255, .24); }
+.fl-btn .ico { width: 14px; height: 14px; }
+.fl-lines { text-align: center; }
+.fl-now, .fl-next { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 2px 6px rgba(0, 0, 0, .75), 0 0 2px rgba(0, 0, 0, .9); }
+.fl-now { font-size: clamp(18px, 25vh, 60px); font-weight: 800; color: var(--fl-text); animation: flIn .3s ease-out; }
+.fl-next { margin-top: 2px; font-size: clamp(12px, 13vh, 30px); font-weight: 600; color: var(--fl-dim); }
+.fl-note { color: var(--fl-dim); font-weight: 600; font-size: 18px; }
+@keyframes flIn { from { opacity: .3; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+/* word by word: sung words in the theme's accent, the rest white */
+.fl-now .w {
+  background: linear-gradient(90deg, var(--accent) 0 calc(var(--p, 0) * 100%), var(--fl-text) calc(var(--p, 0) * 100%) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  text-shadow: none; /* a text shadow would be painted over the clipped fill and darken it */
+}
+.fl-now .words { filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .85)) drop-shadow(0 0 1px rgba(0, 0, 0, .9)); }

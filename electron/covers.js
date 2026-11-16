@@ -88,10 +88,10 @@ const cloudCoverFile = (key) => path.join(coverDir(), `cloud-${String(key).repla
 /** The picture shown for a track, or null: the app's covers and TeleCloud Remote use the same one */
 async function artFor(songPath) {
   const database = require('./database');
-  const { isInLibrary, isInAppStorage } = require('./paths');
+  const { isInLibrary, isInAppStorage, isOpened } = require('./paths');
   const row = database.getFileByPath(songPath);
   const stored = row?.cloud_cover ? await readIfExists(cloudCoverFile(row.cloud_cover)) : null;
-  const original = isInLibrary(songPath) && fs.existsSync(songPath);
+  const original = (isInLibrary(songPath) || isOpened(songPath)) && fs.existsSync(songPath);
   // cloud-only: the album cover in TeleCloud comes first, even with a cached copy of the audio
   // (that copy's embedded art may be older than a cover chosen since)
   if (!original && stored) return stored;

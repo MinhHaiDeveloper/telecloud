@@ -1,6 +1,6 @@
 {
   "name": "telecloud",
-  "version": "1.1.0-beta.5",
+  "version": "1.1.0-beta.6",
   "description": "Hi-res music player with encrypted, unlimited backup to your own Telegram",
   "main": "electron/main.js",
   "scripts": {
@@ -27,6 +27,34 @@
       "electron/**/*",
       "node_modules/**/*",
       "package.json"
+    ],
+    "fileAssociations": [
+      {
+        "ext": [
+          "flac",
+          "mp3",
+          "wav",
+          "m4a",
+          "aiff",
+          "aif",
+          "aifc",
+          "alac",
+          "ape",
+          "wv",
+          "tta",
+          "dsf",
+          "dff",
+          "ogg",
+          "opus",
+          "aac",
+          "wma",
+          "mka",
+          "mpc"
+        ],
+        "name": "TeleCloud.Audio",
+        "description": "Music",
+        "role": "Viewer"
+      }
     ],
     "extraResources": [
       {

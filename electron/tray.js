@@ -6,7 +6,7 @@ const { readSettings } = require('./paths');
 
 let tray = null;
 let quitting = false;
-let now = { playing: false, hasTrack: false, sleep: null }; // what plays, for the menu
+let now = { playing: false, hasTrack: false, sleep: null, floating: { open: false, locked: false } }; // what plays, for the menu
 
 // the sleep timer's choices, as in the player bar
 const SLEEP = [[15, '15 minutes'], [30, '30 minutes'], [45, '45 minutes'], [60, '1 hour'], [90, '1 hour 30']];
@@ -30,6 +30,9 @@ function menu() {
       ],
     },
     { type: 'separator' },
+    { label: 'Floating lyrics', type: 'checkbox', checked: !!now.floating?.open, click: () => require('./floatingLyrics')[now.floating?.open ? 'close' : 'open']() },
+    { label: 'Lock floating lyrics', type: 'checkbox', checked: !!now.floating?.locked, enabled: !!now.floating?.open, click: () => require('./floatingLyrics').setLocked(!now.floating?.locked) },
+    { type: 'separator' },
     { label: 'Quit TeleCloud', click: () => app.quit() },
   ]);
 }
@@ -41,7 +44,7 @@ function update(next) {
 }
 
 function showWindow() {
-  const win = BrowserWindow.getAllWindows()[0];
+  const win = require('./mainWindow').get();
   if (!win) return;
   if (win.isMinimized()) win.restore();
   win.show();

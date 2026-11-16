@@ -25,7 +25,7 @@ let lastMeta = '';
 
 
 const command = (cmd, extra = {}) => {
-  const w = win && !win.isDestroyed() ? win : BrowserWindow.getAllWindows()[0];
+  const w = win && !win.isDestroyed() ? win : require('./mainWindow').get();
   if (w && !w.isDestroyed()) w.webContents.send('media:command', { cmd, ...extra });
 };
 

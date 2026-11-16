@@ -118,7 +118,17 @@ function publicAnswer(r) {
     else if (k === 'synced') out[k] = !!v;
   }
   // lyrics: lines of text with their times
-  if (Array.isArray(r.lines)) out.lines = r.lines.slice(0, 2000).map(l => ({ time: Number.isFinite(l?.time) ? l.time : null, text: clip(String(l?.text ?? ''), 500) }));
+  if (Array.isArray(r.lines)) {
+    out.lines = r.lines.slice(0, 2000).map((l) => {
+      const line = { time: Number.isFinite(l?.time) ? l.time : null, text: clip(String(l?.text ?? ''), 500) };
+      // word by word: each word with its time
+      if (Array.isArray(l?.words)) {
+        line.words = l.words.slice(0, 200).filter(w => Number.isFinite(w?.time)).map(w => ({ time: w.time, text: clip(String(w.text ?? ''), 120) }));
+        line.end = Number.isFinite(l.end) ? l.end : null;
+      }
+      return line;
+    });
+  }
   return out;
 }
 
@@ -276,7 +286,7 @@ async function coverOf(id) {
 // the window that reports the state is the one that plays (not a lyrics or mini window)
 let player = null;
 function toWindow(cmd, args, device) {
-  const wc = player && !player.isDestroyed() ? player : BrowserWindow.getAllWindows().find(w => !w.isDestroyed())?.webContents;
+  const wc = player && !player.isDestroyed() ? player : require('./mainWindow').get()?.webContents;
   if (!wc) return false;
   wc.send('remote:command', { cmd, args, device: device.label });
   return true;

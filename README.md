@@ -64,6 +64,10 @@ The **Signal path** panel on the right shows exactly what happens to the sound o
 
 - **Windows media controls:** the box by the volume keys and the lock screen show what plays, with its cover, and control it. The keyboard's media keys work while TeleCloud is in the background.
 - **Taskbar and tray:** Previous, Play/Pause and Next on the taskbar thumbnail and in the tray menu.
+- **Default music player:** choose TeleCloud in Explorer's "Open with" (and "Always") for FLAC, MP3, WAV, DSF and other music files. A file opened from Explorer plays at once in Now Playing.
+- **Word-by-word lyrics:** lyrics with a time for each word (Enhanced LRC, TTML) light up as they are sung.
+- **Waveform seek bar:** the track's loudness over time behind the seek bar (Settings > Appearance).
+- **Floating lyrics:** a small window over everything with the line being sung; lock it and clicks go through. From the lyrics card, the tray or Settings > Appearance.
 - **Sleep timer:** the moon in the player bar (also in the tray and the remote): minutes, the end of this track or album, or after a number of tracks. The last 10 seconds fade out.
 
 ### 3. Shape the sound (optional)

@@ -108,7 +108,7 @@ function setGifState(name, state) {
 /** The browser engine reads GIFs; Electron's nativeImage doesn't */
 async function readGif(buf) {
   if (buf.length > MAX_GIF) throw new Error('That GIF is over 15 MB. Use a smaller one.');
-  const win = BrowserWindow.getAllWindows()[0];
+  const win = require('./mainWindow').get();
   if (!win) throw new Error('TeleCloud has no window to read that GIF');
   let r;
   try {
@@ -578,7 +578,8 @@ function writeTag(file, jpeg, { onlyMissing = false } = {}) {
     const all = f.tag.pictures || [];
     const others = all.filter(p => !isArtistTagPicture(p));
     if (onlyMissing && others.length !== all.length) return false;
-    const pics = jpeg ? [...others, Picture.fromFullData(ByteVector.fromByteArray(jpeg), PictureType.Artist, 'image/jpeg', '')] : others;
+    // the artist first and the cover last: Windows' thumbnail for a FLAC is its last picture, whatever its type
+    const pics = jpeg ? [Picture.fromFullData(ByteVector.fromByteArray(jpeg), PictureType.Artist, 'image/jpeg', ''), ...others] : others;
     if (!jpeg && others.length === all.length) return false;
     f.tag.pictures = pics;
     f.save();

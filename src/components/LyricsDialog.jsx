@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { enhancedJsonToLrc, looksLikeJson, isTtml } from '../utils/lyrics';
 import Icon from './Icon';
 import { Dialog, Segmented, Toggle } from './ui';
 
@@ -36,6 +37,15 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
   const [errors, setErrors] = useState({});
   const [pick, setPick] = useState(null); // index into results, or -1 for the current lyrics
   const [text, setText] = useState(m.lyrics || '');
+  // word timings pasted or opened as JSON become Enhanced LRC, which other players read too
+  const [converted, setConverted] = useState(false);
+  const fromWordJson = (value) => {
+    if (!looksLikeJson(value)) return value;
+    const lrc = enhancedJsonToLrc(value);
+    if (!lrc) return value;
+    setConverted(true);
+    return lrc;
+  };
   const [saveTo, setSaveTo] = useState('tag');
   const [saving, setSaving] = useState(false);
   const cloudOnly = (file?.storage_type || 'local') === 'cloud' || file?.path?.startsWith('tc://');
@@ -87,7 +97,7 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
   }, []);
   const followCaret = () => { const ta = taRef.current; if (ta) setCaretNo(ta.value.slice(0, ta.selectionStart).split(NL).length - 1); };
   const lines = text.split(NL);
-  const currentLine = (lines[caretNo] || '').replace(STAMP, '').trim();
+  const currentLine = (lines[caretNo] || '').replace(STAMP, '').replace(/<\d{1,3}:\d{2}(?:\.\d{1,3})?>/g, '').replace(/\s+/g, ' ').trim(); // without the word times
   const duration = m.duration || 0;
   // the synced lines, as marks along the seek bar
   const marks = useMemo(() => (duration ? lines.map(parseStamp).filter(t => t != null && t <= duration) : []), [text, duration]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -255,6 +265,10 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
               <span className="lyr-sp" />
               <button className="btn-ghost sm" onClick={undo} title="Undo the last change">Undo</button>
               <button className="btn-ghost sm" onClick={reset} title="Back to the lyrics the track had">Reset</button>
+              <label className="btn-ghost sm pressable" title="LRC, Enhanced LRC, TTML, or word timings as JSON">
+                Open file…
+                <input type="file" accept=".lrc,.ttml,.xml,.json,.txt,.md" hidden onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; history.current.push(text); setText(fromWordJson(await f.text())); setPick(null); }} />
+              </label>
             </div>
           </div>
           <div className="lyr-area">
@@ -271,12 +285,12 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
               wrap="off"
               className="input mono"
               value={text}
-              onChange={e => { history.current.push(text); setText(e.target.value); setPick(null); followCaret(); }}
+              onChange={e => { history.current.push(text); setText(fromWordJson(e.target.value)); setPick(null); followCaret(); }}
               placeholder={'Type or paste lyrics. Synced lines look like:\n[00:12.40]First line\n[00:16.10]Second line'}
               spellCheck={false}
             />
           </div>
-          <small className="muted">{/^\s*\[\d/m.test(text) ? 'Synced (LRC): lines follow the music.' : 'Plain text: shown as a static list.'}</small>
+          <small className="muted">{converted ? 'Word timings (JSON) turned into Enhanced LRC: each word lights up as it is sung. ' : ''}{isTtml(text) ? 'TTML: lines and words follow the music.' : /<\d{1,3}:\d{2}/.test(text) ? 'Synced word by word (Enhanced LRC).' : /^\s*\[\d/m.test(text) ? 'Synced (LRC): lines follow the music.' : 'Plain text: shown as a static list.'}</small>
         </div>
       </div>
     </Dialog>

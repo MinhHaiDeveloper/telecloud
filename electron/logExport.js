@@ -119,7 +119,7 @@ async function logBetween(text, from, to, clean) {
 }
 
 // Only these settings go in the report; anything added later stays out until listed here
-const SAFE_SETTINGS = ['skipDuplicates', 'artistFilter', 'replayGainEnabled', 'replayGainMode', 'crossfadeEnabled', 'crossfadeDuration', 'maxSamplingEnabled', 'maxBitDepth', 'maxSampleRate', 'dsdMode', 'dopMax', 'asioDriver', 'highPerformanceGpu', 'lowMemoryMode', 'closeToTray', 'channelBalance', 'crossfeed', 'mqaMode', 'lastSeenVersion'];
+const SAFE_SETTINGS = ['skipDuplicates', 'artistFilter', 'replayGainEnabled', 'replayGainMode', 'crossfadeEnabled', 'crossfadeDuration', 'maxSamplingEnabled', 'maxBitDepth', 'maxSampleRate', 'dsdMode', 'dopMax', 'asioDriver', 'highPerformanceGpu', 'lowMemoryMode', 'closeToTray', 'channelBalance', 'crossfeed', 'mqaMode', 'releaseOnPause', 'pauseFade', 'lastSeenVersion'];
 
 async function systemReport({ days, includeNames }) {
   const lines = [];
@@ -174,6 +174,13 @@ async function systemReport({ days, includeNames }) {
       add(name, JSON.stringify(Object.fromEntries(keys.filter(k => k in s).map(k => [k, s[k]]))));
     } catch { add(name, 'defaults'); }
   }
+  // Windows media controls, media keys and the sleep timer
+  try {
+    const m = require('./media')._media();
+    add('Media controls', `${m.helperOk ? 'in Windows' : 'helper not running'}, media keys ${m.keysHeld ? 'held by TeleCloud' : 'not held'}${m.sleep ? ', sleep timer set' : ''}`);
+  } catch { /* not loaded */ }
+  try { const f = require('./floatingLyrics').status(); add('Floating lyrics', `${f.open ? 'open' : 'closed'}${f.locked ? ', locked' : ''}`); } catch { /* not loaded */ }
+  try { add('Waveforms kept', fs.readdirSync(path.join(app.getPath('userData'), 'waveforms')).length); } catch { add('Waveforms kept', 0); }
   try {
     const store = require('./telecloud/store');
     add('TeleCloud storages', store.storages.all().length);
@@ -241,10 +248,10 @@ let lastExport = null;
 let appearance = null;
 ipcMain.handle('logs:appearance', (e, a = {}) => {
   const theme = /^[a-z]{1,20}$/.test(a.theme) ? a.theme : 'unknown';
-  const followCover = !!a.followCover;
-  if (appearance?.theme === theme && appearance?.followCover === followCover) return;
-  appearance = { theme, followCover };
-  console.log(`[Appearance] Theme: ${theme}, follow the cover: ${followCover ? 'on' : 'off'}`);
+  const next = { theme, followCover: !!a.followCover, reduceMotion: !!a.reduceMotion, waveSeek: a.waveSeek !== false, sidePanel: a.sidePanel !== false };
+  if (appearance && JSON.stringify(appearance) === JSON.stringify(next)) return;
+  appearance = next;
+  console.log(`[Appearance] Theme: ${theme}, follow the cover: ${next.followCover ? 'on' : 'off'}, reduce motion: ${next.reduceMotion ? 'on' : 'off'}, waveform seek bar: ${next.waveSeek ? 'on' : 'off'}, side panel: ${next.sidePanel ? 'shown' : 'put away'}`);
 });
 ipcMain.handle('logs:eq-output', (e, a = {}) => {
   console.log(`[EQ] Output changed: ${a.shared ? 'using the shared EQ' : a.known ? "using this output's own EQ" : 'first time on this output, keeping the current EQ'}`);

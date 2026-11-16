@@ -25,6 +25,7 @@ import { sortAlbumTracks, computeSignalPath, matchesSource, storageOf, qualityOf
 import { parseLyrics } from './components/LyricsView';
 import { DialogHost, confirmDialog, alertDialog, Progress } from './components/ui';
 import useSound, { soundSummary } from './hooks/useSound';
+import { useAppearance } from './utils/appearance';
 import useEq from './hooks/useEq';
 import StorageDialog from './components/StorageDialog';
 import { SOURCE_HELP, QUALITY_HELP } from './utils/badges';
@@ -203,6 +204,7 @@ function App() {
   const eq = useEq(selectedDevice);
   // Settings > Sound: tone, space, effects, correction, headroom, A/B
   const snd = useSound(eq);
+  const look = useAppearance(); // Settings > Appearance: the waveform seek bar, and more
   // the player says when the sound goes over 0 dBFS after the EQ and the sound settings
   const [clipping, setClipping] = useState(false);
   useEffect(() => {
@@ -1365,7 +1367,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
   const currentLive = (currentFile && libraryByPath.get(currentFile.path)) || currentFile;
 
   const duplicates = useMemo(() => findDuplicates(musicFiles), [musicFiles]);
-  useCoverAccent(currentLive, theme);
+  useCoverAccent(currentLive, theme, !rightHidden);
 
   // ReplayGain "Auto": an album played in order keeps its own dynamics, anything else is levelled per track
   const playingPath = currentLive?.path;
@@ -1453,6 +1455,54 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     return () => window.ipcRenderer.removeListener?.('media:command', on);
   }, []);
   const mediaCmdRef = useRef(null);
+
+  // The floating lyrics window: it is told the lyrics when the track changes, and where the music is
+  const [floatLyrics, setFloatLyrics] = useState({ open: false, locked: false });
+  useEffect(() => {
+    const ipc = window.ipcRenderer;
+    ipc.invoke('lyrics-float:status').then(s => s && setFloatLyrics(s)).catch(() => {});
+    const on = (e, s) => s && setFloatLyrics(s);
+    ipc.on('lyrics-float:changed', on);
+    return () => ipc.removeListener?.('lyrics-float:changed', on);
+  }, []);
+  const floatText = currentLive ? (currentLive.metadata?.lyrics || (lyricsFound?.path === currentLive.path ? lyricsFound.lyrics : '') || '') : '';
+  useEffect(() => {
+    if (!floatLyrics.open) return;
+    window.ipcRenderer.invoke('lyrics-float:state', { lyrics: floatText, title: currentLive?.metadata?.title || currentLive?.name || '', artist: currentLive?.metadata?.artist || '', time: currentTime, playing: isPlaying }).catch(() => {});
+  }, [floatLyrics.open, currentLive?.path, floatText]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (floatLyrics.open) window.ipcRenderer.invoke('lyrics-float:state', { time: currentTime, playing: isPlaying }).catch(() => {});
+  }, [floatLyrics.open, currentTime, isPlaying]);
+
+  // Music opened from Windows (Open with, or a double-click when TeleCloud is the default player): it plays
+  // straight away and Now Playing opens. Several files at once become the queue.
+  const openFilesRef = useRef(null);
+  const openNpFor = useRef(null);
+  const libraryByPathRef = useRef(libraryByPath);
+  libraryByPathRef.current = libraryByPath;
+  useEffect(() => {
+    if (!libraryReady) return undefined;
+    let timer = null;
+    const take = async () => {
+      const files = await window.ipcRenderer.invoke('open:take').catch(() => []);
+      if (!files?.length) return;
+      const list = files.map(f => libraryByPathRef.current.get(f.path) || f);
+      openNpFor.current = list[0].path;
+      openFilesRef.current?.(list);
+    };
+    take();
+    // a multi-select "Open" sends the files one by one: gather them first
+    const on = () => { clearTimeout(timer); timer = setTimeout(take, 300); };
+    window.ipcRenderer.on('open:files', on);
+    return () => { clearTimeout(timer); window.ipcRenderer.removeListener?.('open:files', on); };
+  }, [libraryReady]);
+  openFilesRef.current = (list) => { setNowPlaying(null); playMusic(list[0], 0, list); };
+  useEffect(() => {
+    if (openNpFor.current && currentFile?.path === openNpFor.current) {
+      openNpFor.current = null;
+      setNowPlaying({ panel: undefined, origin: 'player' });
+    }
+  }, [currentFile?.path]);
 
   if (isCheckingAuth) {
     return <div className="app" />;
@@ -1592,7 +1642,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     if (req.kind !== 'lyrics') return remoteAnswer(remoteCtx(), req);
     // only the track that plays: what remotes show beside the music
     const p = parseLyrics(remoteLyrics);
-    return { track: currentLive ? remoteTrackOut(currentLive) : null, synced: p.isSynced, lines: p.lines.slice(0, 2000).map(l => ({ time: p.isSynced ? l.time : null, text: l.text })) };
+    return { track: currentLive ? remoteTrackOut(currentLive) : null, synced: p.isSynced, lines: p.lines.slice(0, 2000).map(l => ({ time: p.isSynced ? l.time : null, text: l.text, ...(l.words ? { words: l.words.map(w => ({ time: w.time, text: w.text })), end: l.end ?? null } : {}) })) };
   };
 
   const handleSaveQueueAsPlaylist = () => {
@@ -1850,6 +1900,9 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
       <RightPanel
         currentFile={lyricsLive}
         currentTime={currentTime}
+        playing={isPlaying}
+        floatOpen={floatLyrics.open}
+        onFloatLyrics={() => window.ipcRenderer.invoke('lyrics-float:toggle')}
         onSeek={handleSeek}
         signal={signal}
         stream={stream && currentLive && stream.path === currentLive.path ? stream : null}
@@ -1870,6 +1923,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
         <NowPlayingFullscreen
           currentFile={lyricsLive}
           currentTime={currentTime}
+          playing={isPlaying}
           onSeek={handleSeek}
           signal={signal}
         stream={stream && currentLive && stream.path === currentLive.path ? stream : null}
@@ -1886,6 +1940,8 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
       )}
 
       <PlayerBar
+        waveOn={look.waveSeek}
+        waveFile={currentLive ? (((currentLive.storage_type || 'local') !== 'cloud' && !currentLive.path.startsWith('tc://')) ? currentLive.path : (currentLive.cache_path || null)) : null}
         sleepLabel={sleepLabel}
         onSetSleep={setSleep}
         currentFile={currentLive}

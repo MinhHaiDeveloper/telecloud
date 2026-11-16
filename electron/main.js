@@ -42,6 +42,8 @@ const { backgroundRefresh } = require('./music.js');
 const { applyAudioSettings } = require('./player.js');
 require('./spectrum.js');
 require('./soundCorrection.js');
+require('./waveform.js');
+require('./floatingLyrics.js');
 require('./autoeq.js');
 require('./stats.js');
 require('./lyrics.js');
@@ -165,8 +167,11 @@ function createWindow() {
     },
   });
 
+  require('./mainWindow').set(win);
   require('./tray').attach(win);
   require('./media').attach(win); // Windows media controls, media keys, taskbar buttons
+  require('./openFiles').init(); // music opened from Windows plays at once
+  win.once('ready-to-show', () => require('./floatingLyrics').restore()); // open again if it was open
   const sendState = () => { if (!win.isDestroyed()) win.webContents.send('window:state', { maximized: win.isMaximized(), fullscreen: win.isFullScreen(), focused: win.isFocused() }); };
   ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'focus', 'blur', 'restore'].forEach(ev => win.on(ev, sendState));
 

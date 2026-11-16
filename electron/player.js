@@ -272,7 +272,7 @@ const gainMode = () => {
 };
 
 const send = (channel, payload) => {
-  const win = BrowserWindow.getAllWindows()[0];
+  const win = require('./mainWindow').get();
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 };
 
