@@ -181,6 +181,20 @@ async function systemReport({ days, includeNames }) {
   } catch { /* not loaded */ }
   try { const f = require('./floatingLyrics').status(); add('Floating lyrics', `${f.open ? 'open' : 'closed'}${f.locked ? ', locked' : ''}`); } catch { /* not loaded */ }
   try { add('Waveforms kept', fs.readdirSync(path.join(app.getPath('userData'), 'waveforms')).length); } catch { add('Waveforms kept', 0); }
+  // playlists: how many, how many are smart and which rules they use (no names)
+  try {
+    const pls = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'playlists.json'), 'utf8'));
+    const smart = pls.filter(p => p && p.smart);
+    const fields = [...new Set(smart.flatMap(p => (p.smart.rules || []).map(r => r.field)))];
+    add('Playlists', `${pls.length} (${smart.length} smart${fields.length ? `: rules on ${fields.join(', ')}` : ''}), ${pls.reduce((s, p) => s + (p?.songs?.length || 0), 0)} tracks in the others`);
+  } catch { add('Playlists', 'none'); }
+  // the play history behind Most played, On this day and the Dashboard
+  try {
+    const d = require('./stats').db();
+    const all = d.prepare('SELECT COUNT(*) n, MIN(played_at) first FROM plays').get();
+    const month = d.prepare('SELECT COUNT(*) n FROM plays WHERE played_at >= ?').get(Date.now() - 30 * 86400000).n;
+    add('Play history', `${all.n.toLocaleString('en')} plays${all.first ? ` since ${new Date(all.first).toISOString().slice(0, 7)}` : ''}, ${month} in the last 30 days`);
+  } catch { add('Play history', 'unreadable'); }
   try {
     const store = require('./telecloud/store');
     add('TeleCloud storages', store.storages.all().length);
@@ -248,10 +262,10 @@ let lastExport = null;
 let appearance = null;
 ipcMain.handle('logs:appearance', (e, a = {}) => {
   const theme = /^[a-z]{1,20}$/.test(a.theme) ? a.theme : 'unknown';
-  const next = { theme, followCover: !!a.followCover, reduceMotion: !!a.reduceMotion, waveSeek: a.waveSeek !== false, sidePanel: a.sidePanel !== false };
+  const next = { theme, followCover: !!a.followCover, reduceMotion: !!a.reduceMotion, waveSeek: a.waveSeek !== false, sidePanel: a.sidePanel !== false, coverAnimation: /^(webgl|none|off)$/.test(a.coverAnimation) ? a.coverAnimation : 'unknown' };
   if (appearance && JSON.stringify(appearance) === JSON.stringify(next)) return;
   appearance = next;
-  console.log(`[Appearance] Theme: ${theme}, follow the cover: ${next.followCover ? 'on' : 'off'}, reduce motion: ${next.reduceMotion ? 'on' : 'off'}, waveform seek bar: ${next.waveSeek ? 'on' : 'off'}, side panel: ${next.sidePanel ? 'shown' : 'put away'}`);
+  console.log(`[Appearance] Theme: ${theme}, follow the cover: ${next.followCover ? 'on' : 'off'}, reduce motion: ${next.reduceMotion ? 'on' : 'off'}, cover animation: ${next.coverAnimation === 'webgl' ? 'WebGL' : next.coverAnimation === 'none' ? 'no WebGL, covers just change' : 'off'}, waveform seek bar: ${next.waveSeek ? 'on' : 'off'}, side panel: ${next.sidePanel ? 'shown' : 'put away'}`);
 });
 ipcMain.handle('logs:eq-output', (e, a = {}) => {
   console.log(`[EQ] Output changed: ${a.shared ? 'using the shared EQ' : a.known ? "using this output's own EQ" : 'first time on this output, keeping the current EQ'}`);

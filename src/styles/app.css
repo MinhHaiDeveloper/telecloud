@@ -178,6 +178,11 @@
 .menu-item .ico { width: 16px; height: 16px; color: var(--text-3); }
 .menu-item.on .ico, .menu-item.danger .ico { color: inherit; }
 .menu-sep { height: 1px; background: var(--border); margin: 4px 6px; }
+/* a menu row holding small choices (Play 2x, 3x, 5x) */
+.menu-item.menu-chips { cursor: default; gap: 8px; }
+.menu-item.menu-chips:hover { background: transparent; }
+.menu-item.menu-chips .chip { padding: 3px 10px; border-radius: 999px; background: var(--surface-2); font-size: 12px; font-weight: 600; color: var(--text); margin-left: 2px; }
+.menu-item.menu-chips .chip:hover { background: var(--accent); color: var(--on-accent, #fff); }
 .device-menu { left: 0; right: 0; bottom: calc(100% + 8px); max-height: 320px; overflow-y: auto; }
 
 .side-collapsed .sidebar .txt,

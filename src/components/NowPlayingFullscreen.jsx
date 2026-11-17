@@ -4,8 +4,9 @@ import Icon from './Icon';
 import MetaLinks from './MetaLinks';
 import LyricsNote from './LyricsNote';
 import CoverNote from './CoverNote';
-import Cover from './Cover';
 import LiquidCover from './LiquidCover';
+import FluidBackdrop from './FluidBackdrop';
+import { latestChange, playCoverChange, motionOff } from '../utils/liquid';
 import LyricsView, { parseLyrics } from './LyricsView';
 import QueueList from './QueueList';
 import { formatTime, qualityOf, formatBytes, mqaOf } from '../utils/audio';
@@ -74,6 +75,12 @@ function flyCover(big, small, direction, toRect) {
     borderRadius: `${bigRadius}px`, boxShadow: '0 24px 60px rgba(0,0,0,.4)', willChange: 'transform', overflow: 'hidden',
   });
   document.body.appendChild(ghost);
+  // a cover change still running: the copy shows it too, on the same clock, so it lands where the cover is
+  let stopLiquid = null;
+  const change = latestChange();
+  if (change && !motionOff()) {
+    stopLiquid = playCoverChange(ghost, change);
+  }
 
   const scale = to.width / from.width;
   const shrunk = { transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${scale})` };
@@ -87,6 +94,7 @@ function flyCover(big, small, direction, toRect) {
     fill: 'forwards',
   });
   const cleanup = () => {
+    stopLiquid?.();
     ghost.remove();
     small.style.visibility = '';
     if (direction === 'open') big.style.opacity = '';
@@ -246,7 +254,7 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, playing = true, onSeek
         </button>
       )}
       <div className="np-backdrop">
-        <Cover file={currentFile} className="np-bg" key={`bg-${currentFile?.path}`} />
+        <FluidBackdrop file={currentFile} />
       </div>
 
       <header className="np-top np-fade">

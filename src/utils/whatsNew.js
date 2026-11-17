@@ -2,6 +2,19 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.1.0-beta.7',
+    items: [
+      'Smart playlists: a playlist made of rules (artist, genre, year, quality, format, MQA, plays, last played, date added, favourite, where it is), matching all or any, with an order and a limit. It keeps itself up to date and shows on the remote like any playlist.',
+      'Playlists import and export as .m3u8 and .m3u. Tracks that are not in your library are listed, not dropped without a word; tracks only in TeleCloud have no file to point at and are counted.',
+      'Most played this week, month or year, and On this day: what you were playing around this date in earlier years. On Discover and the Dashboard; the Dashboard can also show a range of dates you pick.',
+      'Folders: browse your library the way it sits on disk, and play or shuffle a whole folder.',
+      'Play next and Add to queue are in every track menu and the selection bar. Tracks added with Play next one after another keep their order, and a track can be played 2, 3 or 5 times in a row.',
+      'The cover change between albums is smoother and more liquid: the new cover floods in as a growing circle, with rings running through both pictures and the colours splitting at its rim. Drawn on the graphics card, so it stays smooth in full screen too.',
+      "Behind Now Playing, the cover's colours slowly drift like ink in water, and swirl out from the cover when the album changes, then slowly settle. Dark covers give their own colours, not a black screen.",
+      'Opening Now Playing while the cover is changing carries the change on from where it was, instead of jumping to the new cover.',
+    ],
+  },
+  {
     version: '1.1.0-beta.6',
     items: [
       "A waveform seek bar: the track's loudness over time behind the seek bar, worked out once per file. Settings > Appearance can turn it off.",

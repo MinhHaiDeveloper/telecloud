@@ -3,6 +3,7 @@ import Icon from './Icon';
 import Cover from './Cover';
 import SongActions from './songActions';
 import { Segmented } from './ui';
+import { OnThisDay } from './ListeningHistory';
 
 // Listening statistics from the play history (electron/stats.js)
 
@@ -14,12 +15,25 @@ const RANGES = [
   { value: 'month', label: '30 days' },
   { value: 'year', label: '12 months' },
   { value: 'all', label: 'All time' },
+  { value: 'custom', label: 'Pick dates' },
 ];
+const dayInput = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const fromInput = (s) => { const [y, m, d] = String(s).split('-').map(Number); return y ? new Date(y, m - 1, d).getTime() : NaN; };
 
 // time window, bucket size and the list of bucket starts (so empty days still show as gaps)
-function windowFor(range, first) {
+function windowFor(range, first, custom) {
   const now = Date.now();
   const today = startOfDay(now);
+  if (range === 'custom' && custom) {
+    // days for up to two months, months beyond that
+    const from = Math.min(custom.from, custom.to), to = Math.max(custom.from, custom.to) + DAY;
+    const n = Math.round((to - from) / DAY);
+    if (n <= 62) return { from, to, bucket: 'day', keys: Array.from({ length: n }, (_, i) => startOfDay(from + i * DAY + 3600000 * 3)) };
+    const keys = [];
+    const d = new Date(from); d.setDate(1);
+    while (d.getTime() < to) { keys.push(d.getTime()); d.setMonth(d.getMonth() + 1); }
+    return { from, to, bucket: 'month', keys };
+  }
   if (range === 'day') return { from: today, to: today + DAY, bucket: 'hour', keys: Array.from({ length: 24 }, (_, h) => today + h * 3600000) };
   if (range === 'week' || range === 'month') {
     const n = range === 'week' ? 7 : 30;
@@ -108,7 +122,8 @@ const DashboardView = ({ musicFiles, onPlay }) => {
   const [range, setRange] = useState('week');
   const [data, setData] = useState(null);
   const [first, setFirst] = useState(null);
-  const win = useMemo(() => windowFor(range, first), [range, first]);
+  const [custom, setCustom] = useState(() => ({ from: startOfDay(Date.now() - 29 * DAY), to: startOfDay(Date.now()) }));
+  const win = useMemo(() => windowFor(range, first, custom), [range, first, custom]);
 
   useEffect(() => {
     let alive = true;
@@ -149,6 +164,12 @@ const DashboardView = ({ musicFiles, onPlay }) => {
         <span className="sub">Your listening, from TeleCloud's play history</span>
         <div className="end"><Segmented value={range} onChange={setRange} options={RANGES} size="sm" /></div>
       </div>
+      {range === 'custom' && (
+        <div className="dash-dates">
+          <label>From <input className="input sm mono" type="date" value={dayInput(custom.from)} max={dayInput(custom.to)} onChange={(e) => { const t = fromInput(e.target.value); if (Number.isFinite(t)) setCustom(c => ({ ...c, from: t })); }} /></label>
+          <label>to <input className="input sm mono" type="date" value={dayInput(custom.to)} min={dayInput(custom.from)} max={dayInput(Date.now())} onChange={(e) => { const t = fromInput(e.target.value); if (Number.isFinite(t)) setCustom(c => ({ ...c, to: t })); }} /></label>
+        </div>
+      )}
 
       {data && t.plays === 0 ? (
         <div className="card dash-empty">
@@ -167,13 +188,13 @@ const DashboardView = ({ musicFiles, onPlay }) => {
           </div>
 
           <div className="card dash-card">
-            <div className="dash-head"><b>Minutes listened</b><span>{RANGES.find(r => r.value === range).label} · per {win.bucket}</span></div>
+            <div className="dash-head"><b>Minutes listened</b><span>{range === 'custom' ? `${new Date(win.from).toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' })} – ${new Date(win.to - DAY).toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' })}` : RANGES.find(r => r.value === range).label} · per {win.bucket}</span></div>
             <Columns data={series} label="Minutes listened over time" tip={(d) => <><b>{bucketLabel(d.t, win.bucket, true)}</b><span>{Math.round(d.v)} min · {d.plays} {d.plays === 1 ? 'play' : 'plays'}</span></>} />
           </div>
 
           <div className="dash-grid">
             <div className="card dash-card">
-              <div className="dash-head"><b>Top tracks</b></div>
+              <div className="dash-head"><b>Top tracks</b>{(() => { const files = (data?.topTracks || []).map(p => byPath.get(p.path)).filter(Boolean); return files.length ? <button className="btn-ghost sm" onClick={() => onPlay(files[0], 0, files)}><Icon name="play" filled />Play all</button> : null; })()}</div>
               <ol className="dash-list">
                 {(data?.topTracks || []).map((p, i) => {
                   const f = byPath.get(p.path);
@@ -236,6 +257,7 @@ const DashboardView = ({ musicFiles, onPlay }) => {
           </div>
         </>
       )}
+      <OnThisDay byPath={byPath} onPlay={onPlay} />
     </div>
   );
 };

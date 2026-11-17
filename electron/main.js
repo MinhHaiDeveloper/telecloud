@@ -46,6 +46,7 @@ require('./waveform.js');
 require('./floatingLyrics.js');
 require('./autoeq.js');
 require('./stats.js');
+require('./m3u.js');
 require('./lyrics.js');
 require('./coverSearch.js');
 require('./discord.js');
@@ -239,11 +240,22 @@ app.whenReady().then(async () => {
   });
 
   // media://<encoded track path>[?r=revision] serves cover art for library tracks only
+  const mediaArt = (url) => {
+    const target = decodeURIComponent(String(url).slice('media://'.length).split('?')[0]);
+    return target.startsWith('artist-motion:') ? artistImages.motionFor(target.slice('artist-motion:'.length))
+      : target.startsWith('artist:') ? artistImages.pictureFor(target.slice('artist:'.length)) : artFor(target);
+  };
+  // The same picture as bytes, for drawing with WebGL (a media:// image can't be used as a texture)
+  ipcMain.handle('media:bytes', async (event, url) => {
+    try {
+      if (!String(url || '').startsWith('media://')) return null;
+      const art = await mediaArt(url);
+      return art ? { type: typeOf(art), data: art } : null;
+    } catch { return null; }
+  });
   protocol.handle('media', async (request) => {
     try {
-      const target = decodeURIComponent(request.url.slice('media://'.length).split('?')[0]);
-      const art = target.startsWith('artist-motion:') ? await artistImages.motionFor(target.slice('artist-motion:'.length))
-        : target.startsWith('artist:') ? await artistImages.pictureFor(target.slice('artist:'.length)) : await artFor(target);
+      const art = await mediaArt(request.url);
       return art ? imageResponse(art) : new Response(null, { status: 404 });
     } catch (err) {
       console.error('[media://] Cover extraction error:', err.message);

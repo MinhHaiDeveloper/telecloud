@@ -400,6 +400,15 @@ const SongList = ({
 
       {menu && menuFile && (
         <div className="menu" ref={menuRef} style={{ position: 'fixed', left: menu.x, top: menu.y, width: 210 }}>
+          {ctx.onPlayNextMany && <button className="menu-item" onClick={() => { const f = menuFile; setMenu(null); ctx.onPlayNextMany([f]); }}><Icon name="next" />Play next</button>}
+          {onQueueMany && <button className="menu-item" onClick={() => { const f = menuFile; setMenu(null); onQueueMany([f]); }}><Icon name="queue" />Add to queue</button>}
+          {ctx.onRepeat && (
+            <div className="menu-item menu-chips" role="group" aria-label="Play this track several times in a row">
+              <Icon name="repeat" />Play
+              {[2, 3, 5].map(n => <button key={n} className="chip" onClick={() => { const f = menuFile; setMenu(null); ctx.onRepeat(f, n); }} title={`Play it ${n} times in a row`}>{n}×</button>)}
+            </div>
+          )}
+          <div className="menu-sep" />
           <button className="menu-item" onClick={() => act(onToggleFavorite)}><Icon name="heart" />{favSet.has(menuFile.path) ? 'Remove favourite' : 'Add to favourites'}</button>
           {onAddPlaylist && <button className="menu-item" onClick={() => act(onAddPlaylist)}><Icon name="playlist" />Add to playlist</button>}
           {onCheckSpectrum && <button className="menu-item" onClick={() => act(onCheckSpectrum)}><Icon name="spectrum" />Check spectrum</button>}
@@ -421,6 +430,7 @@ const SongList = ({
         <div className="select-bar" role="toolbar" aria-label="Selected tracks">
           <b>{selected.size.toLocaleString()} selected</b>
           <button className="btn-ghost sm" onClick={() => onPlay(selectedFiles[0], 0, selectedFiles)}><Icon name="play" />Play</button>
+          {ctx.onPlayNextMany && <button className="btn-ghost sm" onClick={() => ctx.onPlayNextMany(selectedFiles)}><Icon name="next" />Play next</button>}
           {onQueueMany && <button className="btn-ghost sm" onClick={() => onQueueMany(selectedFiles)}><Icon name="queue" />Add to queue</button>}
           {onAddPlaylist && <button className="btn-ghost sm" onClick={() => onAddPlaylist(selectedFiles[0], selectedFiles)}><Icon name="playlist" />Add to playlist</button>}
           {ctx.onEditInfo && <button className="btn-ghost sm" onClick={() => ctx.onEditInfo(selectedFiles)}><Icon name="music" />Edit info</button>}

@@ -6,6 +6,7 @@ import PlayerBar from './components/PlayerBar';
 import Homepage from './components/Homepage';
 import FavoritesView from './components/FavoritesView';
 import RecentView from './components/RecentView';
+import FoldersView from './components/FoldersView';
 import PlaylistsView from './components/PlaylistsView';
 import ArtistsView from './components/ArtistsView';
 import AlbumsView from './components/AlbumsView';
@@ -21,6 +22,7 @@ import { albumIndex, albumAtEnd, nextAlbum } from './utils/albums';
 import { answer as remoteAnswer, resolveSource as remoteSource, trackOut as remoteTrackOut } from './remote/hostQuery';
 import { isTheme, themeKind } from './utils/themes';
 import useCoverAccent from './hooks/useCoverAccent';
+import { smartTracks, forSaving } from './utils/smartPlaylist';
 import { sortAlbumTracks, computeSignalPath, matchesSource, storageOf, qualityOf, findDuplicates, dedupeTracks, coverTargets, albumQuery, bumpCovers, bumpArtist, setCoverPreview, clearCoverPreview } from './utils/audio';
 import { parseLyrics } from './components/LyricsView';
 import { DialogHost, confirmDialog, alertDialog, Progress } from './components/ui';
@@ -247,10 +249,14 @@ function App() {
 
   // ---- Listening history: count a play once enough of the track was actually heard
   const [playCounts, setPlayCounts] = useState({});
+  const [lastPlayed, setLastPlayed] = useState({});
   useEffect(() => {
     // the history can grow from elsewhere too (other windows, imports): re-read the counts when it does
     let t = null;
-    const load = () => window.ipcRenderer.invoke('stats:counts').then(c => setPlayCounts(c || {})).catch(() => {});
+    const load = () => {
+      window.ipcRenderer.invoke('stats:counts').then(c => setPlayCounts(c || {})).catch(() => {});
+      window.ipcRenderer.invoke('stats:last-played').then(c => setLastPlayed(c || {})).catch(() => {});
+    };
     const onChange = () => { clearTimeout(t); t = setTimeout(load, 400); };
     load();
     window.ipcRenderer.on('stats:changed', onChange);
@@ -713,7 +719,7 @@ function App() {
 
   // One track, or several (an album, a selection): the second argument is the full list
   const handleAddPlaylist = (file, files) => {
-    if (playlists.length === 0) {
+    if (!playlists.some(p => !p.smart)) {
       showToast("Please create a playlist first in the Playlists tab.");
       return;
     }
@@ -1274,15 +1280,42 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     showToast(fresh.length === 1 ? 'Added to the queue' : `Added ${fresh.length} tracks to the queue`);
   };
 
-  // Right after the current track (a remote's "Play next"); tracks already waiting move up
+  // "Play next": right after the current track, but after what was already put there with Play next while it
+  // plays, so tracks added one after another keep that order. Tracks already waiting further down move up.
+  const playNextRef = useRef({ key: null, count: 0 }); // key: the track playing, and where it is in the queue
   const handlePlayNextMany = (files) => {
     if (!currentFile || currentIndex < 0) { playMusic(files[0], 0, files); return; }
+    const key = `${currentIndex}:${currentFile.path}`;
+    const anchor = playNextRef.current.key === key ? playNextRef.current.count : 0;
     const paths = new Set(files.map(f => f.path));
-    const rest = playQueue.slice(currentIndex + 1).filter(f => !paths.has(f.path));
+    const upcoming = playQueue.slice(currentIndex + 1);
+    const before = upcoming.slice(0, anchor).filter(f => !paths.has(f.path));
+    const after = upcoming.slice(anchor).filter(f => !paths.has(f.path));
     const fresh = (skipDuplicates ? dedupeTracks(files) : files).filter(f => f.path !== currentFile.path);
     if (!fresh.length) return;
-    setPlayQueue([...playQueue.slice(0, currentIndex + 1), ...fresh, ...rest]);
+    setPlayQueue([...playQueue.slice(0, currentIndex + 1), ...before, ...fresh, ...after]);
+    playNextRef.current = { key, count: before.length + fresh.length };
     showToast(fresh.length === 1 ? 'Playing next' : `Playing ${fresh.length} tracks next`);
+  };
+  // A track played N times in a row: the one playing now repeats straight after itself; another track goes
+  // where Play next would put it
+  const handleRepeat = (file, times) => {
+    const n = Math.max(2, Math.min(20, Math.round(times) || 2));
+    if (!currentFile || currentIndex < 0) {
+      const list = Array.from({ length: n }, () => file);
+      playMusic(file, 0, list);
+      showToast(`Playing ${n} times`);
+      return;
+    }
+    const isCurrent = file.path === currentFile.path;
+    const copies = Array.from({ length: isCurrent ? n - 1 : n }, () => file);
+    const key = `${currentIndex}:${currentFile.path}`;
+    const had = playNextRef.current.key === key ? playNextRef.current.count : 0;
+    const anchor = isCurrent ? 0 : had;
+    const upcoming = playQueue.slice(currentIndex + 1);
+    setPlayQueue([...playQueue.slice(0, currentIndex + 1), ...upcoming.slice(0, anchor), ...copies, ...upcoming.slice(anchor)]);
+    playNextRef.current = { key, count: had + copies.length };
+    showToast(isCurrent ? `This track plays ${n} times` : `Playing next, ${n} times`);
   };
 
   const hasDownloadFolder = async () => {
@@ -1363,7 +1396,9 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
   const live = useCallback((list) => (list || []).map(f => (f && libraryByPath.get(f.path)) || f), [libraryByPath]);
   const recentLive = useMemo(() => live(recentPlayed), [live, recentPlayed]);
   const favoritesLive = useMemo(() => live(favorites), [live, favorites]);
-  const playlistsLive = useMemo(() => playlists.map(p => ({ ...p, songs: live(p.songs) })), [live, playlists]);
+  // smart playlists are worked out from the library, the history and the favourites each time
+  const smartCtx = useMemo(() => ({ playCounts, lastPlayed, favorites: new Set(favorites.map(f => f.path)) }), [playCounts, lastPlayed, favorites]);
+  const playlistsLive = useMemo(() => playlists.map(p => ({ ...p, songs: p.smart ? smartTracks(p.smart, musicFiles, smartCtx) : live(p.songs) })), [live, playlists, musicFiles, smartCtx]);
   const currentLive = (currentFile && libraryByPath.get(currentFile.path)) || currentFile;
 
   const duplicates = useMemo(() => findDuplicates(musicFiles), [musicFiles]);
@@ -1645,6 +1680,38 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     return { track: currentLive ? remoteTrackOut(currentLive) : null, synced: p.isSynced, lines: p.lines.slice(0, 2000).map(l => ({ time: p.isSynced ? l.time : null, text: l.text, ...(l.words ? { words: l.words.map(w => ({ time: w.time, text: w.text })), end: l.end ?? null } : {}) })) };
   };
 
+  // .m3u / .m3u8: a file becomes a playlist of the tracks found in the library; the rest are listed
+  const handleImportPlaylist = async () => {
+    const r = await window.ipcRenderer.invoke('playlists:import');
+    if (!r || r.canceled) return;
+    if (!r.success) { showToast(`Could not read that playlist: ${r.error}`, 'error'); return; }
+    const songs = r.paths.map(p => libraryByPath.get(p)).filter(Boolean);
+    const taken = new Set(playlists.map(p => p.name));
+    let name = r.name || 'Imported playlist';
+    for (let n = 2; taken.has(name); n++) name = `${r.name} (${n})`;
+    const p = { id: Date.now().toString(), name, songs };
+    const next = [...playlists, p];
+    setPlaylists(next);
+    window.ipcRenderer.invoke('save-store', 'playlists', forSaving(next));
+    setSelectedPlaylistId(p.id);
+    if (r.missing.length) {
+      const shown = r.missing.slice(0, 12).map(m => `• ${m}`).join('\n');
+      await alertDialog({
+        title: `${songs.length} of ${r.total} tracks found`,
+        message: `“${name}” has the tracks that are in your library. ${r.missing.length === 1 ? 'This one is' : `These ${r.missing.length} are`} not, so ${r.missing.length === 1 ? 'it was' : 'they were'} left out:\n\n${shown}${r.missing.length > 12 ? `\n…and ${r.missing.length - 12} more` : ''}`,
+        tone: 'info', icon: 'playlist',
+      });
+    } else {
+      showToast(`Imported “${name}”: ${songs.length} ${songs.length === 1 ? 'track' : 'tracks'}`, 'success');
+    }
+  };
+  const handleExportPlaylist = async (playlist) => {
+    const r = await window.ipcRenderer.invoke('playlists:export', { name: playlist.name, paths: playlist.songs.map(f => f.path) });
+    if (!r || r.canceled) return;
+    if (!r.success) { showToast(`Could not save the playlist: ${r.error}`, 'error'); return; }
+    showToast(`Saved ${r.written} ${r.written === 1 ? 'track' : 'tracks'}${r.cloudOnly ? `; ${r.cloudOnly} only in TeleCloud ${r.cloudOnly === 1 ? 'has' : 'have'} no file and ${r.cloudOnly === 1 ? 'was' : 'were'} left out` : ''}`, r.cloudOnly ? 'info' : 'success');
+  };
+
   const handleSaveQueueAsPlaylist = () => {
     if (queueFiles.length === 0) {
       showToast("Queue is empty.");
@@ -1675,7 +1742,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     onOpenLocation: handleOpenLocation,
     onAddPlaylist: handleAddPlaylist, onBackupTo: songListProps.onBackupTo, onBackupMany: songListProps.onBackupMany,
     onRemoveFromCloud: songListProps.onRemoveFromCloud, storageNames,
-    onQueueMany: handleQueueMany, onFavoriteMany: handleFavoriteMany, onDeleteMany: handleDeleteMany,
+    onQueueMany: handleQueueMany, onPlayNextMany: handlePlayNextMany, onRepeat: handleRepeat, onFavoriteMany: handleFavoriteMany, onDeleteMany: handleDeleteMany,
     openAlbum, openArtist, playCounts,
     duplicates, skipDuplicates, setSkipDuplicates, openDuplicates: () => navigate('duplicates'),
     autoContinue, setAutoContinue,
@@ -1782,12 +1849,15 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
         return <div className="view"><FavoritesView {...songListProps} /></div>;
       case 'recent':
         return <div className="view"><RecentView {...songListProps} recentPlayed={recentLive} /></div>;
+      case 'folders':
+        return <div className="view"><FoldersView {...songListProps} musicFiles={sourceFiles} roots={musicFolderList} /></div>;
       case 'playlists':
         return (
           <div className="view">
             <PlaylistsView
-              playlists={playlistsLive} setPlaylists={setPlaylists}
-              onSavePlaylists={data => window.ipcRenderer.invoke('save-store', 'playlists', data)}
+              playlists={playlistsLive} setPlaylists={(next) => setPlaylists(forSaving(next))}
+              onSavePlaylists={data => window.ipcRenderer.invoke('save-store', 'playlists', forSaving(data))}
+              smartCtx={smartCtx} allFiles={musicFiles} onImport={handleImportPlaylist} onExport={handleExportPlaylist}
               currentFile={currentLive} isPlaying={isPlaying} onPlay={playMusic} onToggleFavorite={handleToggleFavorite} favorites={favoritesLive}
               onDeleteSong={handleDeleteSong} onDownloadSong={handleDownloadSong}
               onBackupMany={songListProps.onBackupMany} onBackupTo={songListProps.onBackupTo} storageNames={storageNames} onRemoveFromCloud={songListProps.onRemoveFromCloud}
@@ -2009,7 +2079,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
           <div className="card modal-card">
             <h3>{playlistModalData.length > 1 ? `Add ${playlistModalData.length} tracks to playlist` : 'Add to playlist'}</h3>
             <div className="list">
-              {playlists.length ? playlists.map(p => (
+              {playlists.some(p => !p.smart) ? playlists.filter(p => !p.smart).map(p => (
                 <button key={p.id} className="menu-item" onClick={() => confirmAddPlaylist(p.id, playlistModalData)}>
                   <Icon name="playlist" />{p.name}
                   <span style={{ marginLeft: 'auto', color: 'var(--text-3)', fontSize: 12 }}>{p.songs?.length || 0}</span>

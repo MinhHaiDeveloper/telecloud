@@ -14,6 +14,7 @@ const NAV_MUSIC = [
   { id: 'recent', label: 'Recently played', icon: 'clock' },
   { id: 'artists', label: 'Artists', icon: 'user' },
   { id: 'albums', label: 'Albums', icon: 'disc' },
+  { id: 'folders', label: 'Folders', icon: 'folder' },
 ];
 
 const Sidebar = ({
@@ -96,7 +97,7 @@ const Sidebar = ({
               onClick={() => onOpenPlaylist(p.id)}
               title={p.name}
             >
-              <i className="dot" style={{ background: PLAYLIST_COLORS[i % PLAYLIST_COLORS.length] }} />
+              {p.smart ? <Icon name="sparkle" className="pl-smart" style={{ color: PLAYLIST_COLORS[i % PLAYLIST_COLORS.length] }} /> : <i className="dot" style={{ background: PLAYLIST_COLORS[i % PLAYLIST_COLORS.length] }} />}
               <span className="txt">{p.name}</span>
               <span className="count">{p.songs?.length || 0}</span>
             </button>

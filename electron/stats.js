@@ -74,6 +74,8 @@ function relink() {
 }
 
 const playCounts = () => relink() >= 0 && Object.fromEntries(db().prepare('SELECT path, COUNT(*) n FROM plays GROUP BY path').all().map(r => [r.path, r.n]));
+/** When each track was last played, for smart playlists */
+const lastPlayed = () => Object.fromEntries(db().prepare('SELECT path, MAX(played_at) t FROM plays GROUP BY path').all().map(r => [r.path, r.t]));
 
 const splitArtists = (s) => (s || '').split(/[,;、]|\s+[&/]\s+|\s+(?:feat\.?|ft\.?|featuring)\s+/i).map(a => a.trim()).filter(Boolean);
 
@@ -125,8 +127,48 @@ function summary({ from, to, bucket = 'day' }) {
   };
 }
 
+/** The most played tracks in [from, to) */
+function top({ from = 0, to = Date.now() + 86400000, limit = 20 } = {}) {
+  relink();
+  return db().prepare(`SELECT path, COUNT(*) plays, SUM(listened_ms) ms, MAX(title) title, MAX(artist) artist, MAX(album) album
+    FROM plays WHERE played_at >= ? AND played_at < ? GROUP BY path ORDER BY plays DESC, ms DESC LIMIT ?`).all(from, to, Math.max(1, Math.min(200, limit)));
+}
+
+/**
+ * On this day: what was played around today's date (three days either side) in earlier years, newest year
+ * first, the most played of each year first.
+ */
+function onThisDay({ around = 3, perYear = 8, now = Date.now() } = {}) {
+  relink();
+  const today = new Date(now);
+  const days = [];
+  for (let k = -around; k <= around; k++) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + k);
+    days.push(`${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+  }
+  const rows = db().prepare(`SELECT path, played_at, title, artist, album, CAST(strftime('%Y', played_at / 1000, 'unixepoch', 'localtime') AS INTEGER) year
+    FROM plays WHERE strftime('%m-%d', played_at / 1000, 'unixepoch', 'localtime') IN (${days.map(() => '?').join(',')})
+      AND CAST(strftime('%Y', played_at / 1000, 'unixepoch', 'localtime') AS INTEGER) < ?`).all(...days, today.getFullYear());
+  const years = new Map();
+  for (const r of rows) {
+    const y = years.get(r.year) || new Map();
+    const t = y.get(r.path) || { path: r.path, title: r.title, artist: r.artist, album: r.album, plays: 0, last: 0 };
+    t.plays++; t.last = Math.max(t.last, r.played_at);
+    y.set(r.path, t);
+    years.set(r.year, y);
+  }
+  return [...years.entries()].sort((a, b) => b[0] - a[0]).map(([year, m]) => ({
+    year, ago: today.getFullYear() - year,
+    plays: [...m.values()].reduce((s, t) => s + t.plays, 0),
+    tracks: [...m.values()].sort((a, b) => b.plays - a.plays || b.last - a.last).slice(0, perYear),
+  }));
+}
+
 ipcMain.handle('stats:add-play', (e, p) => addPlay(p));
+ipcMain.handle('stats:top', (e, q) => top(q || {}));
+ipcMain.handle('stats:on-this-day', (e, q) => onThisDay(q || {}));
 ipcMain.handle('stats:counts', () => playCounts());
+ipcMain.handle('stats:last-played', () => lastPlayed());
 ipcMain.handle('stats:summary', (e, q) => summary(q || {}));
 
-module.exports = { addPlay, playCounts, summary, relink, onPlay: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, db, counts };
+module.exports = { addPlay, playCounts, summary, top, onThisDay, relink, onPlay: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, db, counts };

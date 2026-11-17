@@ -5,6 +5,7 @@ import SongActions from './songActions';
 import SongList from './SongList';
 import { qualityOf, storageOf, formatDuration, formatBytes, sortAlbumTracks } from '../utils/audio';
 import { albumIndex, trackCount } from '../utils/albums';
+import { MostPlayed, OnThisDay } from './ListeningHistory';
 
 const FORMAT_COLORS = ['var(--accent)', 'var(--ok)', '#9b7bff', 'var(--info)', 'var(--text-3)'];
 
@@ -78,6 +79,7 @@ const Homepage = ({ musicFiles, recentPlayed = [], onPlay, onNavClick, setSelect
   const recentDuration = recentPlayed.reduce((s, f) => s + (f.metadata?.duration || 0), 0);
   const latestQuality = latest ? qualityOf(latest.songs[0]) : null;
   const latestStorage = latest ? [...new Set(latest.songs.flatMap(storageOf))] : [];
+  const byPath = useMemo(() => new Map(musicFiles.map(f => [f.path, f])), [musicFiles]);
 
   return (
     <>
@@ -150,6 +152,9 @@ const Homepage = ({ musicFiles, recentPlayed = [], onPlay, onNavClick, setSelect
           </div>
         </>
       )}
+
+      <MostPlayed byPath={byPath} onPlay={onPlay} />
+      <OnThisDay byPath={byPath} onPlay={onPlay} />
 
       <section className="bottom-row">
         <div className="card sync-card">
