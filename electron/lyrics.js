@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const database = require('./database');
 const { describeWriteError } = require('./fileWrite');
+const { decryptQrc, qrcText } = require('./qrc');
 
 const UA = 'TeleCloud/1.0 (https://github.com/MinhHaiDeveloper/telecloud)';
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
@@ -26,6 +27,7 @@ const DEFAULTS = {
   saveTo: 'tag',                // 'tag' | 'lrc' | 'both'
   order: ['tags', 'local', 'lrclib', 'netease', 'qq', 'kugou', 'genius', 'musixmatch'],
   disabled: ['genius', 'musixmatch'], // available but not searched until turned on
+  wordByWord: true,             // ask NetEase, QQ Music and Kugou for their word-by-word lyrics, and prefer them
 };
 
 // options live in their own file, so saving the main settings never drops them
@@ -44,7 +46,7 @@ function setOptions(patch) {
 
 // ---------- helpers
 // lines that are actual lyrics: no LRC headers, no "Composer: …" style credits (instrumentals often only have those)
-const realLines = (text) => (text || '').split(/\r?\n/).map(l => l.replace(/\[[^\]]*\]/g, '').trim())
+const realLines = (text) => (text || '').split(/\r?\n/).map(l => l.replace(/\[[^\]]*\]|<\d{1,3}:\d{2}(?:\.\d{1,3})?>/g, '').trim()) // word times too
   .filter(l => l && !/^[^:：]{1,40}[:：]\s*\S/.test(l) && !/^(作词|作曲|编曲|制作|词|曲)/.test(l));
 const isSynced = (text) => /^\s*\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]/m.test(text || '');
 const clean = (s) => (s || '').toLowerCase().replace(/\(.*?\)|\[.*?\]|feat\..*$|ft\..*$/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
@@ -60,6 +62,20 @@ async function get(url, { headers = {}, json = true, timeout = 8000, method = 'G
 }
 const decodeEntities = (s) => s.replace(/&#(\d+);/g, (m, n) => String.fromCharCode(Number(n))).replace(/&#x([0-9a-f]+);/gi, (m, n) => String.fromCharCode(parseInt(n, 16)))
   .replace(/&quot;/g, '"').replace(/&apos;|&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+// Words that mark another version of a song: its lyrics or their timing differ (a remix, a live take,
+// a sped-up edit), so a found song with one counts against the match unless the track has it too.
+const VARIANT = /\b(remix(?:es)?|mix|live|acoustic|unplugged|instrumental|karaoke|sped[ -]?up|speed[ -]?up|slowed|reverb|nightcore|8d|lo-?fi|cover|demo|mashup|bootleg|vip|piano|orchestral|a cappella)\b|伴奏|纯音乐|现场|翻唱|加速|降速|慢速|\bdj\b|dj版|女声版|男声版|抖音版/gi;
+const variants = (s) => new Set([...String(s || '').toLowerCase().matchAll(VARIANT)].map(m => m[0].replace(/[\s-]+/g, '')));
+// the title inside the lyrics ([ti:...]) can say more than the search result: Kugou lists "Faded" with "[ti:Faded (Remix)]"
+const titleTag = (text) => /^\s*\[ti:([^\]]*)\]/mi.exec(text || '')?.[1] || '';
+function variantPenalty(track, ...titles) {
+  const mine = variants(track.title);
+  const theirs = new Set(titles.flatMap(t => [...variants(t)]));
+  let p = 0;
+  for (const v of theirs) if (!mine.has(v)) p += 0.35; // another version: even a perfect match drops below 0.7
+  for (const v of mine) if (!theirs.has(v)) p += 0.15; // the track is a version, this may be the original
+  return Math.min(p, 0.6);
+}
 // how well a found song matches the track (0..1): title, artist, and duration within 3 s
 function score(track, found) {
   let s = 0;
@@ -68,6 +84,70 @@ function score(track, found) {
   if (fa && ta && (fa.includes(clean(firstArtist(track.artist))) || ta.includes(fa))) s += 0.3;
   if (track.duration && found.duration) s += Math.abs(track.duration - found.duration) <= 3 ? 0.2 : Math.abs(track.duration - found.duration) <= 10 ? 0.1 : -0.2;
   return Math.max(0, Math.min(1, s));
+}
+
+// ---------- word-by-word lyrics from NetEase (YRC), QQ Music (QRC) and Kugou (KRC), turned into Enhanced LRC
+// Enhanced LRC: [mm:ss.xx]<mm:ss.xx>word <mm:ss.xx>word<mm:ss.xx>, a time before each word and the last word's end
+const lrcTime = (ms) => {
+  const t = Math.max(0, Math.round(ms / 10)); // hundredths
+  const m = Math.floor(t / 6000), s = (t % 6000) / 100;
+  return `${String(m).padStart(2, '0')}:${s.toFixed(2).padStart(5, '0')}`;
+};
+/**
+ * One word-timed line, as both formats give it: the line's start, then (start, length, text) for each word.
+ * `relative`: the word times count from the line's start (KRC) instead of from the song's (YRC).
+ */
+function wordLine(lineStart, words, relative) {
+  const ws = words.map(([t, d, text]) => ({ t: relative ? lineStart + t : t, d, text })).filter(w => w.text !== '');
+  if (!ws.length) return null;
+  const last = ws[ws.length - 1];
+  return `[${lrcTime(lineStart)}]${ws.map(w => `<${lrcTime(w.t)}>${w.text}`).join('')}<${lrcTime(last.t + last.d)}>`;
+}
+/** NetEase YRC: [start,length](wordStart,wordLength,0)word(...)word, times in ms from the song's start */
+function yrcToLrc(yrc) {
+  const out = [];
+  for (const raw of String(yrc || '').split(/\r?\n/)) {
+    const m = /^\[(\d+),(\d+)\](.*)$/.exec(raw.trim());
+    if (!m) continue; // the {"t":...} credit lines and anything else
+    const words = [...m[3].matchAll(/\((\d+),(\d+),\d+\)([^(]*)/g)].map(w => [Number(w[1]), Number(w[2]), w[3]]);
+    const line = wordLine(Number(m[1]), words, false);
+    if (line) out.push(line);
+  }
+  return out.length >= 2 ? out.join('\n') : null;
+}
+/** Kugou KRC (after decoding): [start,length]<offset,length,0>word..., word times from the line's start */
+function krcToLrc(krc) {
+  const out = [];
+  for (const raw of String(krc || '').split(/\r?\n/)) {
+    const m = /^\[(\d+),(\d+)\](.*)$/.exec(raw.trim());
+    if (!m) continue; // [ti:], [ar:], [language:] headers
+    const words = [...m[3].matchAll(/<(\d+),(\d+),\d+>([^<]*)/g)].map(w => [Number(w[1]), Number(w[2]), w[3]]);
+    const line = wordLine(Number(m[1]), words, true);
+    if (line) out.push(line);
+  }
+  return out.length >= 2 ? out.join('\n') : null;
+}
+/** QQ Music QRC (after decoding): [start,length]word(start,length)word(start,length), times from the song's start */
+function qrcToLrc(qrc) {
+  const out = [];
+  for (const raw of String(qrc || '').split(/\r?\n/)) {
+    const m = /^\[(\d+),(\d+)\](.*)$/.exec(raw.trim());
+    if (!m) continue; // [ti:], [ar:] headers
+    // a word is whatever comes before its (start,length), brackets in the lyrics included
+    const words = [...m[3].matchAll(/((?:[^(]|\((?!\d+,\d+\)))*)\((\d+),(\d+)\)/g)].map(w => [Number(w[2]), Number(w[3]), w[1]]);
+    const line = wordLine(Number(m[1]), words, false);
+    if (line) out.push(line);
+  }
+  return out.length >= 2 ? out.join('\n') : null;
+}
+// KRC files: "krc1", then XOR with a fixed key, then zlib
+const KRC_KEY = [64, 71, 97, 119, 94, 50, 116, 71, 81, 54, 49, 45, 206, 210, 110, 105];
+function decodeKrc(b64) {
+  const buf = Buffer.from(b64, 'base64');
+  if (buf.toString('latin1', 0, 4) !== 'krc1') return null;
+  const body = Buffer.from(buf.subarray(4));
+  for (let i = 0; i < body.length; i++) body[i] ^= KRC_KEY[i % KRC_KEY.length];
+  return require('zlib').inflateSync(body).toString('utf8').replace(/^\uFEFF/, '');
 }
 
 // ---------- sources: each returns [{ source, title, artist, album, duration, lyrics, synced, score }]
@@ -101,9 +181,13 @@ const providers = {
       const found = { title: s.name, artist: (s.artists || []).map(a => a.name).join(', '), album: s.album?.name, duration: s.duration ? s.duration / 1000 : null };
       const sc = score(track, found);
       if (sc < 0.3) continue;
-      const l = await get(`https://music.163.com/api/song/lyric?id=${s.id}&lv=1&kv=1&tv=-1`, { headers: { Referer: 'https://music.163.com/', 'User-Agent': BROWSER_UA } });
+      const words = options().wordByWord;
+      const l = await get(words ? `https://music.163.com/api/song/lyric/v1?id=${s.id}&lv=-1&yv=-1&tv=-1` : `https://music.163.com/api/song/lyric?id=${s.id}&lv=1&kv=1&tv=-1`, { headers: { Referer: 'https://music.163.com/', 'User-Agent': BROWSER_UA } });
       const text = l?.lrc?.lyric;
-      if (text && text.trim() && !/纯音乐/.test(text)) out.push({ source: 'netease', ...found, lyrics: text, synced: isSynced(text), score: sc });
+      if (!text || !text.trim() || /纯音乐/.test(text)) continue;
+      const byWord = words ? yrcToLrc(l?.yrc?.lyric) : null;
+      if (byWord) out.push({ source: 'netease', ...found, lyrics: byWord, synced: true, words: true, score: sc });
+      out.push({ source: 'netease', ...found, lyrics: text, synced: isSynced(text), score: sc });
     }
     return out;
   },
@@ -116,6 +200,14 @@ const providers = {
       const found = { title: s.songname, artist: (s.singer || []).map(a => a.name).join(', '), album: s.albumname, duration: s.interval || null };
       const sc = score(track, found);
       if (sc < 0.3) continue;
+      if (options().wordByWord && s.songid) {
+        try {
+          const xml = await get(`https://c.y.qq.com/qqmusic/fcgi-bin/lyric_download.fcg?version=15&miniversion=82&lrctype=4&musicid=${s.songid}`, { json: false, headers: { Referer: 'https://y.qq.com/', 'User-Agent': BROWSER_UA } });
+          const hex = /<content[^>]*>\s*<!\[CDATA\[([0-9A-Fa-f]+)\]\]>/.exec(xml || '')?.[1];
+          const byWord = hex ? qrcToLrc(qrcText(decryptQrc(hex))) : null;
+          if (byWord) out.push({ source: 'qq', ...found, lyrics: byWord, synced: true, words: true, score: sc });
+        } catch { /* no word version: the line one below */ }
+      }
       const l = await get(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${s.songmid}&format=json&nobase64=1&g_tk=5381`, { headers: { Referer: 'https://y.qq.com/', 'User-Agent': BROWSER_UA } });
       const text = l?.lyric ? decodeEntities(l.lyric) : null;
       if (text && text.trim() && !/此歌曲为没有填词的纯音乐/.test(text)) out.push({ source: 'qq', ...found, lyrics: text, synced: isSynced(text), score: sc });
@@ -130,6 +222,15 @@ const providers = {
       const found = { title: c.song, artist: c.singer, duration: c.duration ? c.duration / 1000 : null };
       const sc = score(track, found);
       if (sc < 0.3) continue;
+      if (options().wordByWord) {
+        try {
+          const k = await get(`https://lyrics.kugou.com/download?ver=1&client=pc&id=${c.id}&accesskey=${c.accesskey}&fmt=krc&charset=utf8`, { headers: { 'User-Agent': BROWSER_UA } });
+          const krc = k?.content ? decodeKrc(k.content) : null;
+          const byWord = krcToLrc(krc);
+          // the word version drops the [ti:] header, so keep its title for the version check
+          if (byWord) out.push({ source: 'kugou', ...found, lyrics: byWord, synced: true, words: true, score: sc, tagTitle: titleTag(krc) });
+        } catch { /* no word version: the line one below */ }
+      }
       const l = await get(`https://lyrics.kugou.com/download?ver=1&client=pc&id=${c.id}&accesskey=${c.accesskey}&fmt=lrc&charset=utf8`, { headers: { 'User-Agent': BROWSER_UA } });
       const text = l?.content ? Buffer.from(l.content, 'base64').toString('utf8') : '';
       if (text.trim()) out.push({ source: 'kugou', ...found, lyrics: text, synced: isSynced(text), score: sc });
@@ -178,6 +279,8 @@ const providers = {
 // A good match with timestamps beats a good match without: score 0.7 and up already means the
 // length is within 10 s, so it is the same recording.
 const goodSynced = (r) => (r.synced && r.score >= 0.7 ? 1 : 0);
+// with word by word on, a good match with word times beats one with line times only
+const goodWords = (r) => (r.words && r.score >= 0.7 ? 1 : 0);
 
 async function search(track, { all = false, sources } = {}) {
   const o = options();
@@ -187,16 +290,20 @@ async function search(track, { all = false, sources } = {}) {
   for (const id of list) {
     try {
       // at least two real lines, and online results must plausibly be this song
-      const found = (await providers[id](track)).filter(r => realLines(r.lyrics).length >= 2 && (!SOURCES[id].online || r.score >= 0.6));
-      found.sort((a, b) => goodSynced(b) - goodSynced(a) || b.score - a.score || Number(b.synced) - Number(a.synced));
+      const found = (await providers[id](track))
+        .map(r => (SOURCES[id].online ? { ...r, score: Math.max(0, r.score - variantPenalty(track, r.title, r.tagTitle || titleTag(r.lyrics))) } : r))
+        .filter(r => realLines(r.lyrics).length >= 2 && (!SOURCES[id].online || r.score >= 0.6));
+      found.sort((a, b) => goodWords(b) - goodWords(a) || goodSynced(b) - goodSynced(a) || b.score - a.score || Number(b.synced) - Number(a.synced));
       results.push(...found);
-      // what is on this computer wins; online, keep looking while only unsynced lyrics were found
-      if (!all && found.some(r => r.score >= 0.7 && (r.synced || !SOURCES[id].online))) break;
+      // what is on this computer wins; online, keep looking while only unsynced lyrics were found (and,
+      // with word by word on, while none has word times: line-synced ones are still used if that is all)
+      const enough = (r) => r.score >= 0.7 && (!SOURCES[id].online || (o.wordByWord ? r.words : r.synced));
+      if (!all && found.some(enough)) break;
     } catch (err) {
       errors[id] = err.name === 'AbortError' ? 'timed out' : err.message === 'fetch failed' ? 'could not connect' : err.message;
     }
   }
-  if (!all) results.sort((a, b) => goodSynced(b) - goodSynced(a)); // the sort keeps source order otherwise
+  if (!all) results.sort((a, b) => (o.wordByWord ? goodWords(b) - goodWords(a) : 0) || goodSynced(b) - goodSynced(a)); // the sort keeps source order otherwise
   return { results, errors };
 }
 
@@ -227,4 +334,4 @@ ipcMain.handle('lyrics:save', async (e, opts) => {
   try { return { success: true, ...(await save(opts)) }; } catch (err) { return { success: false, error: describeWriteError(err, opts?.path).error }; }
 });
 
-module.exports = { search, save, options, isSynced, SOURCES };
+module.exports = { search, save, options, isSynced, SOURCES, _words: { yrcToLrc, krcToLrc, decodeKrc, qrcToLrc }, _variantPenalty: variantPenalty };

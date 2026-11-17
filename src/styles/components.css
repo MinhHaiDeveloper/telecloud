@@ -656,7 +656,9 @@ html.np-cover-only .app.np-mode .np-full .np-body { padding: 24px 24px calc(24px
 .np-full.cover-only .np-top { position: absolute; top: 0; left: 0; right: 0; }
 .np-full.cover-only .np-body { grid-template-columns: minmax(0, 1fr) minmax(0, 0fr); }
 .np-full.cover-only .np-hero { position: relative; gap: 0; }
-.np-full.cover-only .np-info { position: absolute; top: 100%; left: 0; right: 0; }
+/* out of the way at once: taken out of the layout it would sit at the bottom of the view while fading, near the
+   player bar (on the way back it fades in where it belongs) */
+.np-full.cover-only .np-info { position: absolute; top: 100%; left: 0; right: 0; visibility: hidden; transition: none; }
 .np-reveal {
   position: absolute; top: 20px; right: 20px; z-index: 5; width: 40px; height: 40px; border-radius: 50%;
   display: grid; place-items: center; color: #fff; background: rgba(0, 0, 0, .35); backdrop-filter: blur(8px);

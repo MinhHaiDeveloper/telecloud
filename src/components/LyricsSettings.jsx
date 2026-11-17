@@ -57,6 +57,9 @@ const LyricsSettings = () => {
         <SettingRow icon="search" title="Search online for missing lyrics" desc="When a track without lyrics plays, ask the sources below. Off: only the file's tags and .lrc files are used.">
           <Toggle checked={o.search} onChange={(v) => set({ search: v })} />
         </SettingRow>
+        <SettingRow icon="lyrics" title="Word by word when available" desc="Ask NetEase, QQ Music and Kugou for lyrics timed word by word, and prefer them: each word lights up as it is sung. Songs without them keep line-synced lyrics.">
+          <Toggle checked={o.wordByWord !== false} onChange={(v) => set({ wordByWord: v })} disabled={!o.search} />
+        </SettingRow>
         <SettingRow icon="check" title="Save found lyrics automatically" desc="Off: found lyrics are shown first and saved only when you press Save.">
           <Toggle checked={o.autoSave} onChange={(v) => set({ autoSave: v })} disabled={!o.search} />
         </SettingRow>

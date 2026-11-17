@@ -21,7 +21,7 @@ const NL = String.fromCharCode(10);
 const lineAt = (text, pos) => { const start = text.lastIndexOf(NL, pos - 1) + 1; const nl = text.indexOf(NL, pos); return { start, end: nl < 0 ? text.length : nl }; };
 const fmtClock = (t) => (t == null ? '--:--.--' : fmtStamp(t).slice(1, -1));
 
-const firstLines = (text, n = 3) => (text || '').split(/\r?\n/).map(l => l.replace(/\[[^\]]*\]/g, '').trim()).filter(Boolean).slice(0, n);
+const firstLines = (text, n = 3) => (text || '').split(/\r?\n/).map(l => l.replace(/\[[^\]]*\]|<\d{1,3}:\d{2}(?:\.\d{1,3})?>/g, '').trim()) // word times too.filter(Boolean).slice(0, n);
 
 /**
  * Search every lyrics source for a track, pick a result, edit it, save it to the tag and/or a .lrc.
@@ -217,7 +217,7 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
               <button key={i} className={`lyr-item ${pick === i ? 'on' : ''}`} onClick={() => { setPick(i); setText(r.lyrics); }}>
                 <div className="lyr-top">
                   <b>{label(r.source)}</b>
-                  <span className={`badge mono ${r.synced ? 'b-lossless' : 'b-local'}`}>{r.synced ? 'Synced' : 'Plain'}</span>
+                  <span className={`badge mono ${r.words ? 'b-hires' : r.synced ? 'b-lossless' : 'b-local'}`}>{r.words ? 'Word by word' : r.synced ? 'Synced' : 'Plain'}</span>
                   {r.score < 0.8 && <span className="badge b-cached mono" title="Title, artist or length differ a little">Close match</span>}
                 </div>
                 <small className="lyr-match">{r.title} · {r.artist}{r.album ? ` · ${r.album}` : ''}</small>
