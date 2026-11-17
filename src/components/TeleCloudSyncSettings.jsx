@@ -346,6 +346,7 @@ const TeleCloudSyncSettings = () => {
     const [status, setStatus] = useState(null);
     const [queue, setQueue] = useState({ queued: 0, done: 0, error: 0, running: false, active: null, errors: [] });
     const [error, setError] = useState('');
+    const [resign, setResign] = useState(false); // signing in again after Telegram ended the sign-in
 
     const refresh = useCallback(async () => {
         const r = await ipc().invoke('telecloud-sync:check-auth');
@@ -353,6 +354,9 @@ const TeleCloudSyncSettings = () => {
             setStatus(r);
             if (r.queue) setQueue(r.queue);
             setStep('connected');
+        } else if (r?.success && r.sessionEnded) {
+            setStatus(r);
+            setStep(s => (['otp', 'password'].includes(s) ? s : 'ended'));
         } else {
             setStep(s => (s === 'loading' || s === 'connected' ? 'info' : s));
         }
@@ -366,7 +370,9 @@ const TeleCloudSyncSettings = () => {
         ipc().on('telecloud-sync:queue', onQueue);
         ipc().on('telecloud-sync:stopped', onStopped);
         ipc().on('telecloud-sync:queue-error', onQueueError);
+        ipc().on('telecloud-sync:session-ended', onStopped);
         return () => {
+            ipc().off('telecloud-sync:session-ended', onStopped);
             ipc().off('telecloud-sync:queue', onQueue);
             ipc().off('telecloud-sync:stopped', onStopped);
             ipc().off('telecloud-sync:queue-error', onQueueError);
@@ -394,15 +400,34 @@ const TeleCloudSyncSettings = () => {
         if (!r.success) throw new Error(r.error || 'Failed to send code');
         setStep('otp');
     });
+    // signing in again keeps everything: no API keys, no storage choice, just the code (and the password)
+    const signInAgain = () => run(async () => {
+        const r = await ipc().invoke('telecloud-sync:resign-start');
+        if (!r.success) throw new Error(r.error);
+        setPhoneNumber(r.phoneNumber || '');
+        setOtpCode('');
+        setResign(true);
+        setStep('otp');
+    });
+    const finishResign = async () => {
+        const r = await ipc().invoke('telecloud-sync:resign-finish');
+        if (!r.success) throw new Error(r.error);
+        setResign(false);
+        await refresh();
+        alertDialog({ title: 'Signed in again', message: 'TeleCloud is connected again. Your backups, storages and settings are as they were.', tone: 'ok' });
+    };
     const verifyCode = () => run(async () => {
         const r = await ipc().invoke('telecloud-sync:verify-code', { code: otpCode, phoneNumber: phoneNumber.replace(/\s+/g, '') });
         if (!r.success) throw new Error(/PHONE_CODE_INVALID/.test(r.error || '') ? 'That code is not right. Check Telegram and try again.' : r.error);
-        setStep(r.passwordNeeded ? 'password' : 'config');
+        if (r.passwordNeeded) { setStep('password'); return; }
+        if (resign) { await finishResign(); return; }
+        setStep('config');
     });
     const checkPassword = () => run(async () => {
         const r = await ipc().invoke('telecloud-sync:check-password', { password });
         if (!r.success) throw new Error(/PASSWORD_HASH_INVALID/.test(r.error || '') ? 'Wrong password.' : r.error);
         setPassword('');
+        if (resign) { await finishResign(); return; }
         setStep('config');
     });
     const finishSetup = () => run(async () => {
@@ -462,6 +487,29 @@ const TeleCloudSyncSettings = () => {
 
     if (step === 'loading') return <div className="empty">Loading…</div>;
 
+    // Telegram ended the sign-in: say why, what is kept, and sign in again with just a code
+    if (step === 'ended') {
+        const info = status?.sessionEnded || {};
+        return (
+            <div className="tc-wrap">
+                <div className="card tc-hero tc-ended">
+                    <div className="set-icon" style={{ background: 'color-mix(in srgb, var(--warn, #f5b942) 18%, transparent)', color: 'var(--warn, #f5b942)', width: 46, height: 46 }}><Icon name="cloud" /></div>
+                    <div>
+                        <h2>Telegram signed TeleCloud out</h2>
+                        <p style={{ marginTop: 6 }}>{info.text}</p>
+                        <p style={{ marginTop: 6 }}>Nothing is lost: your backups in {status?.storage?.title || 'Telegram'}{status?.syncedItems ? ` (${status.syncedItems.toLocaleString()} tracks)` : ''}, your storages and settings are kept. Sign in again with a code from Telegram to carry on.</p>
+                        {info.at && <p className="muted" style={{ marginTop: 6, fontSize: 12.5 }}>Noticed {new Date(info.at).toLocaleString()} · {status?.phoneNumber}</p>}
+                    </div>
+                    {errorBox}
+                    <div className="btn-row">
+                        <button className="btn-primary" onClick={signInAgain} disabled={isLoading}>{isLoading ? 'Sending a code…' : 'Sign in again'}</button>
+                        <button className="btn-ghost" onClick={disconnect} disabled={isLoading}>Disconnect instead</button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     if (step === 'info') {
         return (
             <div className="tc-wrap">
@@ -488,14 +536,14 @@ const TeleCloudSyncSettings = () => {
     }
 
     if (['credentials', 'phone', 'otp', 'password', 'config'].includes(step)) {
-        const back = { credentials: 'info', phone: 'credentials', otp: 'phone', password: 'otp' }[step];
+        const back = resign ? { otp: 'ended', password: 'otp' }[step] : { credentials: 'info', phone: 'credentials', otp: 'phone', password: 'otp' }[step];
         return (
             <div className="tc-wrap">
                 <div className="page-head" style={{ margin: 0 }}>
-                    {back && <BackButton onClick={() => goTo(back)} />}
-                    <h2 style={{ fontSize: 20 }}>Set up TeleCloud</h2>
+                    {back && <BackButton onClick={() => { if (back === 'ended') setResign(false); goTo(back); }} />}
+                    <h2 style={{ fontSize: 20 }}>{resign ? 'Sign in again' : 'Set up TeleCloud'}</h2>
                 </div>
-                <Stepper step={step} />
+                {!resign && <Stepper step={step} />}
 
                 {step === 'credentials' && (
                     <div className="card form-card">
@@ -525,10 +573,10 @@ const TeleCloudSyncSettings = () => {
                 {step === 'otp' && (
                     <div className="card form-card">
                         {errorBox}
-                        <div style={{ color: 'var(--text-2)', fontSize: 13.5 }}>Telegram sent a login code to your Telegram app (not SMS).</div>
+                        <div style={{ color: 'var(--text-2)', fontSize: 13.5 }}>Telegram sent a login code to your Telegram app (not SMS){resign && phoneNumber ? ` for ${phoneNumber}` : ''}.</div>
                         <input className="input code" value={otpCode} onChange={e => setOtpCode(e.target.value.replace(/\D/g, ''))} placeholder="•••••" maxLength={6} inputMode="numeric" onKeyDown={onEnter(verifyCode)} autoFocus />
                         <div className="btn-row" style={{ justifyContent: 'space-between' }}>
-                            <button className="btn-link" onClick={sendCode} disabled={isLoading}>Resend code</button>
+                            <button className="btn-link" onClick={resign ? signInAgain : sendCode} disabled={isLoading}>Resend code</button>
                             <button className="btn-primary" onClick={verifyCode} disabled={isLoading || otpCode.length < 5}>{isLoading ? 'Verifying…' : 'Verify'}</button>
                         </div>
                     </div>
@@ -588,7 +636,7 @@ const TeleCloudSyncSettings = () => {
                     <button className="btn-ghost sm" onClick={showTips} title="What to do and avoid so backups complete"><Icon name="info" />Do's &amp; don'ts</button>
                 </h3>
                 <div className="card set-card">
-                    <SettingRow icon="cloud" title={<>Connected <span className="badge b-lossless" style={{ marginLeft: 6 }}>Online</span></>} desc={`${status?.phoneNumber || 'Telegram account'} · ${status?.storage?.title || 'no storage chat'}`}>
+                    <SettingRow icon="cloud" title={<>Connected <span className="badge b-lossless" style={{ marginLeft: 6 }}>Online</span></>} desc={`${status?.phoneNumber || 'Telegram account'} · ${status?.storage?.title || 'no storage chat'}${status?.sessionTtlText ? ` · Telegram signs this computer out after ${status.sessionTtlText} unused (Settings > Devices); opening TeleCloud keeps it signed in` : ''}`}>
                         <button className="btn-outline danger" onClick={disconnect} disabled={isLoading}>Disconnect</button>
                     </SettingRow>
                     <div className="set-sub" style={{ background: 'transparent' }}>

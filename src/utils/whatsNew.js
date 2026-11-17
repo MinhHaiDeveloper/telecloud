@@ -2,6 +2,17 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.1.0-beta.8',
+    items: [
+      'Settings > Playback > Exclusive mode buffer, as in Roon: how much music the DAC gets at a time in WASAPI Exclusive (device default, minimum, 20 to 200 ms). If your DAC clicks or skips now and then, try another size: some prefer a larger one, some USB DACs a smaller one. Still bit-perfect.',
+      'The saved log sums up audio under-runs every 10 seconds, with the track and the time, instead of a line for each.',
+      'When Telegram signs TeleCloud out (a sign-in unused for the time set in Telegram > Settings > Devices, or ended from another device), TeleCloud says so in words, keeps your backups and settings, and signs in again with just a code. The TeleCloud page shows how long Telegram keeps an unused sign-in, and opening TeleCloud keeps it signed in.',
+      'The next cover no longer shows for a moment before the liquid change starts.',
+      'Now Playing: the waveform sits in the middle of the player bar, and the cover-only view (H) is centred at any window size.',
+      'The player holds less music in memory ahead of time, which helps on computers short of memory.',
+    ],
+  },
+  {
     version: '1.1.0-beta.7',
     items: [
       'Smart playlists: a playlist made of rules (artist, genre, year, quality, format, MQA, plays, last played, date added, favourite, where it is), matching all or any, with an order and a limit. It keeps itself up to date and shows on the remote like any playlist.',

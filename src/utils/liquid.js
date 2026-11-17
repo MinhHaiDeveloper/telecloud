@@ -12,6 +12,8 @@ export const motionOff = () => document.documentElement.classList.contains('redu
 // ---------- pictures
 // media:// pictures can't be textures (the page can't read their pixels), so their bytes come over IPC
 const bitmaps = new Map(); // url -> Promise<ImageBitmap>
+const decoded = new Map(); // url -> ImageBitmap, once ready: a change can start without waiting at all
+export const bitmapNow = (url) => decoded.get(url) || null;
 const MAX_SIDE = 1024;
 export function bitmapFor(url) {
   if (!url) return Promise.reject(new Error('No picture'));
@@ -34,10 +36,11 @@ export function bitmapFor(url) {
     return small;
   })();
   bitmaps.set(url, job);
-  job.catch(() => { if (bitmaps.get(url) === job) bitmaps.delete(url); });
+  job.then((b) => { if (bitmaps.get(url) === job) decoded.set(url, b); }, () => { if (bitmaps.get(url) === job) bitmaps.delete(url); });
   while (bitmaps.size > 8) {
     const [old, p] = bitmaps.entries().next().value;
     bitmaps.delete(old);
+    decoded.delete(old);
     p.then(b => setTimeout(() => b.close?.(), DURATION + 500)).catch(() => {}); // not while a change may still draw it
   }
   return job;
@@ -127,7 +130,7 @@ export function playCoverChange(host, change, onDone = () => {}) {
   let dead = false;
   let el = null;
   const finish = () => { if (!dead) { dead = true; if (el) giveBack(el); el = null; onDone(); } };
-  Promise.all([bitmapFor(change.from), bitmapFor(change.to)]).then(([a, b]) => {
+  const start = ([a, b]) => {
     if (dead || !host.isConnected) return;
     el = borrow();
     if (!el) { finish(); return; } // no WebGL: the new cover just shows
@@ -155,7 +158,14 @@ export function playCoverChange(host, change, onDone = () => {}) {
       else finish();
     };
     frame(performance.now()); // the first frame at once, so nothing flashes before it
-  }).catch(finish);
+  };
+  const a0 = bitmapNow(change.from), b0 = bitmapNow(change.to);
+  if (a0 && b0) start([a0, b0]); // both ready: drawn before the page is even shown
+  else {
+    // still being read: the old cover stands in, so the new one never shows before the change does
+    host.style.background = `center / cover no-repeat url("${String(change.from).replace(/"/g, '%22')}")`;
+    Promise.all([bitmapFor(change.from), bitmapFor(change.to)]).then(start).catch(finish);
+  }
   return () => { cancelAnimationFrame(raf); if (!dead) { dead = true; if (el) giveBack(el); el = null; } };
 }
 

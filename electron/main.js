@@ -214,6 +214,7 @@ app.whenReady().then(async () => {
       mqaMode: s.mqaMode,
       releaseOnPause: s.releaseOnPause,
       pauseFade: s.pauseFade,
+      exclusiveBuffer: s.exclusiveBuffer,
     });
   } catch (err) {
     console.error('Could not apply saved audio settings:', err.message);

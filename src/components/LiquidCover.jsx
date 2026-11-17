@@ -18,7 +18,8 @@ const albumOf = (f) => {
 
 function Liquid({ change, onDone }) {
   const cv = useRef(null);
-  useEffect(() => playCoverChange(cv.current, change, onDone), [change]); // eslint-disable-line react-hooks/exhaustive-deps
+  // before the page is painted, so the new cover never shows for a frame before the change starts
+  useLayoutEffect(() => playCoverChange(cv.current, change, onDone), [change]); // eslint-disable-line react-hooks/exhaustive-deps
   return <span ref={cv} className="liquid-host" aria-hidden="true" />;
 }
 

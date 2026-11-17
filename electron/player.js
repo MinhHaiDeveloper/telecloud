@@ -249,6 +249,23 @@ async function dopPlan(filePath, s) {
 // option we set on purpose; the others are the exclusive device being reopened, which takes a few
 // tries when switching output. If it really can't be opened, mpv's "no sound" error is still logged.
 let lastDeviceBusy = 0;
+// under-runs: the output ran dry and the music skipped (in exclusive mode; shared mode doesn't report them)
+let underruns = 0;
+let underrunTimer = null;
+let underrunFirst = 0;
+function countUnderrun() {
+  underruns++;
+  if (underrunTimer) return;
+  underrunFirst = Date.now();
+  underrunTimer = setTimeout(() => {
+    const what = !currentPath ? 'nothing playing' : playerPaused ? 'paused' : `playing ${path.basename(currentPath)}`;
+    const at = new Date(underrunFirst).toTimeString().slice(0, 8);
+    console.warn(`[Player] Audio under-runs: ${underruns} in 10 s from ${at} (${what}${isExclusive() ? ', exclusive' : ''})`);
+    module.exports._underrunsAt?.(underrunFirst, underruns);
+    underruns = 0; underrunTimer = null;
+  }, 10000);
+}
+
 function isMpvNoise(text) {
   if (/audio-stream-silence option is set|^Retrying in \d+/.test(text)) return true;
   if (!/AUDCLNT_E_DEVICE_IN_USE/.test(text)) return false;
@@ -492,7 +509,9 @@ function handleMessage(msg) {
       break;
 
     case 'log-message':
-      // mpv's own warnings and errors, for the log file only
+      // mpv's own warnings and errors, for the log file only. Under-runs come by the hundred, so they are
+      // counted and summed up every 10 s instead, with what was going on.
+      if (/Under-run/i.test(String(msg.text || ''))) { countUnderrun(); break; }
       if (!isMpvNoise(String(msg.text || ''))) console.warn(`[mpv] ${msg.prefix}: ${String(msg.text || '').trim()}`);
       break;
 
@@ -585,16 +604,24 @@ function startMpv() {
     // TeleCloud does that itself (media.js), with its name and the album cover
     '--media-controls=no',
     '--cache=yes',
+    // read-ahead kept small, so mpv holds less memory for Windows to page out on a busy computer: 32 MB is
+    // still more than 10 s of DSD256 (about 20 s of 24-bit/192 kHz FLAC), and 4 MB behind for a short skip back
     '--demuxer-readahead-secs=20',
-    '--demuxer-max-bytes=64MiB',
-    '--demuxer-max-back-bytes=16MiB',
+    '--demuxer-max-bytes=32MiB',
+    '--demuxer-max-back-bytes=4MiB',
+    // nothing on screen to drive: no on-screen controller, no key bindings
+    '--osc=no',
+    '--input-default-bindings=no',
     '--volume-max=100',
   ];
   // automated tests: play to a silent output instead of the real device
   if (process.env.TELECLOUD_MPV_AO) args.push(`--ao=${process.env.TELECLOUD_MPV_AO}`);
+  // tests only: extra mpv options to compare settings (space separated)
+  if (process.env.TELECLOUD_MPV_ARGS) args.push(...process.env.TELECLOUD_MPV_ARGS.split(' ').filter(Boolean));
   // tests only: a forced output rate stands in for a DAC that won't take a DoP rate
   if (process.env.TELECLOUD_MPV_TEST_RATE) args.push(`--audio-samplerate=${Number(process.env.TELECLOUD_MPV_TEST_RATE)}`);
 
+  appliedBuffer = null; // a new mpv: the exclusive buffer is set again with the other settings
   proc = spawn(mpvPath, args, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
   let stderrTail = '';
   proc.stderr.on('data', d => { stderrTail = (stderrTail + d.toString()).slice(-2000); });
@@ -868,7 +895,32 @@ async function applyDevice(deviceId) {
 async function applyAudioSettingsToMpv() {
   const s = currentAudioSettings;
   if (!mqaEntries.has(currentEntryId)) await setProp('replaygain', gainMode());
+  await applyExclusiveBuffer();
   await scheduleChain();
+}
+
+// ---------- the exclusive-mode buffer (Settings > Playback), as in Roon's "Buffer size"
+// The device buffer is how much music the DAC is given at a time: the device's own period by default
+// (often 10 ms), more for an output that stutters. mpv keeps its own buffer to fill it from, which must stay
+// well above the device's: when the two were the same size, a USB DAC crackled all the time.
+const BUFFER_CHOICES = ['default', 'min', '20', '50', '100', '200'];
+let appliedBuffer = null;
+function bufferOptions(choice) {
+  const ms = Number(choice);
+  if (!ms) return { wasapi: choice, soft: 0.2 };
+  return { wasapi: String(ms * 1000), soft: Math.max(0.2, (ms * 4) / 1000) }; // mpv wants microseconds
+}
+async function applyExclusiveBuffer() {
+  const choice = currentAudioSettings.exclusiveBuffer || 'default';
+  if (appliedBuffer === choice) return;
+  const { wasapi, soft } = bufferOptions(choice);
+  await setProp('wasapi-exclusive-buffer', wasapi);
+  await setProp('audio-buffer', soft);
+  const first = appliedBuffer === null;
+  appliedBuffer = choice;
+  if (!first || choice !== 'default') console.log(`[Player] Exclusive buffer: ${Number(choice) ? `${choice} ms` : choice === 'min' ? "the device's minimum" : "the device's own"}, mpv keeps ${Math.round(soft * 1000)} ms ready`);
+  // the device opens with the new size: at once if exclusive and playing, otherwise on the next play
+  if (!first && isExclusive() && currentEntryId) await command(['ao-reload']).catch(() => {});
 }
 
 // ---------- crossfade ----------
@@ -1338,6 +1390,7 @@ async function applyAudioSettings(settings) {
     mqaMode: settings?.mqaMode === 'decoder' ? 'decoder' : 'plain',
     releaseOnPause: !!settings?.releaseOnPause,
     pauseFade: !!settings?.pauseFade,
+    exclusiveBuffer: BUFFER_CHOICES.includes(String(settings?.exclusiveBuffer)) ? String(settings.exclusiveBuffer) : 'default',
   };
   if (!currentAudioSettings.releaseOnPause) reclaimDac({ keepPaused: true }).catch(() => {});
   else scheduleRelease();

@@ -193,10 +193,12 @@ function App() {
     const onStopped = () => { setSyncProgress(null); refresh(); };
     ipc.on('telecloud-sync:progress', onProgress);
     ipc.on('telecloud-sync:stopped', onStopped);
+    ipc.on('telecloud-sync:session-ended', onStopped);
     const timer = setInterval(refresh, 60000);
     return () => {
       ipc.removeListener('telecloud-sync:progress', onProgress);
       ipc.removeListener('telecloud-sync:stopped', onStopped);
+      ipc.removeListener('telecloud-sync:session-ended', onStopped);
       clearInterval(timer);
       clearTimeout(idle);
     };
@@ -1889,7 +1891,9 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
               title="TeleCloud"
               subtitle={syncStatus?.isAuthenticated
                 ? `${cloudFiles.length.toLocaleString()} tracks backed up to Telegram`
-                : 'Not connected — set up TeleCloud Sync in Settings'}
+                : syncStatus?.sessionEnded
+                  ? 'Telegram signed TeleCloud out. Your backups are kept: sign in again in Settings > TeleCloud Sync'
+                  : 'Not connected — set up TeleCloud Sync in Settings'}
               toolbar={storages.length > 1 && (
                 <div className="storage-filter" role="tablist" aria-label="Storage">
                   <button className={tcStorageFilter === 'all' ? 'on' : ''} onClick={() => setTcStorageFilter('all')}>All<span className="n">{cloudFiles.length.toLocaleString()}</span></button>

@@ -550,6 +550,12 @@ html[style*="--np-lyric-align: right"] .np-lyrics .lyric { transform-origin: rig
   align-self: end;
 }
 .app.np-mode .p-track { opacity: 0; transform: translateY(26px) scale(.96); pointer-events: none; }
+/* with the waveform the bar grows a little, so the wave sits in the middle instead of on the bar's lower edge */
+.app.np-mode .player:has(.seek-wrap.has-wave) { height: 78px; }
+.app.np-mode:has(.seek-wrap.has-wave) .np-body { padding-bottom: 112px; }
+.app.np-mode .p-center { justify-content: center; }
+.app.np-mode .seek-wrap.has-wave { height: 24px; }
+.app.np-mode .seek-wrap.has-wave .range::-webkit-slider-thumb { height: 24px; }
 .app.np-mode .p-right .np-hide { opacity: 0; pointer-events: none; width: 0; overflow: hidden; margin: 0; padding: 0; }
 .app.np-mode .p-center { gap: 4px; }
 .app.np-mode .p-controls .icon-btn { width: 32px; height: 32px; }
@@ -644,7 +650,13 @@ html[style*="--np-lyric-align: right"] .np-lyrics .lyric { transform-origin: rig
 .np-full.cover-only .np-info { transform: translateY(10px); }
 .np-full.cover-only .cover.np-cover { width: min(78vh, 760px, 90%); }
 html.np-cover-only .app.np-mode .player { opacity: 0; transform: translateY(20px); pointer-events: none; transition: opacity .4s var(--ease-out), transform .4s var(--ease-out); }
-html.np-cover-only .app.np-mode .np-body { padding-bottom: 0; }
+html.np-cover-only .app.np-mode .np-full .np-body { padding: 24px 24px calc(24px + var(--titlebar-h, 32px)); }
+/* cover only: what is hidden takes no room, so the cover sits in the middle of the window at any size (the
+   hidden title bar's height comes off the bottom too, so the middle is the window's, not the view's) */
+.np-full.cover-only .np-top { position: absolute; top: 0; left: 0; right: 0; }
+.np-full.cover-only .np-body { grid-template-columns: minmax(0, 1fr) minmax(0, 0fr); }
+.np-full.cover-only .np-hero { position: relative; gap: 0; }
+.np-full.cover-only .np-info { position: absolute; top: 100%; left: 0; right: 0; }
 .np-reveal {
   position: absolute; top: 20px; right: 20px; z-index: 5; width: 40px; height: 40px; border-radius: 50%;
   display: grid; place-items: center; color: #fff; background: rgba(0, 0, 0, .35); backdrop-filter: blur(8px);

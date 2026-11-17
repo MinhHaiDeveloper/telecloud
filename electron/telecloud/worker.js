@@ -322,6 +322,12 @@ function createWorker(emit) {
       return { deleted: done };
     },
 
+    /** How many days Telegram keeps a sign-in nobody uses (Settings > Devices > Automatically terminate old sessions) */
+    async sessionTtl() {
+      const r = await need().invoke(new Api.account.GetAuthorizations());
+      return { days: Number(r.authorizationTtlDays) || null };
+    },
+
     async disconnect() {
       if (client) { try { await client.disconnect(); } catch { /* ignore */ } }
       client = null;

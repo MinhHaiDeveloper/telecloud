@@ -75,6 +75,7 @@ const SettingsView = ({
   const [crossfeed, setCrossfeed] = useState('off');
   const [releaseOnPause, setReleaseOnPause] = useState(false); // other apps may use the DAC while paused
   const [pauseFade, setPauseFade] = useState(false);
+  const [exclusiveBuffer, setExclusiveBuffer] = useState('default'); // the DAC's buffer in WASAPI Exclusive
   const [mqaMode, setMqaMode] = useState('plain');
   const [mqaScan, setMqaScan] = useState(null);
   const [asioDriver, setAsioDriver] = useState('');
@@ -147,6 +148,7 @@ const SettingsView = ({
       if (settings && settings.crossfeed) setCrossfeed(settings.crossfeed);
       if (settings && settings.releaseOnPause) setReleaseOnPause(true);
       if (settings && settings.pauseFade) setPauseFade(true);
+      if (settings && settings.exclusiveBuffer) setExclusiveBuffer(String(settings.exclusiveBuffer));
       if (settings && settings.mqaMode) setMqaMode(settings.mqaMode);
       if (settings && settings.asioDriver) setAsioDriver(settings.asioDriver);
       if (settings && settings.keyboardShortcuts) setKeyboardShortcuts(s => ({ ...s, ...settings.keyboardShortcuts }));
@@ -186,6 +188,7 @@ const SettingsView = ({
       newSettings.crossfeed = crossfeed;
       newSettings.releaseOnPause = releaseOnPause;
       newSettings.pauseFade = pauseFade;
+      newSettings.exclusiveBuffer = exclusiveBuffer;
       newSettings.mqaMode = mqaMode;
       newSettings.keyboardShortcuts = keyboardShortcuts;
       await ipcRenderer.invoke('save-store', 'settings', newSettings);
@@ -204,12 +207,13 @@ const SettingsView = ({
         mqaMode,
         releaseOnPause,
         pauseFade,
+        exclusiveBuffer,
       };
       await ipcRenderer.invoke('apply-audio-settings', audio);
       onAudioSettingsChange?.(audio);
     };
     saveAudioSettings();
-  }, [settingsLoaded, replayGainEnabled, replayGainMode, crossfadeEnabled, crossfadeDuration, maxSamplingEnabled, maxBitDepth, maxSampleRate, dsdMode, dopMax, asioDriver, channelBalance, crossfeed, mqaMode, releaseOnPause, pauseFade, keyboardShortcuts]);
+  }, [settingsLoaded, replayGainEnabled, replayGainMode, crossfadeEnabled, crossfadeDuration, maxSamplingEnabled, maxBitDepth, maxSampleRate, dsdMode, dopMax, asioDriver, channelBalance, crossfeed, mqaMode, releaseOnPause, pauseFade, exclusiveBuffer, keyboardShortcuts]);
 
   const toggleDevice = async (deviceId) => {
     const ipcRenderer = window.ipcRenderer;
@@ -437,6 +441,16 @@ const SettingsView = ({
 
                 <SettingRow icon="speaker" title="Let other apps use the DAC while paused" desc="In WASAPI Exclusive and native DSD, TeleCloud holds the DAC, so a video or a game is silent even while the music is paused. On: a few seconds after a pause, the DAC is free; Play takes it back and carries on from the same moment.">
                   <Toggle checked={releaseOnPause} onChange={setReleaseOnPause} />
+                </SettingRow>
+                <SettingRow icon="speaker" title="Exclusive mode buffer" desc="How much music the DAC is given at a time in WASAPI Exclusive. Device default suits most DACs. If yours clicks or skips now and then, try 20 ms first, then larger: some USB DACs click with a large buffer instead, so bigger is not always better. Bit-perfect at any size.">
+                  <Select value={exclusiveBuffer} onChange={setExclusiveBuffer} align="right" width={170} options={[
+                    { value: 'default', label: 'Device default' },
+                    { value: '20', label: '20 ms' },
+                    { value: '50', label: '50 ms' },
+                    { value: '100', label: '100 ms' },
+                    { value: '200', label: '200 ms' },
+                    { value: 'min', label: 'Minimum' },
+                  ]} />
                 </SettingRow>
                 <SettingRow icon="volume" title="Fade on play and pause" desc="A short fade instead of a hard stop and start. Never while the signal path is bit-perfect: then pause and play stay instant.">
                   <Toggle checked={pauseFade} onChange={setPauseFade} />

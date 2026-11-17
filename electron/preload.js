@@ -80,6 +80,8 @@ const INVOKE_CHANNELS = new Set([
     'telecloud-sync:complete-setup',
     'telecloud-sync:delete-all',
     'telecloud-sync:disconnect',
+    'telecloud-sync:resign-start',
+    'telecloud-sync:resign-finish',
     'telecloud-sync:cache-track',
     'telecloud-sync:check-password',
     'telecloud-sync:clear-cache',
@@ -201,6 +203,7 @@ const EVENT_CHANNELS = new Set([
     'telecloud-sync:queue',
     'telecloud-sync:stream',
     'telecloud-sync:queue-error',
+    'telecloud-sync:session-ended',
     'telecloud-sync:download-progress',
 ]);
 

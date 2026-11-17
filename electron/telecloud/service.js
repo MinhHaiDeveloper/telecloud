@@ -46,17 +46,62 @@ function masterKey() {
   return keyCache || null;
 }
 
+// ---------- a sign-in Telegram has ended
+// Telegram ends a sign-in that isn't used for a while (the account's "Automatically terminate old sessions",
+// a week to a year), or when it is ended from another device. Every call then fails with one of these. The
+// backups, the storages and the settings stay; only the sign-in has to be done again.
+const SESSION_ENDED = /AUTH_KEY_UNREGISTERED|SESSION_REVOKED|SESSION_EXPIRED|AUTH_KEY_INVALID|AUTH_KEY_PERM_EMPTY|USER_DEACTIVATED/;
+const sessionEnded = () => kv.get('teleCloudSessionEnded') || null;
+/** Signed in, and Telegram still takes the sign-in */
+const signedIn = () => cm().isAuthenticated() && !sessionEnded();
+/** Telegram's choices (a week, 1, 3 or 6 months, a year) in words; any other number of days as days */
+function ttlWords(days) {
+  const d = Number(days);
+  if (!d) return null;
+  if (d === 7) return 'a week';
+  if (d >= 28 && d <= 31) return 'a month';
+  if (d >= 360 && d <= 366) return 'a year';
+  const months = Math.round(d / 30.4);
+  if (months >= 2 && Math.abs(d - months * 30.4) <= 3) return `${months} months`;
+  return `${d} ${d === 1 ? 'day' : 'days'}`;
+}
+function endedText(info) {
+  const days = ttlWords(info?.ttlDays);
+  if (/SESSION_REVOKED/.test(info?.reason || '')) return 'This sign-in was ended from Telegram (Settings > Devices, on another device).';
+  if (/USER_DEACTIVATED/.test(info?.reason || '')) return 'Telegram says this account is deactivated.';
+  return `Telegram ends a sign-in that isn't used for ${days || 'a while'} (Telegram > Settings > Devices > Automatically terminate old sessions), or when it is ended from another device.`;
+}
+function markSessionEnded(err) {
+  const reason = (String(err?.message || err).match(SESSION_ENDED) || ['AUTH_KEY_UNREGISTERED'])[0];
+  if (!sessionEnded()) {
+    const info = { at: Date.now(), reason, ttlDays: kv.get('teleCloudSessionTtl') || null };
+    kv.set('teleCloudSessionEnded', info);
+    console.warn(`[TeleCloud] Telegram ended this sign-in (${reason}${info.ttlDays ? `; this account ends sign-ins unused for ${ttlWords(info.ttlDays)}` : ''}). Backups and settings are kept; sign in again to carry on.`);
+    send('telecloud-sync:session-ended', info);
+  }
+  connected = null;
+}
+/** What the window shows for a call that failed because the sign-in ended */
+const endedError = () => `Telegram signed TeleCloud out. ${endedText(sessionEnded())} Your backups and settings are kept: sign in again in Settings > TeleCloud Sync to carry on.`;
+
 /** Connect the worker with the saved session (once; again after it restarts) */
 function ensureConnected() {
   if (connected) return connected;
   const creds = cm().getCredentials();
   if (!creds?.session) return Promise.reject(new Error('TeleCloud is not set up'));
+  if (sessionEnded()) return Promise.reject(new Error(endedError()));
   connected = worker.call('connect', { apiId: creds.apiId, apiHash: creds.apiHash, session: creds.session, masterKey: creds.masterKey || null })
     .then(async (me) => {
       await migrateLegacy(creds);
+      // how long Telegram keeps this sign-in without use, for the TeleCloud page (and the message if it ends)
+      worker.call('sessionTtl').then(r => { if (r?.days) kv.set('teleCloudSessionTtl', r.days); }).catch(() => {});
       return me;
     })
-    .catch((err) => { connected = null; throw err; });
+    .catch((err) => {
+      connected = null;
+      if (SESSION_ENDED.test(err.message || '')) { markSessionEnded(err); throw new Error(endedError()); }
+      throw err;
+    });
   return connected;
 }
 worker.events.on('exit', () => { connected = null; });
@@ -339,6 +384,7 @@ async function uploadOne(item) {
 
 function startRunner() {
   if (runner || options().paused) return runner;
+  if (sessionEnded()) return runner; // the queue waits for the sign-in; it starts by itself after it
   runner = (async () => {
     let sinceCheckpoint = 0;
     let lastCheckpoint = Date.now();
@@ -382,6 +428,7 @@ function startRunner() {
             await new Promise(r => setTimeout(r, err.floodWait * 1000));
             continue;
           }
+          if (SESSION_ENDED.test(err.message || '')) { store.queue.set(item.path, 'queued'); throw err; } // not this file's fault
           const attempts = (item.attempts || 0) + 1;
           console.error(`[TeleCloud] Backup failed (attempt ${attempts} of ${MAX_ATTEMPTS}): ${item.path}: ${err.message}`);
           store.queue.set(item.path, attempts >= MAX_ATTEMPTS ? 'error' : 'queued', { error: err.message, attempt: true });
@@ -400,7 +447,8 @@ function startRunner() {
       cm().updateCredentials({ lastSync: new Date().toISOString() });
     } catch (err) {
       console.error('[TeleCloud] backup stopped:', err.message);
-      send('telecloud-sync:queue-error', { error: err.message });
+      if (SESSION_ENDED.test(err.message || '')) markSessionEnded(err);
+      send('telecloud-sync:queue-error', { error: sessionEnded() ? endedError() : err.message });
     } finally {
       queueSnapshot.active = null;
       runner = null;
@@ -592,7 +640,7 @@ async function dropReplacedCovers(s, keys) {
 /** A cover was chosen in the app: put the new picture in TeleCloud and the index, and drop the old one */
 async function coversChanged(paths, previous = []) {
   const rows = (paths || []).map(p => store.library.row(p)).filter(r => r?.telegram_message_id);
-  if (!rows.length || !cm().isAuthenticated()) return;
+  if (!rows.length || !signedIn()) return;
   await ensureConnected();
   const touched = new Map();
   for (const row of rows) {
@@ -620,7 +668,7 @@ function indexChanged(paths) {
   if (!manifestDirty.size) return;
   clearTimeout(indexTimer);
   indexTimer = setTimeout(async () => {
-    if (runner || !cm().isAuthenticated()) return; // a running backup writes it at its next checkpoint
+    if (runner || !signedIn()) return; // a running backup writes it at its next checkpoint
     try { await ensureConnected(); await writeDirtyManifests(); } catch (err) { console.warn('[TeleCloud] index update failed:', err.message); }
   }, 5000);
 }
@@ -950,6 +998,7 @@ function removeStorage({ id }) {
 
 /** Queue tracks that aren't in TeleCloud yet for one storage; tell what was left out and why */
 function backupTo({ paths, storageId }) {
+  if (sessionEnded()) throw new Error(endedError());
   const storage = store.storages.get(storageId);
   if (!storage) throw new Error('Unknown storage');
   const queued = [];
@@ -1083,6 +1132,11 @@ async function removeFromCloud({ paths }) {
 async function status() {
   const creds = cm().getCredentials();
   if (!creds?.session) return { success: true, isAuthenticated: false };
+  const ended = sessionEnded();
+  if (ended) {
+    const s0 = store.storages.default();
+    return { success: true, isAuthenticated: false, sessionEnded: { ...ended, text: endedText(ended) }, phoneNumber: creds.phoneNumber, storage: s0 ? { title: s0.title, kind: s0.kind } : null, syncedItems: store.library.syncedStats().count };
+  }
   const s = store.storages.default();
   const synced = store.library.syncedStats();
   const key = masterKey();
@@ -1096,6 +1150,8 @@ async function status() {
     storage: s ? { title: s.title, kind: s.kind } : null,
     index: s ? { savedAt: store.storages.get(s.id).manifest_at || null, tracks: store.index.all(s.id).length, covers: store.covers.all(s.id).length, pending: manifestDirty.has(s.id) } : null,
     storageLocation: s?.kind === 'self' ? 'saved_messages' : 'private_channel',
+    sessionTtlDays: kv.get('teleCloudSessionTtl') || null,
+    sessionTtlText: ttlWords(kv.get('teleCloudSessionTtl')),
     options: options(),
     encryption: { hasKey: !!key, fingerprint: key ? fingerprint(key) : null },
     cacheBytes: await cacheUsage(),
@@ -1109,7 +1165,8 @@ function setupTeleCloudSyncHandlers() {
   const handle = (channel, fn) => ipcMain.handle(channel, async (event, ...args) => {
     try { return await fn(...args); } catch (err) {
       console.error(`[TeleCloud] ${channel}:`, err.message);
-      return { success: false, error: err.message, floodWait: err.floodWait || null };
+      if (SESSION_ENDED.test(err.message || '')) markSessionEnded(err);
+      return { success: false, error: sessionEnded() ? endedError() : err.message, floodWait: err.floodWait || null, sessionEnded: !!sessionEnded() };
     }
   });
 
@@ -1155,8 +1212,32 @@ function setupTeleCloudSyncHandlers() {
     return { success: true };
   });
 
+  // Sign in again after Telegram ended the sign-in: the same account, API keys, storages and settings
+  handle('telecloud-sync:resign-start', async () => {
+    const creds = cm().getCredentials();
+    if (!creds?.apiId || !creds?.phoneNumber) throw new Error('TeleCloud is not set up');
+    setup = { apiId: creds.apiId, apiHash: creds.apiHash, phoneNumber: creds.phoneNumber, resign: true };
+    const r = await worker.call('sendCode', { apiId: setup.apiId, apiHash: setup.apiHash, phone: setup.phoneNumber });
+    setup.phoneCodeHash = r.phoneCodeHash;
+    return { success: true, phoneNumber: setup.phoneNumber };
+  });
+  handle('telecloud-sync:resign-finish', async () => {
+    if (!setup.resign || !setup.session) throw new Error('Sign in first');
+    cm().updateCredentials({ session: setup.session });
+    setup = {};
+    kv.delete('teleCloudSessionEnded');
+    connected = null;
+    await ensureConnected();
+    console.log('[TeleCloud] Signed in again; backups and settings carried on');
+    if (!options().paused && store.queue.counts().queued) startRunner();
+    pushQueue();
+    send('telecloud-sync:stopped'); // every page that shows the TeleCloud status reads it again
+    return { success: true };
+  });
+
   handle('telecloud-sync:complete-setup', async (config = {}) => {
     if (!setup.session) throw new Error('Sign in first');
+    kv.delete('teleCloudSessionEnded');
     const existing = cm().getCredentials();
     const keyB64 = existing?.masterKey || newMasterKey().toString('base64');
     cm().saveCredentials({
@@ -1187,6 +1268,8 @@ function setupTeleCloudSyncHandlers() {
     keyCache = null;
     cm().deleteCredentials();
     kv.delete('teleCloudOptions');
+    kv.delete('teleCloudSessionEnded');
+    kv.delete('teleCloudSessionTtl');
     store.storages.clear();
     store.index.clear();
     store.queue.clear();
@@ -1195,6 +1278,7 @@ function setupTeleCloudSyncHandlers() {
 
   // Back up local tracks that have no cloud copy yet
   handle('telecloud-sync:sync-now', async () => {
+    if (sessionEnded()) throw new Error(endedError()); // said once, here; no backup starts to fail again
     const storage = defaultStorage();
     const paths = store.library.notUploaded().filter(p => fs.existsSync(p));
     store.queue.add(paths, storage.id);
@@ -1204,7 +1288,7 @@ function setupTeleCloudSyncHandlers() {
     return { success: true, queued: store.queue.counts().queued };
   });
   handle('telecloud-sync:stop-sync', async () => { await pauseQueue(); return { success: true }; });
-  handle('telecloud-sync:resume', async () => { setOptions({ paused: false }); store.queue.retryErrors(); startRunner(); pushQueue(); return { success: true }; });
+  handle('telecloud-sync:resume', async () => { if (sessionEnded()) throw new Error(endedError()); setOptions({ paused: false }); store.queue.retryErrors(); startRunner(); pushQueue(); return { success: true }; });
   handle('telecloud-sync:queue-state', async () => queueState());
   handle('telecloud-sync:check-sync-status', async () => ({ isSyncing: !!runner }));
 
@@ -1299,7 +1383,7 @@ function setupTeleCloudSyncHandlers() {
 
   // Backed-up files edited on disk: queue a fresh backup (the old cloud copy is replaced)
   require('../music').onCloudFilesChanged((paths) => {
-    if (!store.storages.default() || !cm().isAuthenticated()) return;
+    if (!store.storages.default() || !signedIn()) return;
     // back up into the storage that held the old copy
     for (const p of paths) {
       const row = store.library.row(p);
@@ -1311,10 +1395,22 @@ function setupTeleCloudSyncHandlers() {
   });
 
   cleanTemp().catch(() => {});
+  // Telegram ends a sign-in nobody uses: connecting when the app opens (and twice a day while it stays open)
+  // counts as using it, and finds out early when it has ended
+  // (a small request on the open connection: nothing playing or uploading is interrupted)
+  const keepAlive = () => {
+    if (!signedIn()) return;
+    ensureConnected()
+      .then(() => worker.call('sessionTtl'))
+      .then((r) => { if (r?.days) kv.set('teleCloudSessionTtl', r.days); })
+      .catch((err) => { if (SESSION_ENDED.test(err.message || '')) markSessionEnded(err); else console.warn('[TeleCloud] connect:', err.message); });
+  };
+  setTimeout(keepAlive, 15000);
+  setInterval(keepAlive, 12 * 3600 * 1000).unref?.();
   // Resume a backup that was running when the app closed
   setTimeout(() => {
     try {
-      if (cm().isAuthenticated() && !options().paused && store.queue.counts().queued) startRunner();
+      if (signedIn() && !options().paused && store.queue.counts().queued) startRunner();
     } catch (err) { console.error('[TeleCloud] resume failed:', err.message); }
   }, 4000);
 }
