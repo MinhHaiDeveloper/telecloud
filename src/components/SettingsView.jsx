@@ -8,6 +8,7 @@ import DiscordSettings from './DiscordSettings';
 import { WhatsNewSection } from './WhatsNew';
 import LogsSettings from './LogsSettings';
 import LastfmSettings from './LastfmSettings';
+import ListenBrainzSettings from './ListenBrainzSettings';
 import UpdateStatus from './UpdateStatus';
 import DuplicatesSettings from './DuplicatesSettings';
 import ContinueSettings from './ContinueSettings';
@@ -73,6 +74,7 @@ const SettingsView = ({
   const [channelBalance, setChannelBalance] = useState(0);
   const [balanceDraft, setBalanceDraft] = useState(0); // follows the slider; saved when it is let go
   const [crossfeed, setCrossfeed] = useState('off');
+  const [skipSilence, setSkipSilence] = useState(false); // trim long silences (live albums, podcasts)
   const [releaseOnPause, setReleaseOnPause] = useState(false); // other apps may use the DAC while paused
   const [pauseFade, setPauseFade] = useState(false);
   const [exclusiveBuffer, setExclusiveBuffer] = useState('default'); // the DAC's buffer in WASAPI Exclusive
@@ -146,6 +148,7 @@ const SettingsView = ({
       if (settings && settings.dopMax) setDopMax(settings.dopMax);
       if (settings && Number.isFinite(settings.channelBalance)) { setChannelBalance(settings.channelBalance); setBalanceDraft(settings.channelBalance); }
       if (settings && settings.crossfeed) setCrossfeed(settings.crossfeed);
+      if (settings) setSkipSilence(!!settings.skipSilence);
       if (settings && settings.releaseOnPause) setReleaseOnPause(true);
       if (settings && settings.pauseFade) setPauseFade(true);
       if (settings && settings.exclusiveBuffer) setExclusiveBuffer(String(settings.exclusiveBuffer));
@@ -186,6 +189,7 @@ const SettingsView = ({
       newSettings.asioDriver = asioDriver;
       newSettings.channelBalance = channelBalance;
       newSettings.crossfeed = crossfeed;
+      newSettings.skipSilence = skipSilence;
       newSettings.releaseOnPause = releaseOnPause;
       newSettings.pauseFade = pauseFade;
       newSettings.exclusiveBuffer = exclusiveBuffer;
@@ -204,6 +208,7 @@ const SettingsView = ({
         asioDriver,
         balance: channelBalance,
         crossfeed,
+        skipSilence,
         mqaMode,
         releaseOnPause,
         pauseFade,
@@ -213,7 +218,7 @@ const SettingsView = ({
       onAudioSettingsChange?.(audio);
     };
     saveAudioSettings();
-  }, [settingsLoaded, replayGainEnabled, replayGainMode, crossfadeEnabled, crossfadeDuration, maxSamplingEnabled, maxBitDepth, maxSampleRate, dsdMode, dopMax, asioDriver, channelBalance, crossfeed, mqaMode, releaseOnPause, pauseFade, exclusiveBuffer, keyboardShortcuts]);
+  }, [settingsLoaded, replayGainEnabled, replayGainMode, crossfadeEnabled, crossfadeDuration, maxSamplingEnabled, maxBitDepth, maxSampleRate, dsdMode, dopMax, asioDriver, channelBalance, crossfeed, skipSilence, mqaMode, releaseOnPause, pauseFade, exclusiveBuffer, keyboardShortcuts]);
 
   const toggleDevice = async (deviceId) => {
     const ipcRenderer = window.ipcRenderer;
@@ -322,6 +327,7 @@ const SettingsView = ({
           <ArtistPictureSettings />
           <DiscordSettings />
           <LastfmSettings />
+          <ListenBrainzSettings />
           <PerformanceSettings />
           </>
         );
@@ -459,6 +465,9 @@ const SettingsView = ({
                   <Segmented size="sm" value={crossfeed} onChange={setCrossfeed} options={[{ value: 'off', label: 'Off' }, { value: 'light', label: 'Light' }, { value: 'medium', label: 'Medium' }, { value: 'strong', label: 'Strong' }]} />
                 </SettingRow>
 
+                <SettingRow icon="next" title="Skip silence" desc="Long silences (2 s and more) inside a track and between tracks shrink to half a second: for live albums, podcasts and hidden tracks. The music itself is untouched, but the timing changes: the seek bar and synced lyrics count only what is heard, so after a skipped silence they run behind. Not bit-perfect while on, and DSD plays as PCM.">
+                  <Toggle checked={skipSilence} onChange={setSkipSilence} />
+                </SettingRow>
                 <SettingRow icon="mqa" title="MQA" desc="TeleCloud doesn't unfold MQA itself. Send to MQA DAC: MQA tracks skip the EQ, balance, crossfeed and ReplayGain, so an MQA DAC gets the untouched bits it needs (WASAPI Exclusive). Play as plain PCM: they play like any other file.">
                   <Segmented size="sm" value={mqaMode} onChange={setMqaMode} options={[{ value: 'decoder', label: 'Send to MQA DAC' }, { value: 'plain', label: 'Play as plain PCM' }]} />
                 </SettingRow>

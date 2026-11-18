@@ -159,6 +159,7 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
   const mqaIntact = !!mqa && audioSettings.mqaMode === 'decoder' && !(stream && !stream.complete);
   const bal = mqaIntact ? 0 : Number(audioSettings.balance) || 0;
   const xfeed = !mqaIntact && audioSettings.crossfeed && audioSettings.crossfeed !== 'off' ? audioSettings.crossfeed : null;
+  const silence = !mqaIntact && !!audioSettings.skipSilence;
   const soundOn = !!sound && !mqaIntact;
   const eqOn = !!eqEnabled && !mqaIntact && !sound?.ab; // A/B: the original, without the EQ
   const rgOn = rg && !mqaIntact;
@@ -205,6 +206,7 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
     { label: 'ReplayGain', value: rg && mqaIntact ? SKIPPED : !rg ? 'Off' : audioSettings.replayGain === 'auto' ? `Auto · ${audioSettings.autoGain || 'track'}` : audioSettings.replayGain, state: rgOn ? 'warn' : 'off' },
     ...(Number(audioSettings.balance) ? [{ label: 'Channel balance', value: mqaIntact ? SKIPPED : `${bal < 0 ? 'Left' : 'Right'} +${Math.abs(bal).toFixed(1)} dB`, state: bal ? 'warn' : 'off' }] : []),
     ...(audioSettings.crossfeed && audioSettings.crossfeed !== 'off' ? [{ label: 'Headphone crossfeed', value: mqaIntact ? SKIPPED : xfeed[0].toUpperCase() + xfeed.slice(1), state: xfeed ? 'warn' : 'off' }] : []),
+    ...(audioSettings.skipSilence ? [{ label: 'Skip silence', detail: mqaIntact ? null : 'Silences of 2 s and more shrink to 0.5 s', value: mqaIntact ? SKIPPED : 'On', state: silence ? 'warn' : 'off' }] : []),
     ...(crossfade ? [{ label: 'Crossfade', value: `${audioSettings.crossfade}s`, state: 'warn' }] : []),
     ...(nativeDsd ? [{ label: 'Native DSD through ASIO', value: `${(dsd.rate / 1e6).toFixed(4)} MHz`, state: 'ok' }]
       : dop ? [{ label: 'DSD over PCM (DoP)', detail: dsd?.nativeWhy ? `Native not used: ${dsd.nativeWhy}` : null, value: `${q.label} in ${khz(dsd.rate)}`, state: 'ok' }]
@@ -219,7 +221,7 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
   ];
 
   // DSD is turned into PCM before it leaves the app, so it is never the original bits
-  const filtered = eqOn || rgOn || !!bal || !!xfeed || soundOn;
+  const filtered = eqOn || rgOn || !!bal || !!xfeed || soundOn || silence;
   const bitPerfect = !!file && nativeDsd && !filtered ? true : !!file && !bluetooth && (!isDsd || dop) && q.lossless && exclusive && !filtered && !crossfade && !resampled && volFull;
   let verdict = 'Idle';
   if (file) {

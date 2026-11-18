@@ -1419,4 +1419,21 @@ function cleanupTeleCloudSync() {
   worker.stop();
 }
 
-module.exports = { setupTeleCloudSyncHandlers, cleanupTeleCloudSync, indexChanged, coversChanged, _internals: { cacheTrack, refreshIndex, restore, startRunner, enforceCacheLimit, store, options, setOptions } };
+/** For the saved log's report: counts and states only, no phone number, names, keys or file names */
+async function logStatus() {
+  const creds = cm().getCredentials();
+  const ended = sessionEnded();
+  const q = store.queue.counts();
+  const s = store.storages.default();
+  return {
+    signIn: !creds?.session ? 'not signed in' : ended ? `ended by Telegram (${ended.reason}) at ${new Date(ended.at).toISOString()}` : 'signed in',
+    unusedSignInKeptDays: kv.get('teleCloudSessionTtl') || null,
+    encryption: options().encrypt !== false ? 'on' : 'off',
+    hasKey: !!masterKey(),
+    backups: `${q.queued || 0} waiting, ${q.error || 0} failed, ${options().paused ? 'paused' : runner ? 'running' : 'idle'}`,
+    index: s ? (manifestDirty.has(s.id) ? 'changes not saved yet' : 'saved') : 'no storage',
+    cache: `${(await cacheUsage() / 1073741824).toFixed(2)} GB of ${options().cacheLimitGB || DEFAULT_OPTIONS.cacheLimitGB} GB`,
+  };
+}
+
+module.exports = { logStatus, setupTeleCloudSyncHandlers, cleanupTeleCloudSync, indexChanged, coversChanged, _internals: { cacheTrack, refreshIndex, restore, startRunner, enforceCacheLimit, store, options, setOptions } };

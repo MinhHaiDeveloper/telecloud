@@ -56,6 +56,8 @@ require('./tagEdit.js');
 require('./mqa.js');
 require('./remote.js');
 require('./lastfm.js');
+require('./listenbrainz.js');
+require('./artistBio.js');
 require('./updater.js');
 
 // File system watcher instance
@@ -211,6 +213,7 @@ app.whenReady().then(async () => {
       asioDriver: s.asioDriver,
       balance: s.channelBalance,
       crossfeed: s.crossfeed,
+      skipSilence: s.skipSilence,
       mqaMode: s.mqaMode,
       releaseOnPause: s.releaseOnPause,
       pauseFade: s.pauseFade,

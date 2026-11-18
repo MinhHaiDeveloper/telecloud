@@ -1,33 +1,50 @@
 import React, { useContext, useEffect, useState } from 'react';
 import SongActions from './songActions';
 
-/** Artist page: short biography, tags and similar artists from Last.fm (when available) */
+const LABEL = { lastfm: 'Last.fm', qq: 'QQ Music' };
+
+/**
+ * Artist page: a short biography. Last.fm's (English, with tags, listeners and similar artists) when it says
+ * enough, QQ Music's (Chinese, strongest for Asian artists) otherwise; a switch when both have one.
+ */
 const ArtistBio = ({ name, known }) => {
   const { openArtist } = useContext(SongActions);
-  const [info, setInfo] = useState(null);
+  const [bio, setBio] = useState(null);
+  const [from, setFrom] = useState(null);
   const [more, setMore] = useState(false);
   useEffect(() => {
     let alive = true;
-    setInfo(null);
-    setMore(false);
-    window.ipcRenderer.invoke('lastfm:artist', name).then(r => { if (alive && r?.success && r.info?.summary) setInfo(r.info); }).catch(() => {});
+    setBio(null); setFrom(null); setMore(false);
+    window.ipcRenderer.invoke('artist:bio', name).then(r => {
+      if (!alive || !r?.success || !r.primary) return;
+      setBio(r); setFrom(r.primary);
+    }).catch(() => {});
     return () => { alive = false; };
   }, [name]);
+  const info = bio && from ? bio[from] : null;
   if (!info) return null;
+  const both = !!(bio.lastfm && bio.qq);
   const text = more && info.content ? info.content : info.summary;
+  const lf = from === 'lastfm';
   return (
-    <div className="card artist-bio">
+    <div className="card artist-bio" data-source={from}>
       <div className="bio-head">
         <b>About {info.name}</b>
-        {info.listeners ? <span>{info.listeners.toLocaleString()} listeners on Last.fm</span> : null}
+        {lf && info.listeners ? <span>{info.listeners.toLocaleString()} listeners on Last.fm</span> : null}
+        {!lf && <span>From QQ Music, in Chinese</span>}
+        {both && (
+          <div className="bio-switch" role="tablist" aria-label="Biography from">
+            {['lastfm', 'qq'].map(k => <button key={k} role="tab" aria-selected={from === k} className={from === k ? 'on' : ''} onClick={() => { setFrom(k); setMore(false); }}>{LABEL[k]}</button>)}
+          </div>
+        )}
       </div>
-      <p className={more ? '' : 'clamp'}>{text}</p>
+      <p className={more ? '' : 'clamp'} lang={info.lang || 'en'}>{text}</p>
       <div className="bio-foot">
-        {info.content && info.content.length > info.summary.length + 20 && <button className="btn-ghost sm" onClick={() => setMore(m => !m)}>{more ? 'Less' : 'Read more'}</button>}
-        {info.tags.map(t => <span key={t} className="badge b-local">{t}</span>)}
-        {info.url && <button className="bio-link" onClick={() => window.ipcRenderer.invoke('open-external', info.url)}>Last.fm</button>}
+        {info.content && info.content.length > (info.summary || '').length + 20 && <button className="btn-ghost sm" onClick={() => setMore(m => !m)}>{more ? 'Less' : 'Read more'}</button>}
+        {lf && (info.tags || []).map(t => <span key={t} className="badge b-local">{t}</span>)}
+        {info.url && <button className="bio-link" onClick={() => window.ipcRenderer.invoke('open-external', info.url)}>{LABEL[from]}</button>}
       </div>
-      {info.similar.length > 0 && (
+      {lf && info.similar?.length > 0 && (
         <div className="bio-similar">
           <span>Similar:</span>
           {info.similar.map(s => (known?.has(s)

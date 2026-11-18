@@ -58,4 +58,63 @@ function openTags(file) {
   return require('node-taglib-sharp').File.createFromPath(file);
 }
 
-module.exports = { openTags };
+// ---------- writing a file that is playing
+// mpv reads the playing file a little at a time. Saving tags can rewrite the whole file (when the new tags
+// don't fit in its padding), so the audio moves a few bytes and mpv, reading on at the old place, skips or
+// clicks. Writes to the playing (or paused) file wait until it stops being the current track; the library,
+// the screen and the remote already have the new lyrics, cover or tags, so nothing looks different.
+const pending = new Map(); // normalised path -> { file, writes: [fn] }
+let freeSince = new Map(); // normalised path -> when it stopped being the current track
+let timer = null;
+const norm = (p) => require('path').resolve(String(p || '')).toLowerCase();
+const playing = () => { try { const p = require('./player').playingPath(); return p ? norm(p) : null; } catch { return null; } };
+
+function runWrites(entry) {
+  for (const w of entry.writes) {
+    try { w(); } catch (err) { console.warn(`[Tags] A held write failed: ${err.message}`); }
+  }
+}
+function check() {
+  const now = playing();
+  for (const [k, entry] of pending) {
+    if (k === now) { freeSince.delete(k); continue; }
+    // a few seconds after it stopped: a crossfade or the end of a gapless join still reads it
+    if (!freeSince.has(k)) { freeSince.set(k, Date.now()); continue; }
+    if (Date.now() - freeSince.get(k) < 3000) continue;
+    pending.delete(k); freeSince.delete(k);
+    runWrites(entry);
+    console.log(`[Tags] Wrote what waited for the track to stop (${entry.writes.length} ${entry.writes.length === 1 ? 'change' : 'changes'})`);
+  }
+  if (!pending.size) { clearInterval(timer); timer = null; }
+}
+
+/**
+ * Writes now, or (for the file playing) once it stops playing. Returns { held: true } when it waits.
+ * `write` must do the whole job itself (open, change, save, dispose).
+ */
+function writeWhenFree(file, write) {
+  const k = norm(file);
+  if (k !== playing() && !pending.has(k)) { write(); return { held: false }; }
+  // a read-only file the user did not open up fails now, as a direct write would; one they did (the caller's
+  // withWritable made it writable for this call) is opened up again for the held write
+  const fw = require('./fileWrite');
+  if (fw.isReadOnly(file)) { const e = new Error(`EPERM: operation not permitted, open '${file}'`); e.code = 'EPERM'; throw e; }
+  const wasReadOnly = () => { try { return fw.isReadOnly(file); } catch { return false; } };
+  const entry = pending.get(k) || { file, writes: [] };
+  entry.writes.push(() => fw.withWritable(file, wasReadOnly(), write));
+  pending.set(k, entry);
+  freeSince.delete(k);
+  if (!timer) { timer = setInterval(check, 1000); timer.unref?.(); }
+  console.log('[Tags] The track is playing: its tags are written when it stops');
+  return { held: true };
+}
+/** Everything still waiting, now (on quit, after the player has let go) */
+function flushAll() {
+  for (const [k, entry] of pending) { pending.delete(k); runWrites(entry); }
+}
+try { require('electron').app.on('will-quit', flushAll); } catch { /* outside Electron (tests of the pure parts) */ }
+
+/** Is this file playing, or has it writes waiting? Then a write to it is held too (in order) */
+const isBusy = (file) => { const k = norm(file); return k === playing() || pending.has(k); };
+
+module.exports = { openTags, writeWhenFree, isBusy, flushAll, _pending: () => [...pending.values()].map(e => e.file) };

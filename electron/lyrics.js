@@ -304,13 +304,36 @@ async function search(track, { all = false, sources } = {}) {
     }
   }
   if (!all) results.sort((a, b) => (o.wordByWord ? goodWords(b) - goodWords(a) : 0) || goodSynced(b) - goodSynced(a)); // the sort keeps source order otherwise
+  noteSearch(all, results, errors);
   return { results, errors };
+}
+
+// What the searches of this session gave, for the saved log's report: sources and kinds, never a song
+const session = { searches: 0, picked: {}, nothing: 0, errors: {} };
+function noteSearch(all, results, errors) {
+  for (const [id, e] of Object.entries(errors)) {
+    const k = `${id}: ${String(e).slice(0, 60)}`;
+    session.errors[k] = (session.errors[k] || 0) + 1;
+  }
+  if (all) return; // the Search window lists everything; what the automatic search takes is what counts
+  session.searches++;
+  const top = results[0];
+  if (!top) { session.nothing++; return; }
+  const k = `${top.source} ${top.words ? 'word by word' : top.synced ? 'synced' : 'plain'}`;
+  session.picked[k] = (session.picked[k] || 0) + 1;
+}
+function sessionReport() {
+  const list = (o) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ×${n}`).join(', ');
+  return { searches: session.searches, picked: list(session.picked) || 'none', nothing: session.nothing, errors: list(session.errors) || 'none' };
 }
 
 // ---------- saving
 function writeTag(file, text) {
-  const f = require('./tagFile').openTags(file);
-  try { f.tag.lyrics = text || ''; f.save(); } finally { f.dispose(); }
+  // the playing track: written when it stops, so mpv doesn't stumble over a file that moves under it
+  return require('./tagFile').writeWhenFree(file, () => {
+    const f = require('./tagFile').openTags(file);
+    try { f.tag.lyrics = text || ''; f.save(); } finally { f.dispose(); }
+  });
 }
 async function save({ path: file, lyrics, to }) {
   const o = options();
@@ -318,13 +341,14 @@ async function save({ path: file, lyrics, to }) {
   const row = database.getFileByPath(file);
   const local = file && !file.startsWith('tc://') && fs.existsSync(file);
   const done = [];
-  if (local && (where === 'tag' || where === 'both')) { writeTag(file, lyrics); done.push('tag'); }
+  let held = false;
+  if (local && (where === 'tag' || where === 'both')) { held = writeTag(file, lyrics).held; done.push('tag'); }
   if (local && (where === 'lrc' || where === 'both')) { fs.writeFileSync(file.replace(/\.[^.\\/]+$/, '.lrc'), lyrics, 'utf8'); done.push('lrc'); }
   // the library keeps a copy too, so cloud-only tracks get lyrics (and the TeleCloud index picks them up)
   if (row) database.initDatabase().prepare('UPDATE music_files SET lyrics = ? WHERE path = ?').run(lyrics || null, file);
   if (row?.telegram_message_id) { try { require('./telecloud/service').indexChanged([file]); } catch { /* TeleCloud not set up */ } }
   BrowserWindow.getAllWindows().forEach(w => w.webContents.send('lyrics:saved', { path: file, lyrics }));
-  return { saved: done, cloudOnly: !local };
+  return { saved: done, cloudOnly: !local, held };
 }
 
 ipcMain.handle('lyrics:options', () => ({ ...options(), sources: SOURCES }));
@@ -334,4 +358,4 @@ ipcMain.handle('lyrics:save', async (e, opts) => {
   try { return { success: true, ...(await save(opts)) }; } catch (err) { return { success: false, error: describeWriteError(err, opts?.path).error }; }
 });
 
-module.exports = { search, save, options, isSynced, SOURCES, _words: { yrcToLrc, krcToLrc, decodeKrc, qrcToLrc }, _variantPenalty: variantPenalty };
+module.exports = { search, save, options, isSynced, SOURCES, _words: { yrcToLrc, krcToLrc, decodeKrc, qrcToLrc }, _variantPenalty: variantPenalty, sessionReport };

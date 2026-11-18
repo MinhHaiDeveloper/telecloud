@@ -55,4 +55,4 @@ ipcMain.handle('update:status', () => state);
 ipcMain.handle('update:check', () => check());
 ipcMain.handle('update:install', () => { if (state.state === 'ready' && updater) setImmediate(() => updater.quitAndInstall(false, true)); return true; });
 
-module.exports = { check, shortError };
+module.exports = { check, shortError, status: () => state };

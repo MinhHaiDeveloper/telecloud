@@ -38,6 +38,10 @@ function read(p) {
 }
 
 function writeFile(p, c) {
+  // the playing track: written when it stops, so mpv doesn't stumble over a file that moves under it
+  return require('./tagFile').writeWhenFree(p, () => writeFileNow(p, c));
+}
+function writeFileNow(p, c) {
   const f = require('./tagFile').openTags(p);
   try {
     const t = f.tag;
@@ -76,8 +80,10 @@ async function edit({ paths, changes, allowReadOnly = false }) {
   for (const p of paths || []) {
     try {
       if (isLocal(p)) {
-        withWritable(p, allowReadOnly, () => writeFile(p, c));
-        files.push(await upsertSingleFile(p));
+        const r = withWritable(p, allowReadOnly, () => writeFile(p, c));
+        // held for the playing track: the library has it now, the file once the track stops
+        if (r?.held) { writeRow(p, c); files.push(toFrontend(database.getFileByPath(p))); }
+        else files.push(await upsertSingleFile(p));
       } else {
         writeRow(p, c);
         files.push(toFrontend(database.getFileByPath(p)));

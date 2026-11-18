@@ -18,6 +18,8 @@ TeleCloud is a hi-res music player for Windows, built with Electron and React. m
 | `electron-updater` | Updates from GitHub Releases |
 | `electron-store` | Encrypted TeleCloud credentials and options |
 | `tc-asio.exe` (`native/asio`, C++) | Native DSD through the DAC's ASIO driver |
+| `tc-media.exe` (`native/media`, C++/WinRT) | Windows media controls and the keyboard's media keys |
+| WebGL (in the page) | The liquid cover change and the Now Playing backdrop |
 
 ## Getting started
 
@@ -41,9 +43,12 @@ electron/            main process
   telecloud/         Telegram backup, streaming, restore
 src/
   components/        React components
-  hooks/             useEq, useSlidingIndicator
+  hooks/             useEq, useSound, useCoverAccent, useRemembered, useSlidingIndicator
   utils/             logic with no interface
+  remote/            the Remote page (its own Vite entry, remote.html)
   styles/            tokens.css, app.css, components.css
+native/asio          tc-asio.exe (native DSD)
+native/media         tc-media.exe (Windows media controls)
 scripts/release.js   build one channel into beta/ or release/
 ```
 
@@ -60,18 +65,31 @@ scripts/release.js   build one channel into beta/ or release/
 | `tagEdit.js` | Writing tags from Edit info |
 | `inferTags.js` | Filling in missing tags from the file name and folders |
 | `fileWrite.js` | Plain-language write errors, writing to read-only files on request |
-| `player.js` | mpv over JSON IPC, filter chain, crossfade, output devices, DSD plan |
+| `player.js` | mpv over JSON IPC, filter chain, crossfade, output devices, DSD plan, exclusive buffer, releasing the DAC while paused |
+| `soundChain.js` | Settings > Sound (tone, space, effects, A/B, clip meter) as mpv filters; pure functions |
+| `soundCorrection.js` | Room or headphone correction from a WAV impulse response or a frequency/gain text file |
+| `liveSpectrum.js` | The EQ page's live spectrum: a second, silent mpv through the same filters |
+| `waveform.js` | The waveform seek bar: a track's loudness, worked out once with mpv and kept |
 | `dsd.js` | Reading DSF/DFF and packing DoP |
 | `asio.js` | Runs `tc-asio.exe` for native DSD |
 | `mqa.js` | Finding MQA in the audio and the tags |
 | `tagFile.js` | Opening tags, including DSF (its ID3v2 tag at the end) |
 | `artistImages.js` | Artist picture sources, saving, GIFs |
-| `tray.js` | Close to the tray, one copy of the app |
+| `tray.js` | Close to the tray, one copy of the app, the tray menu's controls |
+| `media.js` | Runs `tc-media.exe`: Windows media controls, media keys, the taskbar thumbnail buttons |
+| `openFiles.js` | "Open with TeleCloud" and the default player: files from the command line play at once |
+| `mainWindow.js` | Which window is the app's own (not the floating lyrics) |
+| `httpError.js` | What a failed answer from an online source means, in short words |
 | `covers.js` | Finding and caching cover art |
 | `coverSearch.js` | Online cover sources, saving covers |
-| `lyrics.js` | Lyrics sources and saving |
+| `lyrics.js` | Lyrics sources, word-by-word lyrics (YRC, KRC, QRC to Enhanced LRC), saving |
+| `qrc.js` | Decrypting QQ Music's QRC lyrics (QQ's own variant of Triple DES, then zlib) |
+| `floatingLyrics.js` | The floating lyrics window, always on top; locked, clicks go through |
+| `m3u.js` | Playlist import and export as .m3u / .m3u8 |
 | `stats.js` | Play history, play counts, Dashboard data |
 | `lastfm.js` | Scrobbling and artist biographies |
+| `artistBio.js` | Artist biographies: Last.fm and QQ Music, and which one to show first |
+| `listenbrainz.js` | ListenBrainz listens from the play history, MusicBrainz IDs for each track |
 | `discord.js` | Discord status over its local pipe |
 | `remote.js` | TeleCloud Remote: the local web server other devices control the app through |
 | `autoeq.js` | Headphone measurements and target curves |
@@ -104,6 +122,10 @@ scripts/release.js   build one channel into beta/ or release/
 | `utils/autoEqMath.js` | Filter responses, AutoEQ, Squiglink and Audacity formats |
 | `utils/appearance.js` | Full-screen look, saved in `localStorage` |
 | `utils/whatsNew.js` | Release notes shown in the app |
+| `utils/lyrics.js` | Reading lyrics: plain, LRC, Enhanced LRC (a time per word) and TTML into one line format |
+| `utils/liquid.js` | The liquid cover change and the fluid backdrop: WebGL shaders, pooled canvases, one clock per change |
+| `utils/smartPlaylist.js` | Smart playlist rules, worked out from the library each time |
+| `hooks/useSound.js` | Settings > Sound in the page, sent to `soundChain.js` |
 | `utils/badges.js` | Text for the Source, Quality and Plays help |
 | `components/ui.jsx` | Shared controls, dialogs, `useDetailScroll` |
 | `remote/` | The Remote page other devices open (`remote.html` entry), and `hostQuery.js`, which answers its library questions inside the app |
@@ -166,6 +188,16 @@ Extra copies of a track are removed from the queue when playback starts, in `pla
 
 **ReplayGain Auto.** The renderer decides: album gain when shuffle is off and a neighbour in the queue belongs to the same album, otherwise track gain. It tells `player.js` through `player:replaygain-auto`.
 
+**Settings > Sound.** `soundChain.js` turns tone, space and effects into mpv filters after the EQ, and `soundCorrection.js` turns an impulse response into a filter. Prevent clipping takes the biggest boost off before the filters (`guard`); the chain runs in float, and the clip meter (`@meter`, mpv's `astats` peak, read a few times a second) makes the signal path light blink. A/B swaps the chain for a plain `volume` at the same loudness.
+
+**Exclusive mode buffer.** `wasapi-exclusive-buffer` takes microseconds: 20 to 200 ms, `min` or `default` (the device's own). mpv's own `audio-buffer` is kept at four times the device buffer, at least 200 ms; the same size on both crackled on some USB DACs. A change reloads the output (`ao-reload`) at once when playing exclusive.
+
+**Releasing the DAC while paused.** With the option on, a pause in WASAPI Exclusive or native DSD stops the output after 3 s (`TELECLOUD_RELEASE_AFTER_MS` in tests), and Play opens it again at the same position.
+
+**Skip silence** puts `silenceremove` first in the chain (`@silence`): silences of 2 s and more below -50 dB shrink to 0.5 s, the one at the start to 0.3 s. It counts as processing for the signal path and `dspWhy` (`silence`), so DoP and native DSD fall back to PCM. mpv's `time-pos` then counts only what is heard, so the seek bar and synced lyrics run behind after a skipped silence.
+
+**Under-runs** are counted (`countUnderrun`) and the log gets one line every 10 s with how many, the track and the time.
+
 ### Themes
 
 A theme is a block of CSS tokens on `[data-theme]`: Dark and Vanilla in `styles/tokens.css`, the others in `styles/themes.css`. `utils/themes.js` lists them. Adding one takes a token block and a line in that list. Text on the accent colour uses `--on-accent`, never a fixed white.
@@ -201,15 +233,29 @@ Results are cached in `cover-cache` at up to 600 px. After a save, `bumpCovers` 
 
 Saving goes to `cover.jpg`, to the tags, or both. If a folder holds another album, the cover goes to the tags instead. Embedded art has priority over `cover.jpg`, so replacing a cover also replaces the embedded one. Files that change this way are backed up again.
 
+### Lyrics
+
+`lyrics.js` asks its sources in the order set in Settings > Lyrics: the tags, a `.lrc` beside the track, then LRCLIB, NetEase, QQ Music, Kugou (Genius and Musixmatch off by default). Each result gets a score from the title, the artist and the length. Words that mark another version (remix, live, sped up, instrumental, 伴奏, DJ版...) in the result's title or its `[ti:]` tag take 0.35 off, so another version never passes as a good match (0.7) by itself. The automatic search stops at the first good synced result; with **Word by word when available** on, it goes on until one has word times, and keeps line-synced ones if that is all there is.
+
+Word-timed formats all become Enhanced LRC (`[mm:ss.xx]<mm:ss.xx>word <mm:ss.xx>word<mm:ss.xx>`):
+
+- **NetEase YRC** (`/api/song/lyric/v1` with `yv=-1`): `[start,length](start,length,0)word`, times from the song's start.
+- **Kugou KRC** (`fmt=krc`): base64, a `krc1` header, XOR with a fixed key, then zlib; `[start,length]<offset,length,0>word`, word times from the line's start.
+- **QQ Music QRC** (`lyric_download.fcg`, `lrctype=4`): hex in an XML answer, decrypted by `qrc.js`, then zlib; `[start,length]word(start,length)`. QQ's DES is not the standard one (bytes read four at a time in reverse, two S-box values changed, the second half of the round key read one place off), so OpenSSL can't open it. The differences were found by Lyricify Lyrics Helper (Apache-2.0); `qrc.js` is written from the FIPS 46 description with them applied.
+
+`utils/lyrics.js` reads every format the page shows (plain, LRC, Enhanced LRC, TTML) into lines with optional word times. Radiant Lyrics' servers are not used: they need the owners' written permission.
+
 ### Artist pictures
 
-`artistImages.js` works like the cover search: an ordered list of sources and results to pick from. Last.fm's API only returns a placeholder, so that source reads the artist's public page. Sources: this computer, Last.fm, Deezer and TheAudioDB (its public free key; its terms ask for credit, which the source badge on each result gives). A saved picture goes into the tags of the artist's own tracks as an `Artist` picture (ID3 type 8), beside the front cover. A copy in `artist-images` lets the pages show it without reading the files, and is the only copy for cloud-only tracks. A track counts as an artist's own only if it belongs to them alone, so a picture is never written into a shared track. M4A and other formats without picture labels are skipped, because the picture would become a second cover there. `Various Artists` and `Unknown Artist` are never searched.
+`artistImages.js` works like the cover search: an ordered list of sources and results to pick from. Last.fm's API only returns a placeholder, so that source reads the artist's public page. Sources: this computer, Last.fm, Deezer, TheAudioDB (its public free key; its terms ask for credit, which the source badge on each result gives), Apple Music, QQ Music and MusicBrainz. A saved picture goes into the tags of the artist's own tracks as an `Artist` picture (ID3 type 8), beside the front cover. A copy in `artist-images` lets the pages show it without reading the files, and is the only copy for cloud-only tracks. A track counts as an artist's own only if it belongs to them alone, so a picture is never written into a shared track. M4A and other formats without picture labels are skipped, because the picture would become a second cover there. `Various Artists` and `Unknown Artist` are never searched.
 
-Apple's search API has no artist pictures, so that source reads the preview picture on the artist's public page. MusicBrainz has none of its own either: it links a photo on Wikimedia Commons, directly or through Wikidata, and is limited to one request a second.
+QQ Music's singer search (`client_search_cp`, `t=9`) gives an id, and the picture is `y.gtimg.cn/music/photo_new/T001R1200x1200M000<singerMID>.jpg` (real 1200 px; 404 when there is none); only an exact name match counts. The cover search does the same with albums (`t=8`, `T002…<albumMID>`). Apple's search API has no artist pictures, so that source reads the preview picture on the artist's public page. MusicBrainz has none of its own either: it links a photo on Wikimedia Commons, directly or through Wikidata, and is limited to one request a second.
 
 YouTube is a separate tab in the dialog, so it is asked only when that tab is opened: a search costs 100 of a key's 10,000 daily units. The key comes from Settings or from `electron/youtube-key.json` (not in git, packed with the app). Answers are kept for 30 days in `youtube-artists.json`.
 
 A GIF stays animated only inside TeleCloud: the original is kept beside the still copy, shown on the artist's own page, and goes into the chat with a cover caption whose key starts with `g`. The index lists it under `artists`, which is how a new computer gets it back on Restore. Tags get the first frame as a JPG.
+
+**Writing the playing file.** mpv reads the playing file a little at a time, and saving tags can rewrite the whole file when they outgrow its padding, so mpv would read on at the wrong place and skip. Every tag write (lyrics, covers, artist pictures, Edit info) goes through `tagFile.writeWhenFree`: for the playing or paused track it is held, in order, and written 3 s after the track stops being the current one, or on quit (`will-quit`). The library row, the lyrics and the screen take the change at once; a held cover is shown from `covers.holdCover` until the file has it. A read-only file the user did not open up still fails at once.
 
 DSF files can hold pictures and tags too. node-taglib-sharp doesn't open them, so `tagFile.js` reads and writes the ID3v2 tag at the end of the file and leaves the audio alone.
 
@@ -227,11 +273,33 @@ Telegram work runs in a `utilityProcess` (`worker.js`), so the interface stays s
 
 **Check backup.** `checkBackup` lists each chat and compares it with the library, `cloud_index`, the manifest and the covers. It only compares message ids and sizes, so damage inside a file of the right size isn't seen. `repairBackup` queues tracks still on this computer again, uploads lost covers from the local copy, and saves the index. It deletes a wrong-size copy from the chat first, otherwise the same hash would link back to it.
 
+**When Telegram ends the sign-in.** Errors like `AUTH_KEY_UNREGISTERED` or `SESSION_REVOKED` mark the session ended (`markSessionEnded`): backups stop, nothing is deleted, and the page says why in words, with how long Telegram keeps an unused sign-in (`account.getAuthorizations`' `authorizationTtlDays`, asked every 12 hours). Signing in again (`resign-start` / `resign-finish`) needs only the code and keeps the storages and the key.
+
 **Caption prefixes in Telegram:** `tc1:` for audio, `tcm1:` for the manifest, `tcc1:` for covers. They also tell TeleCloud's messages apart from the user's own.
+
+### Liquid cover and backdrop
+
+Only when the album changes, `LiquidCover.jsx` floods the new cover in over 5 s with a WebGL shader in `utils/liquid.js` (a growing circle with a wobbling rim, ripples through both pictures, colours split at the rim). `FluidBackdrop.jsx` draws the Now Playing background from the cover's colours at about 30 fps, swirls with a change and settles over 4.5 s. Both share one clock per change (`beginChange`, `latestChange`), so a cover that appears mid-way, such as Now Playing opened during a change, joins at the same point. Canvases are compiled once and pooled; pictures are decoded to bitmaps ahead of time (`media:bytes`), and the old cover stays as the background until the first frame, so nothing flashes. Reduce motion, or the same album, just swaps the picture.
+
+### Windows integration
+
+- **Media controls.** mpv has no media session, so `native/media/tc-media.exe` opens a hidden window with TeleCloud's app id and takes the System Media Transport Controls for it. `media.js` talks to it over stdin/stdout: title, artist, cover (a file in `media-controls/`, named by its hash so Windows never shows an older one), position, and the buttons back. Without the helper, the media keys still work through global shortcuts.
+- **Open with.** `openFiles.js` takes files from the command line (and from a second copy started by Explorer), plays the first at once in Now Playing and queues the rest, without adding them to the library.
+- **Floating lyrics.** `floatingLyrics.js` opens a frameless always-on-top window; locked, it ignores the mouse. Its place and size are in `floating-lyrics.json`.
+
+### Artist biographies
+
+`artistBio.js` asks Last.fm (`lastfm.artistInfo`, English, with tags, listeners and similar artists) and QQ Music at once. QQ's singer search (`t=9`) must give the same name, or the same Latin name (`singerTransName`); its text is the `wiki` of `music.musichallSinger.SingerInfoInter.GetSingerDetail` on `musicu.fcg`, in Chinese. Last.fm comes first when its text has 300 characters or more, QQ Music otherwise; with both, the card has a switch. QQ answers are kept in `artist-info-qq.json` for a week, "none" for a day.
+
+### ListenBrainz
+
+`listenbrainz.js` works from the play history like `lastfm.js`: every play that counts (`counts` in `stats.js`) is a row in `plays`, and `lb_sent` marks the ones ListenBrainz has, so offline plays go later and a restart loses none. Plays from two hours before the token was added on are sent, in calls of up to 100 (`single` for one, `import` for more); "playing now" goes with each new track. The user's own token is checked with `/1/validate-token` and kept encrypted with `safeStorage`; a 401 marks it refused and stops sending until a new one is added.
+
+Each listen carries MusicBrainz IDs only when they are sure: the file's own tags first (`MUSICBRAINZ_TRACKID`, `_ALBUMID`, `_ARTISTID`), otherwise one recording search, accepted only with the same title and main artist, a length within 3 s and the album among its releases. MusicBrainz allows one request a second, so searches wait their turn. The answer, or that there was none, is kept in `mb_ids`, so a track is looked up once; a failed request is not kept and is tried again later.
 
 ### Discord
 
-`discord.js` talks to the Discord desktop app over its local pipe, using the application ID in that file. It is off by default. The cover is a public picture from the online sources, otherwise the `telecloud` art asset. The small picture is the first artist's, from a picture chosen online or the artist sources, and its hover text is that artist's name. While nothing is loaded, the status shows the last track played (`discord-last.json`). A **Get TeleCloud** button links to the website unless turned off. Updates go out at most once every 4 seconds. The app never uploads files for this.
+`discord.js` talks to the Discord desktop app over its local pipe, using the application ID in that file. It is off by default. The cover is a public picture from the online sources, otherwise the `telecloud` art asset. The small picture is the first artist's, from a picture chosen online or the artist sources, and its hover text is that artist's name. While nothing is loaded, the status shows the last track played (`discord-last.json`). A **Get TeleCloud** button links to the website unless turned off. Discord takes an update at any time but passes it on to its servers only every ~15 s, dropping what comes sooner while still answering that it took it; so changes go out at most once every 15 s (`TELECLOUD_DISCORD_GAP_MS`), always the newest state, and a new track waits up to 2.5 s for its cover and artist picture so that one update carries all of it. The same status again (a follow-up, a resend, a retry) is told apart by its content and goes out at once without taking a turn. The app never uploads files for this. Each update is checked: one Discord does not answer within 5 s is sent again, and one it refuses is sent again without the status text and button (`compat`), then without pictures (`plain`, back on for the next track). Discord answers an update and may still not show it when it comes soon after the one before, so each change is sent once more 16 s later (`TELECLOUD_DISCORD_FOLLOW_MS`), and right after connecting "Last played" waits 6 s (`TELECLOUD_DISCORD_LAST_WAIT_MS`) for a track to start. While something shows, the status is sent again every minute (`TELECLOUD_DISCORD_RESEND_MS` in tests), so an update lost on Discord's side heals itself. The log says when it connects, drops, changes kind (playing, paused, last played, cleared) or is refused, never the song.
 
 ### Remote
 
@@ -264,13 +332,21 @@ Everything is in `%APPDATA%\telecloud`.
 |---|---|
 | `music-library.db` | SQLite database |
 | `settings.json` and other stores in `music.js` | Settings, playlists, favourites |
-| `lyrics-settings.json`, `cover-settings.json`, `discord-settings.json`, `artist-picture-settings.json` | Options of each feature |
+| `lyrics-settings.json`, `cover-settings.json`, `discord-settings.json`, `artist-picture-settings.json`, `floating-lyrics.json` | Options of each feature |
+| `playlists.json`, `favorites.json`, `recent.json` | Playlists (smart ones keep their rules, `smart: { match, rules, sort, limit }`), favourites, recently played |
+| `eq.json` | EQ, per output when that option is on |
+| `waveforms/` | Waveform seek bar data, by path, size and date |
+| `media-controls/` | The last few covers handed to the Windows media controls |
+| `autoeq-cache/` | Headphone measurements downloaded for AutoEQ |
+| `artist-info.json` | Artist biographies from Last.fm |
 | `artist-images/` | Artist pictures shown in the app, GIFs and `gifs.json` |
 | `youtube-artists.json` | YouTube answers, kept 30 days |
 | `discord-last.json` | The last track played, for the Discord status |
 | `remote-settings.json` | Remote: on or off, pairing key, display name, paired devices (tokens stored hashed) |
 | `telecloud-sync.json` | Telegram credentials and options |
 | `lastfm.json` | Last.fm account, with the session key encrypted |
+| `artist-info-qq.json` | QQ Music biographies, a week |
+| `listenbrainz.json` | ListenBrainz user name and token (encrypted), on or off, refused |
 | `audio-cache/` | Downloaded cloud tracks |
 | `cover-cache/` | Cover cache and TeleCloud covers |
 | `telecloud/` | Cached manifests |
@@ -281,7 +357,8 @@ Database tables:
 | Table | Holds |
 |---|---|
 | `music_files` | One row per track: tags, `album_artist`, audio details, `storage_type` (`local`, `cloud`, `both`), `telegram_message_id`, `telegram_channel_id`, `cache_path`, `cloud_checksum`, `cloud_cover`, `mqa` (null not known yet, 0 no, 1 MQA, 2 MQA Studio), `mqa_rate` |
-| `plays` | Listening history. Title, artist and album are kept with each play |
+| `plays` | Listening history. Title, artist and album are kept with each play; `scrobbled` (Last.fm) and `lb_sent` (ListenBrainz) mark what was sent |
+| `mb_ids` | MusicBrainz IDs found for a track (recording, release, artists) and where from: `tags`, `search` or `none` |
 | `storages` | Telegram chats used as storage, up to 5 |
 | `cloud_index` | One row per file message: checksum, size, IV, track info |
 | `upload_queue` | Backups waiting, running or failed; survives restarts |
@@ -300,7 +377,7 @@ npm run build:beta
 npm run build:release
 ```
 
-`build:beta` needs a pre-release version such as `1.0.0-beta.12` in `package.json`, and `build:release` needs a plain one. Each version builds once: the script stops if its folder already exists. The result goes to `beta/telecloud-<version>/` or `release/telecloud-<version>/`.
+Both build `tc-asio.exe` and `tc-media.exe` first (Visual Studio C++ build tools, x64, with the Windows SDK), then the page, then the installer. `build:beta` needs a pre-release version such as `1.0.0-beta.12` in `package.json`, and `build:release` needs a plain one. Each version builds once: the script stops if its folder already exists. The result goes to `beta/telecloud-<version>/` or `release/telecloud-<version>/`.
 
 If `build:beta` fails with `EPERM` on `win-unpacked.tmp`, another program is holding the folder. The cause hasn't been pinned down. Building outside the project works:
 
@@ -340,6 +417,14 @@ There is no test suite in the repo. These environment variables let a script run
 | `TELECLOUD_IN_PROCESS` | Runs the TeleCloud worker in the same process |
 | `TELECLOUD_MANIFEST_EVERY` | How many tracks between index saves during a backup |
 | `LASTFM_API_URL`, `LASTFM_AUTH_URL` | Addresses to use instead of Last.fm |
+| `LISTENBRAINZ_API_URL`, `MUSICBRAINZ_API_URL` | Addresses to use instead of ListenBrainz and MusicBrainz (the ID search) |
+| `TELECLOUD_MEDIA` | `off` starts no media controls helper |
+| `TELECLOUD_MEDIA_AUMID` | App id the media controls helper uses |
+| `TELECLOUD_MPV_ARGS` | Extra mpv options, space-separated |
+| `TELECLOUD_MPV_TEST_RATE` | Forces mpv's output rate, standing in for a DAC that refuses a DoP rate |
+| `TELECLOUD_RELEASE_AFTER_MS` | How long a pause waits before releasing the DAC (default 3000) |
+
+Use `TELECLOUD_DISCORD_PIPE` with a name nobody listens on in every test, so the real Discord is never touched.
 
 ## License
 

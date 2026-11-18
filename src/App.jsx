@@ -293,11 +293,13 @@ function App() {
     window.ipcRenderer.on('lyrics:saved', onSaved);
     return () => window.ipcRenderer.removeListener?.('lyrics:saved', onSaved);
   }, []);
-  // Last.fm "now playing" (ignored when no account is connected)
+  // Last.fm and ListenBrainz "now playing" (each ignored when not connected)
   useEffect(() => {
     const m = currentFile?.metadata;
     if (!m) return;
-    window.ipcRenderer.invoke('lastfm:now-playing', { artist: m.artist, title: m.title || currentFile.name, album: m.album, duration: m.duration }).catch(() => {});
+    const t = { artist: m.artist, title: m.title || currentFile.name, album: m.album, duration: m.duration };
+    window.ipcRenderer.invoke('lastfm:now-playing', t).catch(() => {});
+    window.ipcRenderer.invoke('listenbrainz:now-playing', t).catch(() => {});
   }, [currentFile?.path]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const f = currentFile;

@@ -85,8 +85,16 @@ async function coverJpeg(source) {
 
 const cloudCoverFile = (key) => path.join(coverDir(), `cloud-${String(key).replace(/[^0-9a-f]/g, '')}.jpg`);
 
+// A cover saved for the playing track waits to be written into its file (tagFile.writeWhenFree);
+// until then it is shown from here, so the new cover appears at once
+const held = new Map();
+const heldKey = (p) => path.resolve(String(p || '')).toLowerCase();
+const holdCover = (file, jpeg) => held.set(heldKey(file), Buffer.from(jpeg));
+const releaseCover = (file) => held.delete(heldKey(file));
+
 /** The picture shown for a track, or null: the app's covers and TeleCloud Remote use the same one */
 async function artFor(songPath) {
+  if (held.has(heldKey(songPath))) return held.get(heldKey(songPath));
   const database = require('./database');
   const { isInLibrary, isInAppStorage, isOpened } = require('./paths');
   const row = database.getFileByPath(songPath);
@@ -102,4 +110,4 @@ async function artFor(songPath) {
   return (source ? await coverForFile(source) : null) || stored;
 }
 
-module.exports = { artFor, isArtistPictureType, isArtistTagPicture, coverPictures, coverForFile, coverJpeg, cloudCoverFile, coverDir, readIfExists, clearMissing: () => noCover.clear() };
+module.exports = { holdCover, releaseCover, artFor, isArtistPictureType, isArtistTagPicture, coverPictures, coverForFile, coverJpeg, cloudCoverFile, coverDir, readIfExists, clearMissing: () => noCover.clear() };

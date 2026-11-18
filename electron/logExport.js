@@ -119,7 +119,7 @@ async function logBetween(text, from, to, clean) {
 }
 
 // Only these settings go in the report; anything added later stays out until listed here
-const SAFE_SETTINGS = ['skipDuplicates', 'artistFilter', 'replayGainEnabled', 'replayGainMode', 'crossfadeEnabled', 'crossfadeDuration', 'maxSamplingEnabled', 'maxBitDepth', 'maxSampleRate', 'dsdMode', 'dopMax', 'asioDriver', 'highPerformanceGpu', 'lowMemoryMode', 'closeToTray', 'channelBalance', 'crossfeed', 'mqaMode', 'releaseOnPause', 'pauseFade', 'exclusiveBuffer', 'lastSeenVersion'];
+const SAFE_SETTINGS = ['skipDuplicates', 'artistFilter', 'autoContinue', 'replayGainEnabled', 'replayGainMode', 'crossfadeEnabled', 'crossfadeDuration', 'maxSamplingEnabled', 'maxBitDepth', 'maxSampleRate', 'dsdMode', 'dopMax', 'asioDriver', 'highPerformanceGpu', 'lowMemoryMode', 'closeToTray', 'channelBalance', 'crossfeed', 'skipSilence', 'mqaMode', 'releaseOnPause', 'pauseFade', 'exclusiveBuffer', 'lastSeenVersion'];
 
 async function systemReport({ days, includeNames }) {
   const lines = [];
@@ -167,13 +167,24 @@ async function systemReport({ days, includeNames }) {
     const eq = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'eq.json'), 'utf8'));
     add('Equalizer', JSON.stringify({ enabled: !!eq.enabled, bands: eq.bands?.length || 0, separatePerOutput: !!eq.perDevice, outputsWithTheirOwn: Object.keys(eq.profiles || {}).length }));
   } catch { add('Equalizer', 'defaults'); }
+  try {
+    const pb = require('./player')._playback();
+    add('Playback now', `${pb.state}, ${pb.output}, exclusive buffer ${pb.exclusiveBuffer}, filters ${pb.filters.length ? pb.filters.join(' ') : 'none'}${pb.why ? ` (not bit-perfect: ${pb.why})` : ''}, ${pb.underrunsThisSession} under-runs since start`);
+  } catch { /* player not loaded */ }
   try { const snd = require('./player')._sound(); const sc = require('./soundChain'); add('Sound', sc.soundSummary(snd.soundState, { exclusive: false }).join(', ') || 'nothing on'); if (snd.clipShown) add('Clipping', 'yes, right now'); } catch { /* player not loaded */ }
-  for (const [name, file, keys] of [['Lyrics', 'lyrics-settings.json', ['search', 'autoSave', 'saveTo', 'order', 'disabled']], ['Covers', 'cover-settings.json', ['search', 'autoSave', 'saveTo', 'order', 'disabled']], ['Artist pictures', 'artist-picture-settings.json', ['search', 'autoSave', 'order', 'disabled']], ['Discord', 'discord-settings.json', ['enabled', 'showPaused', 'onlineCover', 'showButton']]]) {
+  for (const [name, file, keys] of [['Covers', 'cover-settings.json', ['search', 'autoSave', 'saveTo', 'order', 'disabled']], ['Artist pictures', 'artist-picture-settings.json', ['search', 'autoSave', 'order', 'disabled']], ['Discord', 'discord-settings.json', ['enabled', 'showPaused', 'onlineCover', 'showButton']]]) {
     try {
       const s = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), file), 'utf8'));
       add(name, JSON.stringify(Object.fromEntries(keys.filter(k => k in s).map(k => [k, s[k]]))));
     } catch { add(name, 'defaults'); }
   }
+  // the lyrics options in use (defaults filled in), so Word by word shows even when never changed
+  try { const o = require('./lyrics').options(); add('Lyrics', JSON.stringify({ search: o.search, wordByWord: o.wordByWord, autoSave: o.autoSave, saveTo: o.saveTo, order: o.order, disabled: o.disabled })); } catch { add('Lyrics', 'defaults'); }
+  // what the online searches gave this session: which source answered, which failed and why (no song names)
+  try { const r = require('./lyrics').sessionReport(); add('Lyrics since start', `${r.searches} automatic searches, taken: ${r.picked}, nothing found ${r.nothing}; not reached: ${r.errors}`); } catch { /* not loaded */ }
+  try { const r = require('./coverSearch').sessionReport(); add('Cover searches since start', `${r.searches}, good match from: ${r.good}, none ${r.nothing}; not reached: ${r.errors}`); } catch { /* not loaded */ }
+  try { const r = require('./artistImages').sessionReport(); add('Artist picture searches since start', `${r.searches}, good match from: ${r.good}, none ${r.nothing}; not reached: ${r.errors}`); } catch { /* not loaded */ }
+  try { const d = require('./discord').report(); add('Discord now', `${d.status}, showing ${d.showing}${d.basic ? ', basic (Discord refused the full status)' : ''}${d.noPictures ? ', without pictures' : ''}${d.lastSentAt ? `, last sent ${new Date(d.lastSentAt).toISOString()}` : ''}`); } catch { /* not loaded */ }
   // Windows media controls, media keys and the sleep timer
   try {
     const m = require('./media')._media();
@@ -199,6 +210,21 @@ async function systemReport({ days, includeNames }) {
     const store = require('./telecloud/store');
     add('TeleCloud storages', store.storages.all().length);
   } catch { /* not set up */ }
+  try {
+    const tc = await Promise.race([require('./telecloud/service').logStatus(), new Promise(r => setTimeout(() => r(null), 5000))]);
+    if (tc) add('TeleCloud', `${tc.signIn}${tc.unusedSignInKeptDays ? ` (Telegram ends unused sign-ins after ${tc.unusedSignInKeptDays} days)` : ''}, encryption ${tc.encryption}${tc.hasKey ? '' : ', no key on this computer'}, backups: ${tc.backups}, index ${tc.index}, cache ${tc.cache}`);
+  } catch (err) { add('TeleCloud', `not read: ${err.message}`); }
+  try {
+    const u = require('./updater').status();
+    add('Updates', `${u.state}${u.next ? ` (${u.next})` : ''}${u.percent != null && u.state === 'downloading' ? ` ${u.percent}%` : ''}${u.checkedAt ? `, last checked ${new Date(u.checkedAt).toISOString()}` : ''}${u.error ? `: ${u.error}` : ''}`);
+  } catch { /* not loaded */ }
+  try {
+    const ud = app.getPath('userData');
+    const size = (f) => { try { return fs.statSync(path.join(ud, f)).size; } catch { return 0; } };
+    const dirSize = (d) => { try { return fs.readdirSync(path.join(ud, d)).reduce((n, f) => { try { return n + fs.statSync(path.join(ud, d, f)).size; } catch { return n; } }, 0); } catch { return 0; } };
+    const mb = (b) => `${(b / 1048576).toFixed(1)} MB`;
+    add('Data on disk', `library ${mb(size('music-library.db') + size('music-library.db-wal'))}, covers ${mb(dirSize('cover-cache'))}, artist pictures ${mb(dirSize('artist-images'))}, waveforms ${mb(dirSize('waveforms'))}, logs ${mb(dirSize('logs'))}`);
+  } catch { /* not readable */ }
   lines.push('');
   // audio outputs, as mpv sees them: their names help with DAC problems (no music in them)
   try {
@@ -212,6 +238,10 @@ async function systemReport({ days, includeNames }) {
   try {
     const l = require('./lastfm').status();
     add('Last.fm', l.user ? `connected, scrobbling ${l.scrobble ? 'on' : 'off'}, ${l.pending} waiting` : (l.available ? 'not connected' : 'no app key in this build'));
+  } catch { /* not loaded */ }
+  try {
+    const lb = require('./listenbrainz').status(); // never the token or the user name
+    add('ListenBrainz', lb.user ? `connected, sending ${lb.scrobble ? 'on' : 'off'}${lb.refused ? ', token refused' : ''}, ${lb.pending} waiting, last sent ${lb.lastSend ? new Date(lb.lastSend).toISOString() : 'not this session'}${lb.lastError ? `, last error: ${lb.lastError}` : ''}, MusicBrainz IDs: ${lb.ids.tags || 0} from tags, ${lb.ids.search || 0} found, ${lb.ids.none || 0} without` : 'not connected');
   } catch { /* not loaded */ }
   // the remote: on or off, how many devices and which browsers (no addresses, names or keys)
   try {

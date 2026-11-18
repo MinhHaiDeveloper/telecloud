@@ -108,6 +108,7 @@ const REASONS = {
   eq: 'the EQ is on',
   balance: 'channel balance is on',
   crossfeed: 'crossfeed is on',
+  silence: 'skip silence is on',
   sound: 'sound effects are on',
   limit: 'above the output limit',
   max: 'above the highest DSD rate set for DoP',
@@ -253,8 +254,10 @@ let lastDeviceBusy = 0;
 let underruns = 0;
 let underrunTimer = null;
 let underrunFirst = 0;
+let underrunsSession = 0; // for the saved log's report
 function countUnderrun() {
   underruns++;
+  underrunsSession++;
   if (underrunTimer) return;
   underrunFirst = Date.now();
   underrunTimer = setTimeout(() => {
@@ -677,6 +680,11 @@ function normalizeEq(eq) {
   return { preamp: Number(num(eq.preamp, -30, 30).toFixed(2)), bands };
 }
 
+// Skip silence: silences of 2 s and more, inside a track and where one track runs into the next, shrink to
+// half a second; the silence at a track's very start to 0.3 s. Quiet passages of music stay: only what is
+// below -50 dB counts as silence. The music itself passes untouched; the timing changes, so it is not
+// bit-perfect.
+const SILENCE = '@silence:lavfi=[silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.3:stop_periods=-1:stop_duration=2:stop_threshold=-50dB:stop_silence=0.5]';
 // Headphone crossfeed (Bauer stereo-to-binaural): Jan Meier's setting blends least, the bs2b default most
 const CROSSFEED = { light: 'jmeier', medium: 'cmoy', strong: 'default' };
 /** What changes the samples, as a REASONS key: DoP, native DSD and MQA need none of it */
@@ -684,6 +692,7 @@ function dspWhy() {
   if (normalizeEq(eqState)) return 'eq';
   if (currentAudioSettings.balance) return 'balance';
   if (CROSSFEED[currentAudioSettings.crossfeed]) return 'crossfeed';
+  if (currentAudioSettings.skipSilence) return 'silence';
   if (soundState?.bypass || sound.soundActive(soundState, { exclusive: isExclusive() })) return 'sound';
   return null;
 }
@@ -719,9 +728,11 @@ function chainSpec({ crossfadeSlot = currentAudioSettings.crossfade > 0, extra =
   const eq = bypass ? null : normalizeEq(eqState);
   const bal = currentAudioSettings.balance || 0;
   const xfeed = CROSSFEED[currentAudioSettings.crossfeed];
+  const silence = !!currentAudioSettings.skipSilence;
   // anything that changes the samples runs in float and is metered for the clip light
   const processing = !!(eq || bal || xfeed || sf.key);
   const parts = [];
+  if (silence) parts.push(SILENCE); // first: it only drops samples, so the rest works on what is heard
   if (processing) parts.push(sound.FLOAT);
   parts.push(...sf.pre);
   if (eq) {
@@ -741,7 +752,7 @@ function chainSpec({ crossfadeSlot = currentAudioSettings.crossfade > 0, extra =
   if (processing) parts.push(sound.METER);
   const cap = capFilter(currentAudioSettings);
   if (cap) parts.push(`@fmt:lavfi=[${cap}]`);
-  return { af: parts.join(','), eq, soundLive: sf.live, meter: processing, key: JSON.stringify([eq && eq.bands.map(b => b.kind), bal, xfeed, crossfadeSlot, cap, sf.key]) };
+  return { af: parts.join(','), eq, soundLive: sf.live, meter: processing, key: JSON.stringify([eq && eq.bands.map(b => b.kind), bal, xfeed, crossfadeSlot, cap, sf.key, silence]) };
 }
 
 /** EQ part only (used by tests and the spectrum preview). */
@@ -1387,6 +1398,7 @@ async function applyAudioSettings(settings) {
     dopMax: [64, 128, 256, 512].includes(settings?.dopMax) ? settings.dopMax : 512,
     balance: Math.round(num(settings?.balance, -12, 12) * 2) / 2,
     crossfeed: CROSSFEED[settings?.crossfeed] ? settings.crossfeed : 'off',
+    skipSilence: !!settings?.skipSilence,
     mqaMode: settings?.mqaMode === 'decoder' ? 'decoder' : 'plain',
     releaseOnPause: !!settings?.releaseOnPause,
     pauseFade: !!settings?.pauseFade,
@@ -1418,6 +1430,20 @@ app.on('before-quit', () => {
   try { proc?.kill(); } catch { /* ignore */ }
 });
 
-module.exports = { listDevices, applyAudioSettings, buildEqFilter, capFilter, chainSpec, _sound: () => ({ soundState, softVolume, clipShown, meter: !!meterTimer, spectrum: spectrum.running() }), _release: () => ({ released, timer: !!releaseTimer, fading: !!fading, settings: { releaseOnPause: currentAudioSettings.releaseOnPause, pauseFade: currentAudioSettings.pauseFade } }), mpvPath, getProp, setStreamPrefix, parseBluetoothOutputs,
+// What plays and how, for the saved log's report: names of the filters in use, never a file
+function playbackReport() {
+  const labels = String(appliedChain?.af || '').split(',').map(p => (/^@([a-z0-9]+):/.exec(p) || [])[1]).filter(Boolean);
+  const live = [...new Set(labels.map(l => l.replace(/^b\d+$/, 'eq')))];
+  return {
+    output: native ? 'native DSD (ASIO)' : isExclusive() ? 'WASAPI Exclusive' : 'shared',
+    state: !currentPath ? 'nothing loaded' : playerPaused ? 'paused' : 'playing',
+    exclusiveBuffer: appliedBuffer || 'not applied yet',
+    filters: live,
+    why: dspWhy(),
+    underrunsThisSession: underrunsSession,
+  };
+}
+
+module.exports = { playingPath: () => currentPath, _playback: playbackReport, listDevices, applyAudioSettings, buildEqFilter, capFilter, chainSpec, _sound: () => ({ soundState, softVolume, clipShown, meter: !!meterTimer, spectrum: spectrum.running() }), _release: () => ({ released, timer: !!releaseTimer, fading: !!fading, settings: { releaseOnPause: currentAudioSettings.releaseOnPause, pauseFade: currentAudioSettings.pauseFade } }), mpvPath, getProp, setStreamPrefix, parseBluetoothOutputs,
   // tests only: feed a message as if mpv sent it, and see what is playing
   _mpvMessage: (msg) => handleMessage(msg), _playing: () => ({ entry: currentEntryId, path: currentPath, refused: [...refused] }) };

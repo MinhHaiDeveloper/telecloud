@@ -2,6 +2,18 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.1.0-beta.10',
+    items: [
+      'ListenBrainz, next to Last.fm in Settings > General: paste your own user token from listenbrainz.org/settings and your listens are sent there too, with "playing now". Plays made offline wait and go out later. Tracks are matched to MusicBrainz when it is sure (from the tags Picard writes, or one search per track), so each listen links to the right recording.',
+      'QQ Music is a source for album covers and artist pictures, in 1200 × 1200: strongest for Chinese and other Asian music, where the other sources often have nothing.',
+      "Artist biographies from QQ Music too: an artist page shows Last.fm's (in English) when it says enough, QQ Music's (in Chinese) where Last.fm has little or nothing, and a Last.fm | QQ Music switch when both have one.",
+      'Settings > Playback > Skip silence: silences of 2 seconds and more, inside a track and between tracks, shrink to half a second. For live albums, podcasts and hidden tracks. Off by default; not bit-perfect while on, and the signal path says so.',
+      'Saving lyrics, a cover, an artist picture or Edit info for the track that is playing no longer makes it skip: TeleCloud shows the change at once and writes it into the file when the track stops (or when TeleCloud quits).',
+      'The Discord status no longer stays on "Last played" or an earlier song: Discord only passes a change on every 15 seconds or so, so TeleCloud spaces its updates to match and always sends the song playing now (skipping quickly through tracks ends on the right one), sends the cover in the same update, and sends again what Discord missed or refused.',
+      'The saved log tells more: what plays now and through which filters, under-runs since start, which lyrics, cover and artist picture sources answered or failed, the TeleCloud sign-in and backups, updates, and how much space the library and caches take. Still no song names unless you include them.',
+    ],
+  },
+  {
     version: '1.1.0-beta.9',
     items: [
       'Settings > Lyrics > Word by word when available (on): NetEase, QQ Music and Kugou are asked for lyrics timed word by word, and those are preferred, so each word lights up as it is sung. Songs without them keep line-synced lyrics. The search window marks them "Word by word".',

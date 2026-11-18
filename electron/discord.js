@@ -11,8 +11,15 @@ const CLIENT_ID = '1568091864295415848';
 const LOGO = 'telecloud'; // art asset uploaded to the Discord application
 const DEFAULTS = { enabled: false, showPaused: true, showLastPlayed: true, onlineCover: true, showButton: true, statusText: '{track} by {artist}' };
 const BUTTON = { label: 'Get TeleCloud', url: 'https://telecloud-music.pages.dev/' };
-const MIN_GAP = 4000;  // Discord allows a few updates every 20 s; the newest state always wins
+// Discord takes an update at any time but passes it on to its servers only every ~15 s, dropping what comes
+// sooner (while still answering "taken"): updates are spaced that far apart, and the newest state goes out
+const MIN_GAP = Number(process.env.TELECLOUD_DISCORD_GAP_MS) || 15000;
+const PICTURE_WAIT = 2500; // a new track waits this long at most for its cover and artist picture
 const RETRY = 15000;   // look for Discord again this often while it isn't running
+const ANSWER = 5000;   // Discord answers each update at once; none in this time and it is sent again
+const FOLLOW = Number(process.env.TELECLOUD_DISCORD_FOLLOW_MS) || 16000; // a change is sent once more after this: Discord may sit on one that came too soon
+const LAST_WAIT = Number(process.env.TELECLOUD_DISCORD_LAST_WAIT_MS) || 6000; // after connecting, "Last played" waits this long for a track to start
+const RESEND = Number(process.env.TELECLOUD_DISCORD_RESEND_MS) || 60000;  // while something shows, it is sent again this often, so a lost update heals itself
 
 const settingsFile = () => path.join(app.getPath('userData'), 'discord-settings.json');
 function options() {
@@ -133,6 +140,18 @@ let coverFor;            // the album and artist the pictures were looked up for
 let artistUrl = null;
 let artistFor;
 let compat = false;       // Discord refused the full activity: send only the basics
+let plain = false;        // refused again: no pictures either (a picture link Discord won't take)
+let answerTimer = null;
+let resendTimer = null;
+let tries = 0;            // sends of the same status without an answer or with a refusal
+let lastKind = null;      // playing / paused / last played / cleared, for the log
+let followTimer = null;
+let readyAt = 0;
+let prevSentAt = 0;
+let lastContent = null;     // what was last sent, to tell a repeat from a change         // before the last send: a refused update gives its turn back
+let coverPending = false;
+let artistPending = false;
+let picturesBy = 0;         // until when a new track waits for its pictures
 let lastSent = 'none';
 let lastSentAt = 0;
 let sendTimer = null;
@@ -141,6 +160,8 @@ let pendingNonce = null;
 const pipeNames = () => (process.env.TELECLOUD_DISCORD_PIPE ? [process.env.TELECLOUD_DISCORD_PIPE] : Array.from({ length: 10 }, (_, i) => `\\\\?\\pipe\\discord-ipc-${i}`));
 const pushStatus = () => BrowserWindow.getAllWindows().forEach(w => { if (!w.isDestroyed()) w.webContents.send('discord:status', status()); });
 const status = () => (!options().enabled ? 'off' : ready ? 'connected' : 'waiting');
+/** For the saved log's report: connection and what kind of status shows, never the song */
+const report = () => ({ status: status(), showing: lastKind || 'nothing yet', basic: compat, noPictures: plain, lastSentAt });
 
 function frame(op, data) {
   const body = Buffer.from(JSON.stringify(data));
@@ -153,6 +174,15 @@ function frame(op, data) {
 function disconnect() {
   clearTimeout(sendTimer);
   sendTimer = null;
+  clearTimeout(answerTimer);
+  answerTimer = null;
+  clearInterval(resendTimer);
+  resendTimer = null;
+  clearTimeout(followTimer);
+  followTimer = null;
+  if (ready) console.log('[Discord] Disconnected');
+  lastContent = null;
+  lastKind = null;
   const s = socket;
   socket = null;
   ready = false;
@@ -205,13 +235,29 @@ function onData(chunk) {
     try { msg = JSON.parse(body.toString('utf8')); } catch { /* ignore a bad frame */ }
     if (op === 3 && socket) socket.write(frame(4, msg || {}));
     else if (op === 2) { disconnect(); scheduleRetry(); pushStatus(); return; }
-    else if (msg?.evt === 'READY') { ready = true; pushStatus(); refresh(); }
-    else if (msg?.evt === 'ERROR' && msg.nonce && msg.nonce === pendingNonce && !compat) {
-      // a newer field Discord doesn't take here: fall back to the basics
-      console.warn('[Discord] activity refused, retrying without the status text:', msg.data?.message);
-      compat = true;
+    else if (msg?.evt === 'READY') {
+      ready = true;
+      readyAt = Date.now();
+      console.log('[Discord] Connected');
+      clearInterval(resendTimer);
+      resendTimer = setInterval(() => { if (lastKind && lastKind !== 'cleared') { lastSent = 'none'; refresh(); } }, RESEND);
+      resendTimer.unref?.();
+      pushStatus(); refresh();
+    }
+    else if (msg?.evt === 'ERROR' && msg.nonce && msg.nonce === pendingNonce) {
+      clearTimeout(answerTimer); answerTimer = null;
+      tries++;
+      // a field Discord doesn't take here: first without the status text and button, then without pictures
+      console.warn(`[Discord] Status refused (${msg.data?.code || '?'}: ${String(msg.data?.message || '').slice(0, 160)}); trying again ${!compat ? 'without the status text' : !plain ? 'without pictures' : 'later'}`);
+      if (!compat) compat = true; else if (!plain) plain = true;
       lastSent = 'none';
-      refresh();
+      lastSentAt = prevSentAt; // not shown: it doesn't use up the turn
+      lastContent = null;
+      if (tries <= 3) refresh();
+    }
+    else if (msg?.cmd === 'SET_ACTIVITY' && msg.nonce && msg.nonce === pendingNonce) {
+      clearTimeout(answerTimer); answerTimer = null; // taken
+      tries = 0;
     }
   }
 }
@@ -219,20 +265,52 @@ function onData(chunk) {
 /** Send the current state, at most once per MIN_GAP; only the newest state goes out */
 function refresh() {
   if (!ready || !socket) return;
-  const wait = lastSentAt + MIN_GAP - Date.now();
-  if (wait > 0) {
-    if (!sendTimer) sendTimer = setTimeout(() => { sendTimer = null; refresh(); }, wait);
+  // just connected and nothing loaded: give a track a moment to start before showing "Last played"
+  if (!state.track && Date.now() - readyAt < LAST_WAIT) {
+    if (!sendTimer) sendTimer = setTimeout(() => { sendTimer = null; refresh(); }, LAST_WAIT - (Date.now() - readyAt) + 50);
     return;
   }
   const position = state.playing ? state.position + (Date.now() - state.at) / 1000 : state.position;
-  const activity = buildActivity({ ...state, position, last: loadLast() }, options(), coverUrl, Date.now(), compat, artistUrl);
+  const activity = buildActivity({ ...state, position, last: loadLast() }, options(), plain ? null : coverUrl, Date.now(), compat, plain ? null : artistUrl);
   const key = JSON.stringify(activity && { ...activity, timestamps: undefined, seek: state.at });
   if (key === lastSent) return;
+  // the same as what Discord has (a follow-up, the regular resend, a retry): at once, and it doesn't take a turn
+  const repeat = key === lastContent;
+  if (!repeat) {
+    // a new track: one update with its pictures, if they come soon (looked up before: at once)
+    if ((coverPending || artistPending) && Date.now() < picturesBy) {
+      if (!sendTimer) sendTimer = setTimeout(() => { sendTimer = null; refresh(); }, picturesBy - Date.now() + 20);
+      return;
+    }
+    const wait = lastSentAt + MIN_GAP - Date.now();
+    if (wait > 0) {
+      if (!sendTimer) sendTimer = setTimeout(() => { sendTimer = null; refresh(); }, wait);
+      return;
+    }
+  }
   lastSent = key;
-  lastSentAt = Date.now();
+  lastContent = key;
+  prevSentAt = lastSentAt;
+  if (!repeat) lastSentAt = Date.now();
   pendingNonce = crypto.randomUUID();
   const args = activity ? { pid: process.pid, activity } : { pid: process.pid };
   socket.write(frame(1, { cmd: 'SET_ACTIVITY', args, nonce: pendingNonce }));
+  const kind = !activity ? 'cleared' : activity.timestamps ? 'playing' : /^Paused/.test(activity.state || '') ? 'paused' : 'last played';
+  if (kind !== lastKind) { console.log(`[Discord] Status: ${kind}${compat ? ' (basic)' : ''}${plain ? ' (no pictures)' : ''}`); lastKind = kind; }
+  // a change is sent once more a little later, in case Discord sat on it
+  if (!repeat) {
+    clearTimeout(followTimer);
+    followTimer = setTimeout(() => { followTimer = null; lastSent = 'none'; refresh(); }, FOLLOW);
+    followTimer.unref?.();
+  }
+  // no answer in time: Discord missed it (busy, or between restarts); send it again
+  clearTimeout(answerTimer);
+  answerTimer = setTimeout(() => {
+    answerTimer = null;
+    if (++tries > 3) { console.warn('[Discord] No answer to the status update; it is sent again within a minute'); return; }
+    lastSent = 'none';
+    refresh();
+  }, ANSWER);
 }
 
 /** What the status is about: the current track, or the last one when nothing is loaded */
@@ -245,9 +323,13 @@ async function updateArtist() {
   const name = artistOf(showing());
   artistFor = name;
   artistUrl = null;
-  if (!name || !o.enabled || !o.onlineCover) return;
+  if (!name || !o.enabled || !o.onlineCover) { artistPending = false; return; }
+  artistPending = true;
   const url = await findArtist(name).catch(() => null);
-  if (id === artistLookup && url) { artistUrl = url; lastSent = 'none'; refresh(); }
+  if (id !== artistLookup) return;
+  artistPending = false;
+  if (url) artistUrl = url;
+  lastSent = 'none'; refresh();
 }
 
 let lookup = 0;
@@ -257,19 +339,26 @@ async function updateCover() {
   const track = showing();
   coverFor = albumOf(track);
   coverUrl = null;
-  if (!track || !o.enabled || !o.onlineCover) return;
+  if (!track || !o.enabled || !o.onlineCover) { coverPending = false; return; }
+  coverPending = true;
   const url = await findCover(track).catch(() => null);
-  if (id === lookup && url) { coverUrl = url; lastSent = 'none'; refresh(); }
+  if (id !== lookup) return;
+  coverPending = false;
+  if (url) coverUrl = url;
+  lastSent = 'none'; refresh();
 }
 
 /** From the player: the track, whether it plays, and where it is */
 function update({ track, playing, position }) {
+  if ((track?.path || null) !== (state.track?.path || null)) { plain = false; tries = 0; }
   state = { track: track || null, playing: !!playing, position: position || 0, at: Date.now() };
   if (track && playing) rememberLast(track);
   if (!options().enabled) return;
   connect();
-  if (albumOf(showing()) !== coverFor) updateCover();
-  if (artistOf(showing()) !== artistFor) updateArtist();
+  const newCover = albumOf(showing()) !== coverFor, newArtist = artistOf(showing()) !== artistFor;
+  if (newCover || newArtist) picturesBy = Date.now() + PICTURE_WAIT;
+  if (newCover) updateCover();
+  if (newArtist) updateArtist();
   refresh();
 }
 
@@ -303,4 +392,4 @@ ipcMain.handle('discord:set-options', (e, patch) => setOptions(patch || {}));
 ipcMain.handle('discord:update', (e, s) => { update(s || {}); });
 app.on('before-quit', () => { clearTimeout(retryTimer); retryTimer = null; disconnect(); });
 
-module.exports = { buildActivity, fit, fill, options, artistChanged };
+module.exports = { report, buildActivity, fit, fill, options, artistChanged };

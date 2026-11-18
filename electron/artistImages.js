@@ -25,9 +25,10 @@ const SOURCES = {
   deezer: { label: 'Deezer', online: true },
   theaudiodb: { label: 'TheAudioDB', online: true, note: 'Pictures from its community, with the public free key (30 searches a minute).' },
   itunes: { label: 'Apple Music', online: true, note: "The picture on the artist's public page." },
+  qq: { label: 'QQ Music', online: true, note: 'Best for Chinese and other Asian artists.' },
   musicbrainz: { label: 'MusicBrainz', online: true, note: 'Photos it links on Wikimedia Commons. Slower: one question a second.' },
 };
-const DEFAULTS = { search: true, autoSave: false, order: ['local', 'lastfm', 'deezer', 'theaudiodb', 'itunes', 'musicbrainz'], disabled: [] };
+const DEFAULTS = { search: true, autoSave: false, order: ['local', 'lastfm', 'deezer', 'theaudiodb', 'itunes', 'qq', 'musicbrainz'], disabled: [] };
 
 const settingsFile = () => path.join(app.getPath('userData'), 'artist-picture-settings.json');
 function options() {
@@ -378,6 +379,22 @@ const providers = {
       score: score(q.artist, x.name),
     }));
   },
+  // QQ Music: strongest for Chinese and other Asian artists. Its singer search gives an id, and the
+  // picture comes from the id at 1200 px (real 1200, checked); an id without a picture answers 404.
+  async qq(q) {
+    const p = new URLSearchParams({ w: q.artist, format: 'json', n: '5', p: '1', cr: '1', t: '9' });
+    const r = await get(`https://c.y.qq.com/soso/fcgi-bin/client_search_cp?${p}`);
+    const pic = (mid, side) => `https://y.gtimg.cn/music/photo_new/T001R${side}x${side}M000${mid}.jpg`;
+    return (r?.data?.singer?.list || [])
+      .filter(x => x.singerMID && x.singerPic) // no picture of their own: nothing to offer
+      .map(x => ({ x, s: Math.max(score(q.artist, x.singerName), x.singerTransName ? score(q.artist, x.singerTransName) : 0) }))
+      .filter(({ s }) => s >= 0.9) // only the artist named, as with Apple Music
+      .slice(0, 2)
+      .map(({ x, s }) => ({
+        source: 'qq', artist: x.singerName, size: '1200 × 1200',
+        thumb: pic(x.singerMID, 300), image: { url: pic(x.singerMID, 1200), fallback: pic(x.singerMID, 800) }, score: s,
+      }));
+  },
 };
 
 const autoCache = new Map();
@@ -408,6 +425,7 @@ async function search(q, { all = false, auto = false } = {}) {
       if (found.some(r => r.score >= 0.9)) break;
     }
   }
+  noteSearch(results, errors);
   const out = { results, errors };
   if (auto && !Object.keys(errors).length) {
     if (autoCache.size > 500) autoCache.clear();
@@ -570,8 +588,21 @@ async function loadImage(image) {
   throw new Error('No picture chosen');
 }
 
+/** The playing track: decided now (reading is safe), written when it stops */
+function writeTag(file, jpeg, opts = {}) {
+  const tf = require('./tagFile');
+  if (!tf.isBusy(file)) return writeTagNow(file, jpeg, opts);
+  const f = openTags(file);
+  let all;
+  try { all = f.tag.pictures || []; } finally { f.dispose(); }
+  const others = all.filter(p => !isArtistTagPicture(p));
+  if (opts.onlyMissing && others.length !== all.length) return false;
+  if (!jpeg && others.length === all.length) return false;
+  tf.writeWhenFree(file, () => writeTagNow(file, jpeg, opts));
+  return true;
+}
 /** Put the picture in the tag beside what is already there; a front cover is never touched */
-function writeTag(file, jpeg, { onlyMissing = false } = {}) {
+function writeTagNow(file, jpeg, { onlyMissing = false } = {}) {
   const { Picture, PictureType, ByteVector } = require('node-taglib-sharp');
   const f = openTags(file);
   try {
@@ -695,4 +726,21 @@ ipcMain.handle('artists:targets', (e, { name }) => targets(name));
 ipcMain.handle('artists:stop', () => { stopRequested = true; });
 ipcMain.handle('artists:pick', wrap(async (o, e) => ({ picked: await pick(e) })));
 
-module.exports = { _fingerprint: fingerprint, pictureFor, motionFor, onlineArtistPicture, search, save, options, SOURCES, gifState, gifsInStorage, hasGifKey, wantsGif, gifFromCloud };
+// What the searches of this session gave, for the saved log's report: sources only, never a name
+const session = { searches: 0, good: {}, nothing: 0, errors: {} };
+function noteSearch(results, errors) {
+  session.searches++;
+  for (const [id, e] of Object.entries(errors)) {
+    const k = `${id}: ${String(e).slice(0, 60)}`;
+    session.errors[k] = (session.errors[k] || 0) + 1;
+  }
+  const good = [...new Set(results.filter(r => r.score >= 0.7).map(r => r.source))];
+  if (!good.length) session.nothing++;
+  good.forEach(id => { session.good[id] = (session.good[id] || 0) + 1; });
+}
+function sessionReport() {
+  const list = (o) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ×${n}`).join(', ');
+  return { searches: session.searches, good: list(session.good) || 'none', nothing: session.nothing, errors: list(session.errors) || 'none' };
+}
+
+module.exports = { sessionReport, _fingerprint: fingerprint, pictureFor, motionFor, onlineArtistPicture, search, save, options, SOURCES, gifState, gifsInStorage, hasGifKey, wantsGif, gifFromCloud };

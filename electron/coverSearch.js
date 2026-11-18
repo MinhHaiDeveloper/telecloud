@@ -18,6 +18,7 @@ const SOURCES = {
   local: { label: 'This computer', online: false, note: 'Other tracks of the album, and pictures in its folder.' },
   itunes: { label: 'Apple Music', online: true },
   deezer: { label: 'Deezer', online: true },
+  qq: { label: 'QQ Music', online: true, note: 'Best for Chinese and other Asian albums.' },
   musicbrainz: { label: 'MusicBrainz', online: true, note: 'Cover Art Archive. Best for older and rarer releases.' },
   lastfm: { label: 'Last.fm', online: true },
 };
@@ -25,7 +26,7 @@ const DEFAULTS = {
   search: true,    // look online when a playing track has no cover
   autoSave: false, // save the best result without asking
   saveTo: 'file',  // 'file' (cover.jpg) | 'tag' | 'both'
-  order: ['local', 'itunes', 'deezer', 'musicbrainz', 'lastfm'],
+  order: ['local', 'itunes', 'deezer', 'qq', 'musicbrainz', 'lastfm'],
   disabled: [],
 };
 
@@ -146,6 +147,23 @@ const providers = {
       };
     });
   },
+  // QQ Music: strongest for Chinese and other Asian albums. The album search gives an id, and the cover
+  // comes from the id at 1200 px (real 1200, checked); an id without a cover answers 404.
+  async qq(q) {
+    const w = `${q.artist || ''} ${q.album || ''}`.trim();
+    if (!w) return [];
+    const p = new URLSearchParams({ w, format: 'json', n: '8', p: '1', cr: '1', t: '8' });
+    const r = await get(`https://c.y.qq.com/soso/fcgi-bin/client_search_cp?${p}`);
+    const pic = (mid, side) => `https://y.gtimg.cn/music/photo_new/T002R${side}x${side}M000${mid}.jpg`;
+    return (r?.data?.album?.list || []).filter(x => x.albumMID && x.albumPic).map(x => {
+      const found = { album: x.albumName, artist: x.singerName || (x.singer_list || []).map(s => s.name).join(', ') };
+      return {
+        source: 'qq', ...found, year: (x.publicTime || '').slice(0, 4), size: '1200 × 1200',
+        thumb: pic(x.albumMID, 300), image: { url: pic(x.albumMID, 1200), fallback: pic(x.albumMID, 800) },
+        score: score(q, found),
+      };
+    });
+  },
   async musicbrainz(q) {
     const quote = (s) => `"${String(s).replace(/["\\]/g, ' ')}"`;
     const parts = [];
@@ -223,6 +241,7 @@ async function search(q, { all = false, auto = false } = {}) {
       if (found.some(r => r.score >= 0.7)) break;
     }
   }
+  noteSearch(results, errors);
   const out = { results, errors };
   if (auto && !Object.keys(errors).length) {
     if (autoCache.size > 500) autoCache.clear();
@@ -282,8 +301,21 @@ function toJpeg(buf) {
   return fit.toJPEG(90);
 }
 
-const { openTags } = require('./tagFile');
-function writeTag(file, jpeg, { onlyMissing = false, onlyIfEmbedded = false } = {}) {
+const { openTags, writeWhenFree, isBusy } = require('./tagFile');
+/** The playing track: decided now (reading is safe), written when it stops */
+function writeTag(file, jpeg, opts = {}) {
+  if (!isBusy(file)) return writeTagNow(file, jpeg, opts);
+  if (opts.onlyMissing || opts.onlyIfEmbedded) {
+    const f = openTags(file);
+    let had;
+    try { const all = f.tag.pictures || []; had = all.some(p => !covers.isArtistTagPicture(p)); } finally { f.dispose(); }
+    if ((opts.onlyMissing && had) || (opts.onlyIfEmbedded && !had)) return false;
+  }
+  covers.holdCover(file, jpeg); // shown at once; in the file once the track stops
+  writeWhenFree(file, () => { try { writeTagNow(file, jpeg, opts); } finally { covers.releaseCover(file); } });
+  return true;
+}
+function writeTagNow(file, jpeg, { onlyMissing = false, onlyIfEmbedded = false } = {}) {
   const { Picture, PictureType, ByteVector } = require('node-taglib-sharp');
   const f = openTags(file);
   try {
@@ -398,4 +430,21 @@ ipcMain.handle('covers:save', wrap(save));
 ipcMain.handle('covers:embedded', async (e, { paths }) => embeddedCount(paths));
 ipcMain.handle('covers:pick', wrap(async (o, e) => ({ picked: await pick(e) })));
 
-module.exports = { search, save, options, SOURCES, onlineCoverUrl };
+// What the searches of this session gave, for the saved log's report: sources only, never a name
+const session = { searches: 0, good: {}, nothing: 0, errors: {} };
+function noteSearch(results, errors) {
+  session.searches++;
+  for (const [id, e] of Object.entries(errors)) {
+    const k = `${id}: ${String(e).slice(0, 60)}`;
+    session.errors[k] = (session.errors[k] || 0) + 1;
+  }
+  const good = [...new Set(results.filter(r => r.score >= 0.7).map(r => r.source))];
+  if (!good.length) session.nothing++;
+  good.forEach(id => { session.good[id] = (session.good[id] || 0) + 1; });
+}
+function sessionReport() {
+  const list = (o) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ×${n}`).join(', ');
+  return { searches: session.searches, good: list(session.good) || 'none', nothing: session.nothing, errors: list(session.errors) || 'none' };
+}
+
+module.exports = { sessionReport, search, save, options, SOURCES, onlineCoverUrl };
