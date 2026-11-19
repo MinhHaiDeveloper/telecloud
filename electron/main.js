@@ -43,6 +43,7 @@ const { applyAudioSettings } = require('./player.js');
 require('./spectrum.js');
 require('./soundCorrection.js');
 require('./waveform.js');
+require('./wordTiming.js');
 require('./floatingLyrics.js');
 require('./autoeq.js');
 require('./stats.js');

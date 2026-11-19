@@ -37,7 +37,8 @@ export function bitmapFor(url) {
   })();
   bitmaps.set(url, job);
   job.then((b) => { if (bitmaps.get(url) === job) decoded.set(url, b); }, () => { if (bitmaps.get(url) === job) bitmaps.delete(url); });
-  while (bitmaps.size > 8) {
+  // the playing cover, the one before it and the next one or two: each up to 1024 px, about 4 MB
+  while (bitmaps.size > 5) {
     const [old, p] = bitmaps.entries().next().value;
     bitmaps.delete(old);
     decoded.delete(old);
@@ -78,7 +79,7 @@ export function latestChange() {
 // side panel, the player bar and Now Playing at once, that was a visible hitch. So a few are made ahead,
 // one at a time when the computer has a moment, and each change borrows one and gives it back.
 const pool = [];
-const POOL_MAX = 5;
+const POOL_MAX = 4; // the side panel, the player bar, Now Playing and its flight can change at once
 function makeCanvas() {
   const c = document.createElement('canvas');
   c.className = 'liquid-canvas';
@@ -88,7 +89,7 @@ function makeCanvas() {
 }
 let warming = false;
 /** Get a few canvases ready, one per idle moment */
-export function warmCanvases(n = 4) {
+export function warmCanvases(n = 3) {
   if (warming || pool.length >= n) return;
   warming = true;
   const idle = window.requestIdleCallback || ((f) => setTimeout(f, 200));
@@ -118,7 +119,7 @@ export function backdropCanvas() {
 function giveBack(c) {
   c.remove();
   delete c.dataset.t;
-  if (pool.length < POOL_MAX) pool.push(c); else c.__g.destroy();
+  if (pool.length < POOL_MAX) { c.__g.release(); pool.push(c); } else c.__g.destroy();
 }
 
 /**
@@ -220,6 +221,20 @@ export function makeGL(canvas, frag) {
     },
     size(w, h) { if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; } gl.viewport(0, 0, w, h); },
     draw() { gl.drawArrays(gl.TRIANGLES, 0, 3); },
+    /**
+     * Waiting to be used again: the compiled shader stays (that is the slow part), the drawing buffer and the
+     * pictures go (that is the memory: a full-size buffer and two 1024 px textures per canvas)
+     */
+    release() {
+      if (canvas.width !== 1 || canvas.height !== 1) { canvas.width = 1; canvas.height = 1; }
+      const empty = new Uint8Array(4);
+      textures.forEach((t, unit) => {
+        if (!t) return;
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, empty);
+      });
+    },
     destroy() { try { gl.getExtension('WEBGL_lose_context')?.loseContext(); } catch { /* gone */ } },
   };
 }

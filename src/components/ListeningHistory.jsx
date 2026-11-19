@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Icon from './Icon';
 import Cover from './Cover';
 import { Segmented } from './ui';
+import { ipcOn, ipcOff } from '../utils/ipc';
 
 // The play history put to use: what you played most lately, and what you were playing around this date in
 // earlier years. On Discover and the Dashboard. Tracks no longer in the library are shown, but can't play.
@@ -21,9 +22,9 @@ function useHistory(ask, deps) {
     const load = () => ask().then(r => { if (alive) setData(r || []); }).catch(() => {});
     const again = () => { clearTimeout(t); t = setTimeout(load, 600); };
     load();
-    window.ipcRenderer.on('stats:changed', again);
+    ipcOn(window.ipcRenderer, 'stats:changed', again);
     window.addEventListener('telecloud:library-changed', again);
-    return () => { alive = false; clearTimeout(t); window.ipcRenderer.removeListener?.('stats:changed', again); window.removeEventListener('telecloud:library-changed', again); };
+    return () => { alive = false; clearTimeout(t); ipcOff(window.ipcRenderer, 'stats:changed', again); window.removeEventListener('telecloud:library-changed', again); };
   }, deps); // eslint-disable-line react-hooks/exhaustive-deps
   return data;
 }

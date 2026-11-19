@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Icon from './Icon';
 import { SettingRow, Toggle, Segmented } from './ui';
+import CadenceModels from './CadenceModels';
 
 /** The ordered list of sources: tick to use one, arrows to change the order */
 export const SourceOrder = ({ o, set }) => {
@@ -67,6 +68,7 @@ const LyricsSettings = () => {
           <Segmented value={o.saveTo} onChange={(v) => set({ saveTo: v })} size="sm" options={[{ value: 'tag', label: 'Tag' }, { value: 'lrc', label: '.lrc file' }, { value: 'both', label: 'Both' }]} />
         </SettingRow>
         <SourceOrder o={o} set={set} />
+        <CadenceModels />
       </div>
     </section>
   );

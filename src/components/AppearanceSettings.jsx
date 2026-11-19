@@ -4,6 +4,7 @@ import Icon from './Icon';
 import { SettingRow, Segmented, Toggle } from './ui';
 import { THEMES } from '../utils/themes';
 import { APPEARANCE_DEFAULTS, APPEARANCE_LIMITS, resetAppearance, setAppearance, useAppearance } from '../utils/appearance';
+import { ipcOn, ipcOff } from '../utils/ipc';
 
 const PREVIEW = ['[00:00.00]This line has already played', '[00:02.00]So has this one', '[00:04.00]Each line takes a turn', '[00:06.00]The one playing stands out', '[00:08.00]The rest wait around it', '[00:10.00]Then it starts again'].join('\n');
 const PREVIEW_LOOP = 12;
@@ -40,8 +41,8 @@ const FloatingLyricsRows = () => {
     const ipc = window.ipcRenderer;
     ipc.invoke('lyrics-float:status').then(s => s && setSt(s)).catch(() => {});
     const on = (e, s) => s && setSt(s);
-    ipc.on('lyrics-float:changed', on);
-    return () => ipc.removeListener?.('lyrics-float:changed', on);
+    ipcOn(ipc, 'lyrics-float:changed', on);
+    return () => ipcOff(ipc, 'lyrics-float:changed', on);
   }, []);
   return (
     <>

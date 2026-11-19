@@ -2,9 +2,16 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { enhancedJsonToLrc, looksLikeJson, isTtml } from '../utils/lyrics';
 import Icon from './Icon';
 import { Dialog, Segmented, Toggle } from './ui';
+import WordLyricsEditor from './WordLyricsEditor';
 
+const readSide = () => { try { return localStorage.getItem('lyrics-side') !== '0'; } catch { return true; } };
 const readFollow = () => { try { return localStorage.getItem('lyrics-follow') !== '0'; } catch { return true; } };
 
+const TABS = [
+  { value: 'sync', label: 'Sync' },
+  { value: 'words', label: 'Word by word' },
+];
+const hasWordTimes = (t) => /<\d{1,3}:\d{2}/.test(t || '') || isTtml(t);
 const SAVE_TO = [
   { value: 'tag', label: 'Tag' },
   { value: 'lrc', label: '.lrc file' },
@@ -47,13 +54,20 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
     return lrc;
   };
   const [saveTo, setSaveTo] = useState('tag');
+  // Sync: plain and line-synced lyrics, edited as text. Word by word: word times, by hand or by Cadence.
+  const [tab, setTab] = useState(() => (hasWordTimes(m.lyrics) ? 'words' : 'sync'));
   const [saving, setSaving] = useState(false);
+  // the search and its results: a column that folds away, the same in both tabs, so switching tabs moves nothing
+  const [side, setSideState] = useState(readSide);
+  const setSide = (v) => { setSideState(v); try { localStorage.setItem('lyrics-side', v ? '1' : '0'); } catch { /* this session only */ } };
   const cloudOnly = (file?.storage_type || 'local') === 'cloud' || file?.path?.startsWith('tc://');
 
   // ---- syncing by hand: play the track, put the cursor on a line, press Sync line (Ctrl+Enter)
   const taRef = useRef(null);
   const original = useRef(m.lyrics || '');
   const history = useRef([]);
+  const future = useRef([]); // what Undo took back, for Redo (Ctrl+Y)
+  const typedAt = useRef(0); // typing in a burst is one step of Undo
   const [pos, setPos] = useState(null);
   const [caretNo, setCaretNo] = useState(0);   // the line with the cursor, shown as a band over the text
   const [scrollY, setScrollY] = useState(0);
@@ -75,6 +89,7 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
   // where the cursor goes after a change, applied once React has put the new text in
   const pendingCaret = useRef(null);
   useLayoutEffect(() => {
+    if (tab !== 'sync') return;
     const caret = pendingCaret.current;
     const ta = taRef.current;
     if (caret == null || !ta) return;
@@ -87,14 +102,14 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
     const lh = parseFloat(getComputedStyle(ta).lineHeight) || 20;
     if (lineNo * lh < ta.scrollTop + lh || lineNo * lh > ta.scrollTop + ta.clientHeight - 3 * lh) ta.scrollTop = Math.max(0, lineNo * lh - ta.clientHeight / 2);
     setScrollY(ta.scrollTop);
-  }, [text]);
+  }, [text, tab]); // eslint-disable-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
     const ta = taRef.current;
     if (!ta) return;
     const cs = getComputedStyle(ta);
     setLineH(parseFloat(cs.lineHeight) || 20.8);
     setPadTop(ta.clientTop + (parseFloat(cs.paddingTop) || 0)); // where the first line starts, border included
-  }, []);
+  }, [tab]); // the text box is there only in the Sync tab
   const followCaret = () => { const ta = taRef.current; if (ta) setCaretNo(ta.value.slice(0, ta.selectionStart).split(NL).length - 1); };
   const lines = text.split(NL);
   const currentLine = (lines[caretNo] || '').replace(STAMP, '').replace(/<\d{1,3}:\d{2}(?:\.\d{1,3})?>/g, '').replace(/\s+/g, ' ').trim(); // without the word times
@@ -120,6 +135,7 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
   const commitSeek = () => { if (seekDraft != null && isThis) onSeek?.(seekDraft); setSeekDraft(null); };
   const edit = (next, caret) => {
     history.current.push(text);
+    future.current = [];
     pendingCaret.current = caret;
     setText(next);
     setPick(null);
@@ -154,8 +170,26 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
     if (t == null) return;
     if (!isThis) onPlayFile?.(file); else onSeek?.(Math.max(0, t - 0.5));
   };
-  const undo = () => { if (history.current.length) { setText(history.current.pop()); setPick(null); } };
-  const reset = () => { history.current.push(text); setText(original.current); setPick(-1); };
+  const undo = () => { if (history.current.length) { future.current.push(text); setText(history.current.pop()); setPick(null); } };
+  const redo = () => { if (future.current.length) { history.current.push(text); setText(future.current.pop()); setPick(null); } };
+  const reset = () => { history.current.push(text); future.current = []; setText(original.current); setPick(-1); };
+  // Ctrl+Z / Ctrl+Y (and Ctrl+Shift+Z) in both tabs; the title and artist boxes keep their own
+  const onKeys = (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || e.target.closest('input')) return;
+    const k = e.key.toLowerCase();
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); } else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+  };
+  // Edit text (Word by word tab): the Sync tab, with the cursor on that line
+  const editTextAt = (time) => {
+    let offset = 0, found = null;
+    for (const l of text.split(NL)) {
+      const stamps = [...l.matchAll(/\[(\d{1,3}):(\d{1,2}(?:[.:]\d{1,3})?)\]/g)].map(mm => Number(mm[1]) * 60 + Number(mm[2].replace(':', '.')));
+      if (stamps.some(t => Math.abs(t - time) < 0.006)) { found = offset + (l.match(STAMP)?.[0].length || 0); break; }
+      offset += l.length + 1;
+    }
+    pendingCaret.current = found ?? 0;
+    setTab('sync');
+  };
 
   const run = async () => {
     setBusy(true);
@@ -187,7 +221,7 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
     <Dialog
       title="Lyrics"
       icon="lyrics"
-      width={940}
+      width={1220}
       onClose={onClose}
       actions={(
         <>
@@ -199,8 +233,8 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
         </>
       )}
     >
-      <div className="lyr">
-        <div className="lyr-side">
+      <div className={`lyr ${side ? '' : 'folded'}`} onKeyDown={onKeys}>
+        <div className="lyr-side" inert={!side} aria-hidden={!side}>
           <form className="lyr-query" onSubmit={(e) => { e.preventDefault(); run(); }}>
             <input className="input sm" value={title} onChange={e => setTitle(e.target.value)} placeholder="Title" aria-label="Title" />
             <input className="input sm" value={artist} onChange={e => setArtist(e.target.value)} placeholder="Artist" aria-label="Artist" />
@@ -214,7 +248,7 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
               </button>
             )}
             {results.map((r, i) => (
-              <button key={i} className={`lyr-item ${pick === i ? 'on' : ''}`} onClick={() => { setPick(i); setText(r.lyrics); }}>
+              <button key={i} className={`lyr-item ${pick === i ? 'on' : ''}`} onClick={() => { if (r.lyrics !== text) { history.current.push(text); future.current = []; } setPick(i); setText(r.lyrics); }}>
                 <div className="lyr-top">
                   <b>{label(r.source)}</b>
                   <span className={`badge mono ${r.words ? 'b-hires' : r.synced ? 'b-lossless' : 'b-local'}`}>{r.words ? 'Word by word' : r.synced ? 'Synced' : 'Plain'}</span>
@@ -230,7 +264,12 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
           </div>
         </div>
         <div className="lyr-edit">
-          <div className="lyr-sync">
+          <div className="lyr-tabbar">
+            <button className={`icon-btn sm lyr-sidebtn ${side ? 'on' : ''}`} onClick={() => setSide(!side)} title={side ? 'Hide the search and results' : 'Show the search and results'} aria-pressed={side}><Icon name="panel" /></button>
+            <Segmented value={tab} onChange={setTab} options={TABS} />
+            <span className="lyr-kind">{isTtml(text) ? 'TTML: lines and words follow the music' : /<\d{1,3}:\d{2}/.test(text) ? 'Word by word (Enhanced LRC)' : /^\s*\[\d/m.test(text) ? 'Synced lines (LRC)' : text.trim() ? 'Plain text' : 'No lyrics yet'}</span>
+          </div>
+          <div className={`lyr-sync ${tab === 'words' ? 'compact' : ''}`}>
             <div className="lyr-transport">
               <button className="icon-btn sm" onClick={() => onSeek?.(Math.max(0, (pos || 0) - 5))} disabled={!isThis} title="Back 5 s"><Icon name="prev" /></button>
               <button className="icon-btn sm play" onClick={() => (isThis ? onTogglePlay?.() : onPlayFile?.(file))} title={isThis && isPlaying ? 'Pause' : 'Play this track'}>
@@ -246,15 +285,17 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
                 onChange={(e) => setSeekDraft(Number(e.target.value))} onPointerUp={commitSeek} onKeyUp={commitSeek} onBlur={commitSeek} />
               <span className="mono lyr-dur">{duration ? fmtClock(duration).replace(/\.\d+$/, '') : ''}</span>
             </div>
-            <button className="btn-primary lyr-syncbtn" onClick={syncLine} disabled={!isThis} title="Put the current time on the line with the cursor, then go to the next line (Ctrl+Enter)">
+            {tab === 'sync' && <button className="btn-primary lyr-syncbtn" onClick={syncLine} disabled={!isThis} title="Put the current time on the line with the cursor, then go to the next line (Ctrl+Enter)">
               Sync line <kbd>Ctrl+Enter</kbd>
-            </button>
-            <div className="lyr-current" title="The line with the cursor: Sync line puts the time on it">
+            </button>}
+            {tab === 'sync' && <div className="lyr-current" title="The line with the cursor: Sync line puts the time on it">
               <span className="mono">Line {caretNo + 1}</span>
               <b>{currentLine || (lines[caretNo]?.trim() ? lines[caretNo].trim() : 'Empty line')}</b>
               <span className="lyr-follow" title="A green band follows the music, line by line, from the timestamps"><Toggle checked={follow} onChange={setFollow} label="Follow the music" /></span>
-            </div>
+            </div>}
             <div className="lyr-tools">
+              {tab === 'sync' && (
+              <>
               <span>Line</span>
               <button className="btn-ghost sm" onClick={() => nudgeLine(-0.1)} title="Line 0.1 s earlier">−0.1s</button>
               <button className="btn-ghost sm" onClick={() => nudgeLine(0.1)} title="Line 0.1 s later">+0.1s</button>
@@ -262,15 +303,24 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
               <span>All</span>
               <button className="btn-ghost sm" onClick={() => offsetAll(-0.25)} title="Every line 0.25 s earlier">−0.25s</button>
               <button className="btn-ghost sm" onClick={() => offsetAll(0.25)} title="Every line 0.25 s later">+0.25s</button>
+              </>
+              )}
               <span className="lyr-sp" />
-              <button className="btn-ghost sm" onClick={undo} title="Undo the last change">Undo</button>
+              <button className="btn-ghost sm" onClick={undo} title="Undo the last change (Ctrl+Z)">Undo</button>
+              <button className="btn-ghost sm" onClick={redo} title="Redo what Undo took back (Ctrl+Y)">Redo</button>
               <button className="btn-ghost sm" onClick={reset} title="Back to the lyrics the track had">Reset</button>
               <label className="btn-ghost sm pressable" title="LRC, Enhanced LRC, TTML, or word timings as JSON">
                 Open file…
-                <input type="file" accept=".lrc,.ttml,.xml,.json,.txt,.md" hidden onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; history.current.push(text); setText(fromWordJson(await f.text())); setPick(null); }} />
+                <input type="file" accept=".lrc,.ttml,.xml,.json,.txt,.md" hidden onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; history.current.push(text); future.current = []; setText(fromWordJson(await f.text())); setPick(null); }} />
               </label>
             </div>
           </div>
+          {tab === 'words' ? (
+            <WordLyricsEditor
+              text={text} onEdit={(next) => edit(next, null)} onEditText={editTextAt} file={file} isThis={isThis} isPlaying={isPlaying} pos={pos}
+              duration={duration} onSeek={onSeek} onPlayFile={onPlayFile} onTogglePlay={onTogglePlay} cloudOnly={cloudOnly}
+            />
+          ) : (
           <div className="lyr-area">
             {playingNo >= 0 && <div className="lyr-play" aria-hidden="true" style={{ transform: `translateY(${padTop + playingNo * lineH - scrollY}px)`, height: lineH }} />}
             <div className="lyr-hl" aria-hidden="true" style={{ transform: `translateY(${padTop + caretNo * lineH - scrollY}px)`, height: lineH }} />
@@ -285,12 +335,18 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
               wrap="off"
               className="input mono"
               value={text}
-              onChange={e => { history.current.push(text); setText(fromWordJson(e.target.value)); setPick(null); followCaret(); }}
+              onChange={e => {
+                if (Date.now() - typedAt.current > 800) history.current.push(text);
+                typedAt.current = Date.now();
+                future.current = [];
+                setText(fromWordJson(e.target.value)); setPick(null); followCaret();
+              }}
               placeholder={'Type or paste lyrics. Synced lines look like:\n[00:12.40]First line\n[00:16.10]Second line'}
               spellCheck={false}
             />
           </div>
-          <small className="muted">{converted ? 'Word timings (JSON) turned into Enhanced LRC: each word lights up as it is sung. ' : ''}{isTtml(text) ? 'TTML: lines and words follow the music.' : /<\d{1,3}:\d{2}/.test(text) ? 'Synced word by word (Enhanced LRC).' : /^\s*\[\d/m.test(text) ? 'Synced (LRC): lines follow the music.' : 'Plain text: shown as a static list.'}</small>
+          )}
+          {converted && <small className="muted">Word timings (JSON) turned into Enhanced LRC: each word lights up as it is sung.</small>}
         </div>
       </div>
     </Dialog>

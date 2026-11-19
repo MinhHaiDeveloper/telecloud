@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { SettingRow, Toggle } from './ui';
+import { ipcOn, ipcOff } from '../utils/ipc';
 
 /** Settings → General → Last.fm: connect an account, scrobble on/off */
 const LastfmSettings = () => {
@@ -10,8 +11,8 @@ const LastfmSettings = () => {
   useEffect(() => {
     ipc.invoke('lastfm:status').then(setS);
     const on = (e, st) => setS(st);
-    ipc.on('lastfm:status', on);
-    return () => ipc.removeListener?.('lastfm:status', on);
+    ipcOn(ipc, 'lastfm:status', on);
+    return () => ipcOff(ipc, 'lastfm:status', on);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   if (!s) return null;
 

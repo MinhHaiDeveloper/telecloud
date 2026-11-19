@@ -8,6 +8,7 @@ import {
   DEFAULT_Q, MAX_BANDS, GAIN_LIMIT, flatBands, autoEq, autoPreamp, parseEqText, formatEqText, parseCurveText,
 } from '../utils/autoEqMath';
 import { AUTOEQ_DEFAULTS } from '../hooks/useEq';
+import { ipcOn, ipcOff } from '../utils/ipc';
 
 const TYPE_OPTIONS = [{ value: 'Peak', label: 'PK' }, { value: 'LSF', label: 'LS' }, { value: 'HSF', label: 'HS' }];
 const SMOOTH_OPTIONS = [{ value: 0, label: 'Raw' }, { value: 1 / 24, label: '1/24 oct' }, { value: 1 / 12, label: '1/12 oct' }, { value: 1 / 6, label: '1/6 oct' }, { value: 1 / 3, label: '1/3 oct' }];
@@ -166,13 +167,13 @@ function useLiveSpectrum(on) {
       setWhy(null);
     };
     const onState = (e, st) => { if (st?.why) { setWhy(st.why); setBands(null); held.current = null; } };
-    ipc.on('spectrum:frame', onFrame);
-    ipc.on('spectrum:state', onState);
+    ipcOn(ipc, 'spectrum:frame', onFrame);
+    ipcOn(ipc, 'spectrum:state', onState);
     ipc.invoke('spectrum:live', true);
     return () => {
       ipc.invoke('spectrum:live', false);
-      ipc.removeListener?.('spectrum:frame', onFrame);
-      ipc.removeListener?.('spectrum:state', onState);
+      ipcOff(ipc, 'spectrum:frame', onFrame);
+      ipcOff(ipc, 'spectrum:state', onState);
       held.current = null;
     };
   }, [on]);
@@ -336,7 +337,7 @@ const EqSettingsView = ({ onBack, eq, deviceName }) => {
   return (
     <div className="eq-page">
       <div className="page-head" style={{ margin: 0 }}>
-        <BackButton onClick={onBack} label="Back to settings" />
+        <BackButton onClick={onBack} label="Back" />
         <h2>Parametric EQ</h2>
         <span className="sub">{bands.length} bands · preamp {preamp} dB</span>
         <div className="end">

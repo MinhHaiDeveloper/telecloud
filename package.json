@@ -1,6 +1,6 @@
 {
   "name": "telecloud",
-  "version": "1.1.0-beta.10",
+  "version": "1.1.0-beta.11",
   "description": "Hi-res music player with encrypted, unlimited backup to your own Telegram",
   "main": "electron/main.js",
   "scripts": {
@@ -26,7 +26,12 @@
       "dist/**/*",
       "electron/**/*",
       "node_modules/**/*",
+      "!node_modules/onnxruntime-node/bin/napi-v*/{darwin,linux}/**",
+      "!node_modules/onnxruntime-node/bin/napi-v*/win32/arm64/**",
       "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/onnxruntime-node/bin/**"
     ],
     "fileAssociations": [
       {
@@ -115,6 +120,8 @@
     "electron-updater": "^6.6.8",
     "music-metadata": "^11.13.0",
     "node-taglib-sharp": "^6.0.3",
+    "onnxruntime-node": "^1.31.1",
+    "pinyin-pro": "^3.29.5",
     "telegram": "^2.26.22"
   },
   "devDependencies": {

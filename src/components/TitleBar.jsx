@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Icon from './Icon';
+import { ipcOn, ipcOff } from '../utils/ipc';
 
 /**
  * The window's own title bar (the window is frameless): drag anywhere on it to move the window,
@@ -11,8 +12,8 @@ const TitleBar = ({ subtitle }) => {
     const ipc = window.ipcRenderer;
     ipc.invoke('window:state').then(s => s && setState(s)).catch(() => {});
     const on = (e, s) => setState(s);
-    ipc.on('window:state', on);
-    return () => ipc.removeListener?.('window:state', on);
+    ipcOn(ipc, 'window:state', on);
+    return () => ipcOff(ipc, 'window:state', on);
   }, []);
   if (state.fullscreen) return null;
   const ipc = window.ipcRenderer;

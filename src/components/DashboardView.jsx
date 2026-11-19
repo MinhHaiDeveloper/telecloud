@@ -4,6 +4,7 @@ import Cover from './Cover';
 import SongActions from './songActions';
 import { Segmented } from './ui';
 import { OnThisDay } from './ListeningHistory';
+import { ipcOn, ipcOff } from '../utils/ipc';
 
 // Listening statistics from the play history (electron/stats.js)
 
@@ -136,9 +137,9 @@ const DashboardView = ({ musicFiles, onPlay }) => {
     // new plays, or tracks that moved on disk (their plays are re-attached on the next read)
     const again = () => { clearTimeout(t); t = setTimeout(load, 500); };
     load();
-    window.ipcRenderer.on('stats:changed', again);
+    ipcOn(window.ipcRenderer, 'stats:changed', again);
     window.addEventListener('telecloud:library-changed', again);
-    return () => { alive = false; clearTimeout(t); window.ipcRenderer.removeListener?.('stats:changed', again); window.removeEventListener('telecloud:library-changed', again); };
+    return () => { alive = false; clearTimeout(t); ipcOff(window.ipcRenderer, 'stats:changed', again); window.removeEventListener('telecloud:library-changed', again); };
   }, [win]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const byPath = useMemo(() => new Map(musicFiles.map(f => [f.path, f])), [musicFiles]);

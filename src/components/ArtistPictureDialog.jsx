@@ -3,6 +3,7 @@ import Icon from './Icon';
 import Cover from './Cover';
 import ArtistPicture from './ArtistPicture';
 import { Dialog, Progress, confirmDialog } from './ui';
+import { ipcOn, ipcOff } from '../utils/ipc';
 
 const plural = (n, one) => `${n.toLocaleString()} ${n === 1 ? one : `${one}s`}`;
 
@@ -26,8 +27,8 @@ const ArtistPictureDialog = ({ name, file, hasPicture, onClose, onSaved }) => {
   const sourcesAsked = useRef(name);
   useEffect(() => {
     const on = (e, p) => { if (p.name === name) setWork(p.finished ? null : p); };
-    window.ipcRenderer.on('artists:progress', on);
-    return () => window.ipcRenderer.removeListener?.('artists:progress', on);
+    ipcOn(window.ipcRenderer, 'artists:progress', on);
+    return () => ipcOff(window.ipcRenderer, 'artists:progress', on);
   }, [name]);
 
   const run = async (artist) => {

@@ -13,15 +13,22 @@ export { parseLyrics };
 export const WordLine = ({ line, nextTime, currentTime, playing = true, className = 'words' }) => {
   const box = useRef(null);
   const clock = useRef({ t: currentTime, at: performance.now() });
+  // the word spans and what each shows now: found once per line, written only when a value changes, so a
+  // frame usually touches the one word being sung instead of every word of the line
+  const spans = useRef({ line: null, list: [], shown: [] });
   const paint = () => {
     const el = box.current;
     if (!el) return;
+    const sp = spans.current;
+    if (sp.line !== line || sp.list.length !== line.words.length) {
+      sp.line = line; sp.list = [...el.querySelectorAll(':scope > .w')]; sp.shown = [];
+    }
     const c = clock.current;
     const now = playing ? c.t + Math.min(0.6, (performance.now() - c.at) / 1000) : c.t;
-    el.querySelectorAll(':scope > .w').forEach((span, i) => {
+    sp.list.forEach((span, i) => {
       const a = line.words[i].time, b = wordEnd(line, i, nextTime);
-      const p = now <= a ? 0 : now >= b ? 1 : (now - a) / (b - a);
-      span.style.setProperty('--p', p.toFixed(3));
+      const p = (now <= a ? 0 : now >= b ? 1 : (now - a) / (b - a)).toFixed(3);
+      if (sp.shown[i] !== p) { sp.shown[i] = p; span.style.setProperty('--p', p); }
     });
   };
   useEffect(() => { clock.current = { t: currentTime, at: performance.now() }; paint(); }, [currentTime]); // eslint-disable-line react-hooks/exhaustive-deps

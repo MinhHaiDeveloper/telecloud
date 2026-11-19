@@ -150,6 +150,12 @@ function decodeKrc(b64) {
   return require('zlib').inflateSync(body).toString('utf8').replace(/^\uFEFF/, '');
 }
 
+/**
+ * NetEase's line lyrics can start with its credits as JSON, one object per line:
+ * {"t":0,"c":[{"tx":"作曲: "},{"tx":"Someone"}]}. They are data for its own player, not lyrics: dropped.
+ */
+const neteaseLines = (text) => (text == null ? text : String(text).split(/\r?\n/).filter(l => !/^\s*\{\s*"t"\s*:/.test(l)).join('\n'));
+
 // ---------- sources: each returns [{ source, title, artist, album, duration, lyrics, synced, score }]
 const providers = {
   async tags(track) {
@@ -183,7 +189,7 @@ const providers = {
       if (sc < 0.3) continue;
       const words = options().wordByWord;
       const l = await get(words ? `https://music.163.com/api/song/lyric/v1?id=${s.id}&lv=-1&yv=-1&tv=-1` : `https://music.163.com/api/song/lyric?id=${s.id}&lv=1&kv=1&tv=-1`, { headers: { Referer: 'https://music.163.com/', 'User-Agent': BROWSER_UA } });
-      const text = l?.lrc?.lyric;
+      const text = neteaseLines(l?.lrc?.lyric);
       if (!text || !text.trim() || /纯音乐/.test(text)) continue;
       const byWord = words ? yrcToLrc(l?.yrc?.lyric) : null;
       if (byWord) out.push({ source: 'netease', ...found, lyrics: byWord, synced: true, words: true, score: sc });
@@ -358,4 +364,4 @@ ipcMain.handle('lyrics:save', async (e, opts) => {
   try { return { success: true, ...(await save(opts)) }; } catch (err) { return { success: false, error: describeWriteError(err, opts?.path).error }; }
 });
 
-module.exports = { search, save, options, isSynced, SOURCES, _words: { yrcToLrc, krcToLrc, decodeKrc, qrcToLrc }, _variantPenalty: variantPenalty, sessionReport };
+module.exports = { search, save, options, isSynced, SOURCES, _words: { yrcToLrc, krcToLrc, decodeKrc, qrcToLrc }, _variantPenalty: variantPenalty, _neteaseLines: neteaseLines, sessionReport };

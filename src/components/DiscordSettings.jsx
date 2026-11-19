@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { SettingRow, Toggle } from './ui';
+import { ipcOn, ipcOff } from '../utils/ipc';
 
 const STATUS = {
   connected: { label: 'Connected to Discord', cls: 'b-lossless' },
@@ -14,8 +15,8 @@ const DiscordSettings = () => {
   useEffect(() => {
     window.ipcRenderer.invoke('discord:options').then(v => { setO(v); setText(v.statusText); });
     const onStatus = (e, status) => setO(v => (v ? { ...v, status } : v));
-    window.ipcRenderer.on('discord:status', onStatus);
-    return () => window.ipcRenderer.removeListener?.('discord:status', onStatus);
+    ipcOn(window.ipcRenderer, 'discord:status', onStatus);
+    return () => ipcOff(window.ipcRenderer, 'discord:status', onStatus);
   }, []);
   // the status text is saved shortly after typing stops
   useEffect(() => {

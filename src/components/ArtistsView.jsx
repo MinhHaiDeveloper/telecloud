@@ -10,6 +10,7 @@ import { Select, BackButton, Segmented, useDetailScroll } from './ui';
 import SongActions from './songActions';
 import { formatDuration, sortAlbumTracks } from '../utils/audio';
 import { albumIndex, artistLabel, artistsOf, trackCount, UNKNOWN_ARTIST, VARIOUS_ARTISTS } from '../utils/albums';
+import { ipcOn, ipcOff } from '../utils/ipc';
 
 const SORTS = [
   { value: 'name', label: 'Name A → Z' },
@@ -71,8 +72,8 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
   const [work, setWork] = useState(null);
   useEffect(() => {
     const on = (e, p) => setWork(p.finished ? null : p);
-    window.ipcRenderer.on('artists:progress', on);
-    return () => window.ipcRenderer.removeListener?.('artists:progress', on);
+    ipcOn(window.ipcRenderer, 'artists:progress', on);
+    return () => ipcOff(window.ipcRenderer, 'artists:progress', on);
   }, []);
   const saveFound = async () => {
     const r = await window.ipcRenderer.invoke('artists:save', { name: found.name, image: found.image }).catch(() => null);

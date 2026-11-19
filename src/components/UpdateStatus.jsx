@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Icon from './Icon';
+import { ipcOn, ipcOff } from '../utils/ipc';
 
 const TEXT = {
   idle: 'Updates are checked automatically when TeleCloud starts.',
@@ -14,8 +15,8 @@ export const useUpdateStatus = () => {
     const ipc = window.ipcRenderer;
     ipc.invoke('update:status').then(setS).catch(() => {});
     const on = (e, st) => setS(st);
-    ipc.on('update:status', on);
-    return () => ipc.removeListener?.('update:status', on);
+    ipcOn(ipc, 'update:status', on);
+    return () => ipcOff(ipc, 'update:status', on);
   }, []);
   return s;
 };

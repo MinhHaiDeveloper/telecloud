@@ -475,7 +475,7 @@ html.np-lyric-glow .np-lyrics .lyric.active .w { text-shadow: none; filter: drop
 /* ===== Player bar ===== */
 .player {
   grid-area: player;
-  display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr) minmax(0, 360px);
+  display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr) minmax(0, 440px);
   align-items: center; gap: 24px;
   padding: 0 24px; background: var(--surface); border-top: 1px solid var(--border);
   position: relative; z-index: 50;
@@ -515,7 +515,7 @@ html.np-lyric-glow .np-lyrics .lyric.active .w { text-shadow: none; filter: drop
 .seek-wrap.has-wave .range::-webkit-slider-runnable-track { height: 100%; background: transparent; }
 .seek-wrap.has-wave .range.buffered::-webkit-slider-runnable-track { background: transparent; }
 .seek-wrap.has-wave .range::-webkit-slider-thumb { width: 3px; height: 28px; margin-top: 0; border-radius: 2px; background: var(--text); }
-.p-right { display: flex; align-items: center; justify-content: flex-end; gap: 4px; position: relative; }
+.p-right { display: flex; align-items: center; justify-content: flex-end; gap: 10px; position: relative; }
 .fmt-pill {
   display: flex; align-items: center; gap: 6px; padding: 6px 10px; margin-right: 6px;
   border-radius: 999px; background: var(--accent-soft); color: var(--accent);

@@ -44,6 +44,7 @@ import { notesToShow } from './utils/whatsNew';
 import pkg from '../package.json';
 import CoverDialog from './components/CoverDialog';
 import { useUpdateStatus } from './components/UpdateStatus';
+import { ipcOn, ipcOff } from './utils/ipc';
 
 // localStorage can throw (private mode, blocked storage); UI prefs are optional
 const readPref = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
@@ -145,6 +146,9 @@ function App() {
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all' | 'local' | 'cloud'
   const [lyricsCollapsed, setLyricsCollapsed] = useState(() => readPref('tc-lyrics-collapsed') === '1');
   const [nowPlaying, setNowPlaying] = useState(null); // null, or { panel } when the full-window view is open
+  // where the EQ goes back to (the view it was opened from, and the Settings tab), and the tab Settings opens on
+  const eqReturn = useRef(null);
+  const [settingsTab, setSettingsTab] = useState(null);
   const [audioSettings, setAudioSettings] = useState({});
   const [syncStatus, setSyncStatus] = useState(null);
   const [syncProgress, setSyncProgress] = useState(null);
@@ -160,8 +164,8 @@ function App() {
   useEffect(() => { refreshStorages(); }, [syncStatus?.isAuthenticated, currentView, refreshStorages]);
   useEffect(() => {
     const onStopped = () => refreshStorages();
-    window.ipcRenderer.on('telecloud-sync:stopped', onStopped);
-    return () => window.ipcRenderer.removeListener('telecloud-sync:stopped', onStopped);
+    ipcOn(window.ipcRenderer, 'telecloud-sync:stopped', onStopped);
+    return () => ipcOff(window.ipcRenderer, 'telecloud-sync:stopped', onStopped);
   }, [refreshStorages]);
 
   useEffect(() => {
@@ -191,14 +195,14 @@ function App() {
       idle = setTimeout(() => { setSyncProgress(null); refresh(); }, 15000);
     };
     const onStopped = () => { setSyncProgress(null); refresh(); };
-    ipc.on('telecloud-sync:progress', onProgress);
-    ipc.on('telecloud-sync:stopped', onStopped);
-    ipc.on('telecloud-sync:session-ended', onStopped);
+    ipcOn(ipc, 'telecloud-sync:progress', onProgress);
+    ipcOn(ipc, 'telecloud-sync:stopped', onStopped);
+    ipcOn(ipc, 'telecloud-sync:session-ended', onStopped);
     const timer = setInterval(refresh, 60000);
     return () => {
-      ipc.removeListener('telecloud-sync:progress', onProgress);
-      ipc.removeListener('telecloud-sync:stopped', onStopped);
-      ipc.removeListener('telecloud-sync:session-ended', onStopped);
+      ipcOff(ipc, 'telecloud-sync:progress', onProgress);
+      ipcOff(ipc, 'telecloud-sync:stopped', onStopped);
+      ipcOff(ipc, 'telecloud-sync:session-ended', onStopped);
       clearInterval(timer);
       clearTimeout(idle);
     };
@@ -213,15 +217,15 @@ function App() {
   const [clipping, setClipping] = useState(false);
   useEffect(() => {
     const on = (e, d) => setClipping(!!d?.clipping);
-    window.ipcRenderer.on('player:clip', on);
-    return () => window.ipcRenderer.removeListener?.('player:clip', on);
+    ipcOn(window.ipcRenderer, 'player:clip', on);
+    return () => ipcOff(window.ipcRenderer, 'player:clip', on);
   }, []);
   // while paused, the DAC can be free for other apps; taking it back means sending the next track again
   const [dacReleased, setDacReleased] = useState(false);
   useEffect(() => {
     const on = (e, v) => { setDacReleased(!!v); if (!v) setAdvanceTick(t => t + 1); };
-    window.ipcRenderer.on('player:released', on);
-    return () => window.ipcRenderer.removeListener?.('player:released', on);
+    ipcOn(window.ipcRenderer, 'player:released', on);
+    return () => ipcOff(window.ipcRenderer, 'player:released', on);
   }, []);
   const eqEnabled = eq.enabled;
   const setEqEnabled = eq.setEnabled;
@@ -261,10 +265,10 @@ function App() {
     };
     const onChange = () => { clearTimeout(t); t = setTimeout(load, 400); };
     load();
-    window.ipcRenderer.on('stats:changed', onChange);
+    ipcOn(window.ipcRenderer, 'stats:changed', onChange);
     // the library changed (files moved, renamed, rescanned): re-read, which re-attaches moved tracks
     window.addEventListener('telecloud:library-changed', onChange);
-    return () => { clearTimeout(t); window.ipcRenderer.removeListener?.('stats:changed', onChange); window.removeEventListener('telecloud:library-changed', onChange); };
+    return () => { clearTimeout(t); ipcOff(window.ipcRenderer, 'stats:changed', onChange); window.removeEventListener('telecloud:library-changed', onChange); };
   }, []);
   const listenRef = useRef({ path: null });
 
@@ -290,8 +294,8 @@ function App() {
       setCurrentFile(patchFile);
       setLyricsFound(f => (f?.path === path ? null : f));
     };
-    window.ipcRenderer.on('lyrics:saved', onSaved);
-    return () => window.ipcRenderer.removeListener?.('lyrics:saved', onSaved);
+    ipcOn(window.ipcRenderer, 'lyrics:saved', onSaved);
+    return () => ipcOff(window.ipcRenderer, 'lyrics:saved', onSaved);
   }, []);
   // Last.fm and ListenBrainz "now playing" (each ignored when not connected)
   useEffect(() => {
@@ -363,16 +367,16 @@ function App() {
       bumpCovers(paths);
       setCoverFound(f => (f && paths.some(p => f.paths.includes(p)) ? null : f));
     };
-    window.ipcRenderer.on('covers:saved', onSaved);
+    ipcOn(window.ipcRenderer, 'covers:saved', onSaved);
     const onArtist = (e, { name }) => bumpArtist(name);
-    window.ipcRenderer.on('artists:saved', onArtist);
+    ipcOn(window.ipcRenderer, 'artists:saved', onArtist);
     // MQA found by reading the audio: the badge and the quality filter follow straight away
     const onMqa = (e, { path: p, mqa, mqaRate }) => setMusicFiles(prev => prev.map(f => (f.path === p ? { ...f, mqa, mqaRate } : f)));
-    window.ipcRenderer.on('library:mqa', onMqa);
+    ipcOn(window.ipcRenderer, 'library:mqa', onMqa);
     return () => {
-      window.ipcRenderer.removeListener?.('covers:saved', onSaved);
-      window.ipcRenderer.removeListener?.('artists:saved', onArtist);
-      window.ipcRenderer.removeListener?.('library:mqa', onMqa);
+      ipcOff(window.ipcRenderer, 'covers:saved', onSaved);
+      ipcOff(window.ipcRenderer, 'artists:saved', onArtist);
+      ipcOff(window.ipcRenderer, 'library:mqa', onMqa);
     };
   }, []);
   useEffect(() => {
@@ -561,8 +565,8 @@ function App() {
   useEffect(() => {
     if (!isAuthenticated) return undefined;
     const on = (e, list) => applyDevicesRef.current?.(list);
-    window.ipcRenderer.on('player:devices', on);
-    return () => window.ipcRenderer.removeListener?.('player:devices', on);
+    ipcOn(window.ipcRenderer, 'player:devices', on);
+    return () => ipcOff(window.ipcRenderer, 'player:devices', on);
   }, [isAuthenticated]);
 
   useEffect(() => {
@@ -605,16 +609,16 @@ function App() {
     const onAudioOut = (event, out) => setAudioOut(out);
     const onDsd = (event, info) => setDsdInfo(info?.mode ? info : null);
     const onOutput = (event, info) => setOutputInfo(info || null);
-    ipcRenderer.on('player:output', onOutput);
+    ipcOn(ipcRenderer, 'player:output', onOutput);
     const onDsdNotice = (event, text) => showToastRef.current?.(text, 'info');
-    ipcRenderer.on('player:dsd', onDsd);
-    ipcRenderer.on('player:dsd-notice', onDsdNotice);
-    ipcRenderer.on('time-pos', onTime);
-    ipcRenderer.on('track-ended', onEnded);
-    ipcRenderer.on('player:advanced', onAdvanced);
-    ipcRenderer.on('player:state', onState);
-    ipcRenderer.on('playback-error', onError);
-    ipcRenderer.on('player:audio-out', onAudioOut);
+    ipcOn(ipcRenderer, 'player:dsd', onDsd);
+    ipcOn(ipcRenderer, 'player:dsd-notice', onDsdNotice);
+    ipcOn(ipcRenderer, 'time-pos', onTime);
+    ipcOn(ipcRenderer, 'track-ended', onEnded);
+    ipcOn(ipcRenderer, 'player:advanced', onAdvanced);
+    ipcOn(ipcRenderer, 'player:state', onState);
+    ipcOn(ipcRenderer, 'playback-error', onError);
+    ipcOn(ipcRenderer, 'player:audio-out', onAudioOut);
     return () => {
       ['time-pos', 'track-ended', 'player:advanced', 'player:state', 'playback-error', 'player:audio-out']
         .forEach(ch => ipcRenderer.removeAllListeners(ch));
@@ -660,8 +664,8 @@ function App() {
       });
     };
 
-    ipcRenderer.on('scan-progress', handleScanProgress);
-    ipcRenderer.on('library:partial', handlePartial);
+    ipcOn(ipcRenderer, 'scan-progress', handleScanProgress);
+    ipcOn(ipcRenderer, 'library:partial', handlePartial);
     return () => {
       ipcRenderer.removeAllListeners('scan-progress');
       ipcRenderer.removeAllListeners('library:partial');
@@ -780,8 +784,8 @@ function App() {
       });
       if (p.error && currentFileRef.current?.path === p.path) showToast(`TeleCloud: ${p.error}`, 'error');
     };
-    window.ipcRenderer.on('telecloud-sync:stream', onStream);
-    return () => window.ipcRenderer.removeListener('telecloud-sync:stream', onStream);
+    ipcOn(window.ipcRenderer, 'telecloud-sync:stream', onStream);
+    return () => ipcOff(window.ipcRenderer, 'telecloud-sync:stream', onStream);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const playMusic = async (file, index, contextList = null, { keepQueue = false, startPaused = false } = {}) => {
     const token = ++playTokenRef.current;
@@ -1370,7 +1374,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     let result;
     try {
       if (storageType === 'cloud' || file.path.startsWith('tc://')) {
-        ipcRenderer.on('telecloud-sync:download-progress', onProgress);
+        ipcOn(ipcRenderer, 'telecloud-sync:download-progress', onProgress);
         const cached = await ipcRenderer.invoke('telecloud-sync:cache-track', file.path);
         if (!cached?.success) throw new Error(cached?.error || 'TeleCloud download failed');
       }
@@ -1378,7 +1382,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     } catch (err) {
       result = { success: false, error: err.message };
     } finally {
-      ipcRenderer.removeListener('telecloud-sync:download-progress', onProgress);
+      ipcOff(ipcRenderer, 'telecloud-sync:download-progress', onProgress);
     }
     if (result?.success) {
       setDownloadToasts(prev => prev.map(t => (t.id === toastId ? { ...t, progress: 100 } : t)));
@@ -1449,17 +1453,17 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     ipc.invoke('remote:status').then(apply).catch(() => {});
     const onStatus = (e, s) => { if (!!s?.running !== remoteOnRef.current) apply(s); };
     const onCommand = (e, c) => remoteCmdRef.current?.(c?.cmd, c?.args || {});
-    ipc.on('remote:status', onStatus);
+    ipcOn(ipc, 'remote:status', onStatus);
     // a remote browsing the library: answered from what this window already holds
     const onQuery = (e, q) => {
       let result;
       try { result = remoteQueryRef.current?.(q?.req || {}) ?? { error: 'not ready' }; } catch (err) { result = { error: err.message }; }
       ipc.invoke('remote:answer', { qid: q?.qid, result }).catch(() => {});
     };
-    ipc.on('remote:status', onStatus);
-    ipc.on('remote:command', onCommand);
-    ipc.on('remote:query', onQuery);
-    return () => { ipc.removeListener?.('remote:status', onStatus); ipc.removeListener?.('remote:command', onCommand); ipc.removeListener?.('remote:query', onQuery); };
+    ipcOn(ipc, 'remote:status', onStatus);
+    ipcOn(ipc, 'remote:command', onCommand);
+    ipcOn(ipc, 'remote:query', onQuery);
+    return () => { ipcOff(ipc, 'remote:status', onStatus); ipcOff(ipc, 'remote:command', onCommand); ipcOff(ipc, 'remote:query', onQuery); };
   }, []);
   const remoteOnRef = useRef(false);
 
@@ -1490,8 +1494,8 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
   }, [currentLive?.path, currentLive?.metadata?.title, currentLive?.metadata?.artist, isPlaying, Math.floor(currentTime / 5), playQueue.length, currentIndex, loopMode, remoteArt]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const on = (e, c) => mediaCmdRef.current?.(c);
-    window.ipcRenderer.on('media:command', on);
-    return () => window.ipcRenderer.removeListener?.('media:command', on);
+    ipcOn(window.ipcRenderer, 'media:command', on);
+    return () => ipcOff(window.ipcRenderer, 'media:command', on);
   }, []);
   const mediaCmdRef = useRef(null);
 
@@ -1501,8 +1505,8 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     const ipc = window.ipcRenderer;
     ipc.invoke('lyrics-float:status').then(s => s && setFloatLyrics(s)).catch(() => {});
     const on = (e, s) => s && setFloatLyrics(s);
-    ipc.on('lyrics-float:changed', on);
-    return () => ipc.removeListener?.('lyrics-float:changed', on);
+    ipcOn(ipc, 'lyrics-float:changed', on);
+    return () => ipcOff(ipc, 'lyrics-float:changed', on);
   }, []);
   const floatText = currentLive ? (currentLive.metadata?.lyrics || (lyricsFound?.path === currentLive.path ? lyricsFound.lyrics : '') || '') : '';
   useEffect(() => {
@@ -1532,8 +1536,8 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     take();
     // a multi-select "Open" sends the files one by one: gather them first
     const on = () => { clearTimeout(timer); timer = setTimeout(take, 300); };
-    window.ipcRenderer.on('open:files', on);
-    return () => { clearTimeout(timer); window.ipcRenderer.removeListener?.('open:files', on); };
+    ipcOn(window.ipcRenderer, 'open:files', on);
+    return () => { clearTimeout(timer); ipcOff(window.ipcRenderer, 'open:files', on); };
   }, [libraryReady]);
   openFilesRef.current = (list) => { setNowPlaying(null); playMusic(list[0], 0, list); };
   useEffect(() => {
@@ -1578,6 +1582,8 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
 
   const navigate = (view) => {
     setCurrentView(view);
+    setSettingsTab(null);
+    eqReturn.current = null;
     setSearchQuery('');
     setNowPlaying(null);
     if (view !== 'playlists') setSelectedPlaylistId(null);
@@ -1594,7 +1600,22 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     setSelectedAlbum(album ? { ...album, fromArtist } : { name: String(target), fromArtist });
   };
   const openArtist = (name, tab = 'songs') => { if (!name) return; navigate('artists'); setSelectedArtist(name); setArtistTab(tab); };
-  const openEq = () => { setNowPlaying(null); setCurrentView('eq-settings'); };
+  // The EQ button opens the EQ, and pressed again goes back to where it was opened; the EQ's own back button
+  // does the same. From Settings > Sound it goes back to that tab, not to General.
+  const closeEq = () => {
+    const r = eqReturn.current;
+    eqReturn.current = null;
+    if (!r) { setCurrentView('settings'); return; }
+    if (r.tab) setSettingsTab(r.tab);
+    setCurrentView(r.view);
+    if (r.nowPlaying) setNowPlaying(r.nowPlaying);
+  };
+  const openEq = (from) => {
+    if (currentView === 'eq-settings') { closeEq(); return; }
+    eqReturn.current = { view: currentView, tab: from === 'sound' ? 'eq' : null, nowPlaying };
+    setNowPlaying(null);
+    setCurrentView('eq-settings');
+  };
   const openNowPlaying = (panel, origin = 'player') => currentFile && setNowPlaying({ panel, origin });
 
   const handleClearQueue = () => {
@@ -1750,7 +1771,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     openAlbum, openArtist, playCounts,
     duplicates, skipDuplicates, setSkipDuplicates, openDuplicates: () => navigate('duplicates'),
     autoContinue, setAutoContinue,
-    snd, eq, clipping, openEq: () => openEq(), soundExclusive: selectedDevice !== '-1',
+    snd, eq, clipping, openEq: () => openEq('sound'), soundExclusive: selectedDevice !== '-1',
     artistFilter, setArtistFilter,
     dedupe: skipDuplicates ? (list) => dedupeTracks(list) : null,
     countUnique: (list) => (skipDuplicates ? list.filter(f => !duplicates.has(f.path)).length : list.length),
@@ -1805,7 +1826,8 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
               setMusicFolderList={setMusicFolderList}
               onRefreshFolder={handleRefreshFolder}
               setMusicFiles={setMusicFiles}
-              onOpenEq={openEq}
+              onOpenEq={() => openEq('sound')}
+              initialTab={settingsTab}
               onShortcutsChange={setKeyboardShortcuts}
               onAudioSettingsChange={setAudioSettings}
             />
@@ -1815,7 +1837,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
         return (
           <div className="view">
             <EqSettingsView
-              onBack={() => setCurrentView('settings')}
+              onBack={closeEq}
               eq={eq}
               deviceName={selectedDevice === '-1' ? 'System default' : (devices.find(d => (d.deviceId || d.id) === selectedDevice)?.name || 'this output')}
             />

@@ -3,6 +3,7 @@ import Icon from './Icon';
 import { Field, Callout, Progress, Select, SettingRow, BackButton, Toggle, MoreMenu, Dialog, confirmDialog, alertDialog } from './ui';
 import { formatBytes } from '../utils/audio';
 import BackupCheck from './BackupCheck';
+import { ipcOn, ipcOff } from '../utils/ipc';
 
 const SETUP_STEPS = [
     { id: 'credentials', label: 'API keys' },
@@ -367,15 +368,15 @@ const TeleCloudSyncSettings = () => {
         const onQueue = (e, q) => setQueue(q);
         const onStopped = () => refresh();
         const onQueueError = (e, { error: msg }) => alertDialog({ title: 'Backup stopped', message: msg, tone: 'danger' });
-        ipc().on('telecloud-sync:queue', onQueue);
-        ipc().on('telecloud-sync:stopped', onStopped);
-        ipc().on('telecloud-sync:queue-error', onQueueError);
-        ipc().on('telecloud-sync:session-ended', onStopped);
+        ipcOn(ipc(), 'telecloud-sync:queue', onQueue);
+        ipcOn(ipc(), 'telecloud-sync:stopped', onStopped);
+        ipcOn(ipc(), 'telecloud-sync:queue-error', onQueueError);
+        ipcOn(ipc(), 'telecloud-sync:session-ended', onStopped);
         return () => {
-            ipc().off('telecloud-sync:session-ended', onStopped);
-            ipc().off('telecloud-sync:queue', onQueue);
-            ipc().off('telecloud-sync:stopped', onStopped);
-            ipc().off('telecloud-sync:queue-error', onQueueError);
+            ipcOff(ipc(), 'telecloud-sync:session-ended', onStopped);
+            ipcOff(ipc(), 'telecloud-sync:queue', onQueue);
+            ipcOff(ipc(), 'telecloud-sync:stopped', onStopped);
+            ipcOff(ipc(), 'telecloud-sync:queue-error', onQueueError);
         };
     }, [refresh]);
 

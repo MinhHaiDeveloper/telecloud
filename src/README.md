@@ -20,6 +20,8 @@ TeleCloud is a hi-res music player for Windows, built with Electron and React. m
 | `tc-asio.exe` (`native/asio`, C++) | Native DSD through the DAC's ASIO driver |
 | `tc-media.exe` (`native/media`, C++/WinRT) | Windows media controls and the keyboard's media keys |
 | WebGL (in the page) | The liquid cover change and the Now Playing backdrop |
+| `onnxruntime-node` (DirectML) | The word-timing models; only its Windows x64 files go in the installer, unpacked from the asar |
+| `pinyin-pro` | Chinese lyrics read as pinyin for word timing |
 
 ## Getting started
 
@@ -83,6 +85,9 @@ scripts/release.js   build one channel into beta/ or release/
 | `covers.js` | Finding and caching cover art |
 | `coverSearch.js` | Online cover sources, saving covers |
 | `lyrics.js` | Lyrics sources, word-by-word lyrics (YRC, KRC, QRC to Enhanced LRC), saving |
+| `wordTiming.js` | Word timing ("TeleCloud Cadence"): runs `cadence/` in a utility process, one song at a time |
+| `cadenceModels.js` | Cadence's model packs: download from the telecloud-models release (resumable, SHA-256 checked), delete |
+| `cadence/` | The word-timing engine: Demucs voice separation, wav2vec2 CTC alignment, STFT and resampling in JS |
 | `qrc.js` | Decrypting QQ Music's QRC lyrics (QQ's own variant of Triple DES, then zlib) |
 | `floatingLyrics.js` | The floating lyrics window, always on top; locked, clicks go through |
 | `m3u.js` | Playlist import and export as .m3u / .m3u8 |
@@ -137,6 +142,7 @@ scripts/release.js   build one channel into beta/ or release/
 The page runs with `contextIsolation`, `sandbox` and no `nodeIntegration`. It reaches the main process only through `window.ipcRenderer` in `preload.js`.
 
 - A new IPC channel must be added to `INVOKE_CHANNELS` or `EVENT_CHANNELS`, otherwise the call is refused.
+- Listen with `ipcOn(window.ipcRenderer, channel, fn)` and stop with `ipcOff(...)` from `src/utils/ipc.js`, never `window.ipcRenderer.removeListener`: the bridge hands the main process a new copy of `fn` on every call, so `removeListener` finds nothing and the listener stays. `on()` returns its own remover, which `ipcOn` keeps.
 - Any handler that takes a path from the page must check it with `paths.js`.
 
 ### Library
@@ -245,6 +251,23 @@ Word-timed formats all become Enhanced LRC (`[mm:ss.xx]<mm:ss.xx>word <mm:ss.xx>
 
 `utils/lyrics.js` reads every format the page shows (plain, LRC, Enhanced LRC, TTML) into lines with optional word times. Radiant Lyrics' servers are not used: they need the owners' written permission.
 
+### Word timing (TeleCloud Cadence)
+
+Word times for lyrics that only have line times, worked out on this computer (Phase 6). `wordTiming.js` starts `cadence/worker.js` as a utility process for one song and kills it at the end, so the models' memory goes with it. `wordTiming:run({ path, lyrics })` returns Enhanced LRC; `wordTiming:progress` reports `fetch`, `decode`, `voice`, `words`; `wordTiming:cancel` stops it; `wordTiming:status` says which models are present. A cloud-only track (`tc://`) is timed from its copy in the TeleCloud cache, downloaded from Telegram first when it is not there (`fetch`).
+
+1. mpv decodes the song (44.1 kHz stereo).
+2. **Voice:** htdemucs (MIT) as ONNX, in 7.8 s segments that overlap by a quarter (as Demucs' `apply_model`). The STFT and its inverse are in `cadence/dsp.js` and match torch's to 1e-5. Then 16 kHz.
+3. **Words:** each line is aligned inside its own LRC window (0.3 s either side) with Viterbi forced alignment on a wav2vec2 CTC model (Apache-2.0): `jonatasgrosman/wav2vec2-large-xlsr-53-japanese` for Japanese lines (kana and kanji as written), `facebook/wav2vec2-large-960h-lv60-self` for everything else (`cadence/romanize.js`: accents off, kana, Hangul, Cyrillic, Greek; in a song without kana, Chinese characters as pinyin with `pinyin-pro` (MIT), read a line at a time so a character with two readings gets the right one, each syllable its own word). Both int8. Latin words in a Japanese line ("baby") have no letters in the Japanese model: the English model fits the whole line and lends them its times. Each model's steady lateness is taken off (JA 30 ms, EN 66 ms).
+4. Words the model left out (a kanji it never saw) get times from their neighbours. A line keeps its line time when under half its words were placed or its letters fit far worse than what the model hears (`MAX_GAP`).
+
+The lyrics dialog has two tabs. **Sync** edits plain and line-synced lyrics as text (Sync line, nudges, follow the music). **Word by word** (`WordLyricsEditor.jsx`, `utils/wordLrc.js`) shows every line with its words: Cadence times the whole song (or only the lines without word times) and asks to download a missing pack; a line picked from the list is drawn on a strip where each word's start can be dragged, moved with the arrow keys (0.05 s, Shift 0.01 s, Alt 0.2 s), or tapped in with Space while the line plays (Esc stops tapping without closing the dialog). Lines Cadence could not time are marked Check. Shift+click or Shift+↑↓ picks several lines; Ctrl+C / Ctrl+X / Ctrl+V copy word times as offsets from each line's own time, so a chorus or a loop sung the same way is timed once and pasted onto its repeats (one copied line goes onto every picked line, several go onto the lines from the first picked one down; a line with other words is skipped and the note says so). A guide (`WordLyricsGuide.jsx`) opens by itself the first time the tab is used (`lyrics-word-guide-seen`) and from How it works: the steps, the three ways to fix a word (drag, nudge, tap) and every key; Esc closes only the guide. Enter fixes a word's spelling and keeps its time; Edit text opens the Sync tab with the cursor on that line. The search and its results are a column beside both tabs that folds away with the panel button (remembered in `localStorage`, `lyrics-side`), so switching tabs moves nothing. Both tabs edit the same text, so Undo (Ctrl+Z), Redo (Ctrl+Y), Reset and Save cover both; typing in a burst is one Undo step.
+
+Models come in three packs, downloaded and deleted in Settings > Lyrics (`cadenceModels.js`): **English and other languages** (339 MB, needed), **Japanese** (341 MB) and **Voice separation** (166 MB, optional). They come from the GitHub release of [telecloud-models](https://github.com/MinhHaiDeveloper/telecloud-models) that this build names (`electron/cadence/manifest.json`, `cadence-1`). Each file downloads to `.part`, resumes with an HTTP range after a cancel or a lost connection, and becomes the file only when its size and SHA-256 match the manifest. `installed.json` keeps each file's SHA-256: a build that names a newer release (`cadence-2`) shows the pack as Update, downloads only the files whose hash changed, and removes files of the old release that no pack uses (only files it downloaded itself). A Japanese song without the Japanese pack answers `needs: 'ja'` (or runs on the English model with `withoutJapanese`); without the voice pack, songs are timed on the full mix. No pack can be deleted while a song is being timed.
+
+GPU: DirectML for both models. Demucs must run with DirectML's graph fusion off: fused, it gives silently wrong numbers on an RTX 3050 Ti. Every Demucs segment is checked (the voice cannot be far louder than the mix) and the first wav2vec2 line is compared with the CPU; on a mismatch that model moves to the CPU. WebGPU would be right but fails inside Electron (Windows loads Electron's own `dxcompiler.dll`). On a hybrid laptop CPU the same work takes 0.3 to 3 s from one minute to the next, so the GPU is the default.
+
+Measured on the 8 GB laptop (RTX 3050 Ti), 25 test songs: 47 ms median word-start error on the songs two services agree on (67 ms English, 81 ms Japanese, against 150 to 274 ms for an even split), 35 to 105 s a song (median 70 s), all on the GPU. On the CPU alone, 2 to 3 min a song, most of it voice separation (Fly Away 112 s, of which 97 s voice).
+
 ### Artist pictures
 
 `artistImages.js` works like the cover search: an ordered list of sources and results to pick from. Last.fm's API only returns a placeholder, so that source reads the artist's public page. Sources: this computer, Last.fm, Deezer, TheAudioDB (its public free key; its terms ask for credit, which the source badge on each result gives), Apple Music, QQ Music and MusicBrainz. A saved picture goes into the tags of the artist's own tracks as an `Artist` picture (ID3 type 8), beside the front cover. A copy in `artist-images` lets the pages show it without reading the files, and is the only copy for cloud-only tracks. A track counts as an artist's own only if it belongs to them alone, so a picture is never written into a shared track. M4A and other formats without picture labels are skipped, because the picture would become a second cover there. `Various Artists` and `Unknown Artist` are never searched.
@@ -336,6 +359,7 @@ Everything is in `%APPDATA%\telecloud`.
 | `playlists.json`, `favorites.json`, `recent.json` | Playlists (smart ones keep their rules, `smart: { match, rules, sort, limit }`), favourites, recently played |
 | `eq.json` | EQ, per output when that option is on |
 | `waveforms/` | Waveform seek bar data, by path, size and date |
+| `models/cadence/` | Cadence's model packs as downloaded (`w2v-en-int8.onnx`, `w2v-ja-int8.onnx`, `htdemucs-vocals.onnx`, vocabularies, licences), `installed.json`; a download in progress is `<file>.part` |
 | `media-controls/` | The last few covers handed to the Windows media controls |
 | `autoeq-cache/` | Headphone measurements downloaded for AutoEQ |
 | `artist-info.json` | Artist biographies from Last.fm |
@@ -423,6 +447,7 @@ There is no test suite in the repo. These environment variables let a script run
 | `TELECLOUD_MPV_ARGS` | Extra mpv options, space-separated |
 | `TELECLOUD_MPV_TEST_RATE` | Forces mpv's output rate, standing in for a DAC that refuses a DoP rate |
 | `TELECLOUD_RELEASE_AFTER_MS` | How long a pause waits before releasing the DAC (default 3000) |
+| `TELECLOUD_CADENCE_MODELS` | Folder of the word-timing models, instead of `models/cadence` in userData |
 
 Use `TELECLOUD_DISCORD_PIPE` with a name nobody listens on in every test, so the real Discord is never touched.
 

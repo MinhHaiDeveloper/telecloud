@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Icon from './Icon';
 import { WordLine } from './LyricsView';
 import { parseLyrics } from '../utils/lyrics';
+import { ipcOn, ipcOff } from '../utils/ipc';
 
 /**
  * The floating lyrics window's page: the line being sung, word by word when the lyrics have word times,
@@ -14,10 +15,10 @@ export default function FloatingLyrics() {
     const ipc = window.ipcRenderer;
     const onUpdate = (e, s) => setSt(x => ({ ...x, ...s }));
     const onChanged = (e, s) => setLocked(!!s?.locked);
-    ipc.on('lyrics-float:update', onUpdate);
-    ipc.on('lyrics-float:changed', onChanged);
+    ipcOn(ipc, 'lyrics-float:update', onUpdate);
+    ipcOn(ipc, 'lyrics-float:changed', onChanged);
     ipc.invoke('lyrics-float:status').then(s => setLocked(!!s?.locked)).catch(() => {});
-    return () => { ipc.removeListener?.('lyrics-float:update', onUpdate); ipc.removeListener?.('lyrics-float:changed', onChanged); };
+    return () => { ipcOff(ipc, 'lyrics-float:update', onUpdate); ipcOff(ipc, 'lyrics-float:changed', onChanged); };
   }, []);
   // the theme's accent, from the same storage as the main window
   useEffect(() => { try { const t = localStorage.getItem('tc-theme'); if (t) document.documentElement.dataset.theme = t.replace(/"/g, ''); } catch { /* default */ } }, []);

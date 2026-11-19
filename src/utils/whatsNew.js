@@ -2,6 +2,17 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.1.0-beta.11',
+    items: [
+      'Cadence, optional: word-by-word timing worked out on this computer for lyrics that only have line times. Its models are not part of TeleCloud: download them in Settings > Lyrics > Word timing models only if you want them (English and other languages 339 MB, Japanese 341 MB, Voice separation 166 MB) and delete them whenever you like. Lyrics from the sources work as before without them. About a minute a song on a graphics card, 2 to 3 minutes on the processor alone; Chinese is read as pinyin.',
+      'The lyrics window is bigger and has two tabs: Sync for plain and line-synced lyrics, and Word by word, where Cadence times the song and any word can be fixed by dragging its edge, nudging it with the arrow keys or tapping Space as it is sung. A guide opens the first time and from How it works.',
+      "Word by word editing: time a chorus once and paste it onto its repeats (Ctrl+C, Ctrl+V; Shift+click picks several lines), Ctrl+Z and Ctrl+Y in both tabs, Enter fixes a word's spelling, and the search column folds away with a button so switching tabs moves nothing. Cloud-only tracks are downloaded to the cache first.",
+      'The player bar gives the moon, EQ and volume buttons more room. The EQ button opens the equalizer and, pressed again, goes back to where you were; Back from the EQ opened in Settings > Sound returns to Sound.',
+      'Lighter on memory: pages and panels no longer leave listeners running behind them, and the cover animations hand back graphics memory when idle.',
+      `NetEase's credit lines ({"t":0,"c":[...]}) no longer show inside its line-synced lyrics.`,
+    ],
+  },
+  {
     version: '1.1.0-beta.10',
     items: [
       'ListenBrainz, next to Last.fm in Settings > General: paste your own user token from listenbrainz.org/settings and your listens are sent there too, with "playing now". Plays made offline wait and go out later. Tracks are matched to MusicBrainz when it is sure (from the tags Picard writes, or one search per track), so each listen links to the right recording.',

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import qrcode from 'qrcode-generator';
 import Icon from './Icon';
 import { SettingRow, Toggle, Select, Callout, confirmDialog } from './ui';
+import { ipcOn, ipcOff } from '../utils/ipc';
 
 const ago = (t) => {
   if (!t) return '';
@@ -22,8 +23,8 @@ const RemoteSettings = () => {
   useEffect(() => {
     ipc.invoke('remote:status').then((v) => { setS(v); setName(v?.name || ''); });
     const on = (e, v) => setS(v);
-    ipc.on('remote:status', on);
-    return () => ipc.removeListener?.('remote:status', on);
+    ipcOn(ipc, 'remote:status', on);
+    return () => ipcOff(ipc, 'remote:status', on);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!s?.running) return;

@@ -29,10 +29,14 @@ const FluidBackdrop = ({ file }) => {
     el.classList.remove('on');
     cv.current.appendChild(el);
     s.g = el.__g;
-    let raf = 0, last = 0;
+    let raf = 0, last = 0, wait = 0;
+    // about 30 frames a second: the page sleeps between them instead of waking on every screen refresh
+    // (60 to 144 times a second) only to skip it
+    const next = () => { raf = requestAnimationFrame(frame); };
     const frame = (now) => {
-      raf = requestAnimationFrame(frame);
-      if (now - last < FPS_GAP || !s.b) return;
+      raf = 0;
+      wait = setTimeout(next, Math.max(0, FPS_GAP - 8 - (performance.now() - now)));
+      if (now - last < FPS_GAP - 8 || !s.b) return;
       last = now;
       const g = s.g;
       const w = Math.max(1, Math.round(el.clientWidth)), h = Math.max(1, Math.round(el.clientHeight));
@@ -59,7 +63,8 @@ const FluidBackdrop = ({ file }) => {
       if (!s.ready) { s.ready = true; el.classList.add('on'); setReady(true); }
     };
     raf = requestAnimationFrame(frame);
-    return () => { cancelAnimationFrame(raf); el.classList.remove('on'); el.remove(); s.g = null; s.ready = false; };
+    // closed: the canvas stays ready to draw, without its buffer and pictures (see release in liquid.js)
+    return () => { cancelAnimationFrame(raf); clearTimeout(wait); el.classList.remove('on'); el.remove(); el.__g?.release?.(); s.g = null; s.ready = false; s.a = null; s.b = null; s.url = null; s.album = null; };
   }, [still]);
 
   // the pictures: a new album changes over with the rings, the same album just swaps

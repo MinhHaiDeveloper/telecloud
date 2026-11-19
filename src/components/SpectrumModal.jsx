@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { Dialog, Progress } from './ui';
 import Icon from './Icon';
 import { formatTime, qualityOf } from '../utils/audio';
+import { ipcOn, ipcOff } from '../utils/ipc';
 
 // Perceptual "inferno"-like colormap: black → purple → red → orange → pale yellow
 const STOPS = [
@@ -70,14 +71,14 @@ const SpectrumModal = ({ file, onClose }) => {
     setResult(null); setError(null); setPct(0);
     const ipc = window.ipcRenderer;
     const onProgress = (e, p) => { if (active && p.path === file.path) setPct(p.pct); };
-    ipc.on('analysis:progress', onProgress);
+    ipcOn(ipc, 'analysis:progress', onProgress);
     ipc.invoke('analysis:spectrum', file.path).then(res => {
       if (!active) return;
       if (res.success) setResult(res); else setError(res.error);
     }).catch(err => active && setError(err.message));
     return () => {
       active = false;
-      ipc.removeListener('analysis:progress', onProgress);
+      ipcOff(ipc, 'analysis:progress', onProgress);
       ipc.invoke('analysis:cancel');
     };
   }, [file]);

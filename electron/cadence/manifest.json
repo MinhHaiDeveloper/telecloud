@@ -1,0 +1,69 @@
+{
+  "name": "cadence",
+  "version": 1,
+  "tag": "cadence-1",
+  "base": "https://github.com/MinhHaiDeveloper/telecloud-models/releases/download/cadence-1/",
+  "packs": {
+    "en": {
+      "title": "English and other languages",
+      "required": true,
+      "files": [
+        {
+          "name": "w2v-en-int8.onnx",
+          "size": 355134015,
+          "sha256": "81edab3e27d845f685b697071c7b3ebfb73a580854df9db268f4fdf8372eb09d"
+        },
+        {
+          "name": "w2v-en-vocab.json",
+          "size": 291,
+          "sha256": "19727f8944fe6459fc3f240ae2c198395b740f6a029bd23e06656266b83bcf64"
+        },
+        {
+          "name": "wav2vec2-en.Apache-2.0.txt",
+          "size": 11637,
+          "sha256": "891b2ffb07178c10255b3ba550fd2df33f9fd73367761208f5b0adb55c674a71"
+        }
+      ],
+      "size": 355145943
+    },
+    "ja": {
+      "title": "Japanese",
+      "required": false,
+      "files": [
+        {
+          "name": "w2v-ja-int8.onnx",
+          "size": 357507675,
+          "sha256": "3ab73778acae5283013a2f2f18b2555547780765dc6e1141c5583e1da0c459e5"
+        },
+        {
+          "name": "w2v-ja-vocab.json",
+          "size": 29298,
+          "sha256": "9ffedf9c2da2617b01c4227a4db875d2dfd4e8c31fb9a13182d03c3280679ffe"
+        },
+        {
+          "name": "wav2vec2-ja.Apache-2.0.txt",
+          "size": 11732,
+          "sha256": "86339e5ef2e076afe0091f437cd80aef441b7b0aaca425ed09c2d7935d1a6d87"
+        }
+      ],
+      "size": 357548705
+    },
+    "voice": {
+      "title": "Voice separation",
+      "required": false,
+      "files": [
+        {
+          "name": "htdemucs-vocals.onnx",
+          "size": 174264995,
+          "sha256": "e328697ecdc4ec5ecf19e396dc1722e642166a57c47042fb70c3ec04e5c0b97a"
+        },
+        {
+          "name": "demucs.MIT.txt",
+          "size": 1322,
+          "sha256": "96fddcb8dba17bb0f96aa33678ed626bb8d721f7abc83400b054f6787bb6967b"
+        }
+      ],
+      "size": 174266317
+    }
+  }
+}

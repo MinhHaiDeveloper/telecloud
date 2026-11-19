@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { SettingRow, Toggle } from './ui';
+import { ipcOn, ipcOff } from '../utils/ipc';
 
 const ago = (t) => {
   if (!t) return '';
@@ -17,8 +18,8 @@ const ListenBrainzSettings = () => {
   useEffect(() => {
     ipc.invoke('listenbrainz:status').then(setS);
     const on = (e, st) => setS(st);
-    ipc.on('listenbrainz:status', on);
-    return () => ipc.removeListener?.('listenbrainz:status', on);
+    ipcOn(ipc, 'listenbrainz:status', on);
+    return () => ipcOff(ipc, 'listenbrainz:status', on);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   if (!s) return null;
 

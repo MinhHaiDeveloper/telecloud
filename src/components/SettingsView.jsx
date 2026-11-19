@@ -19,6 +19,7 @@ import RemoteSettings from './RemoteSettings';
 import { Toggle, Segmented, Select, SettingRow, Callout, Dialog, alertDialog } from './ui';
 import useSlidingIndicator from '../hooks/useSlidingIndicator';
 import pkg from '../../package.json';
+import { ipcOn, ipcOff } from '../utils/ipc';
 
 const TABS = [
   { id: 'general', label: 'General', icon: 'settings' },
@@ -57,10 +58,11 @@ const SettingsView = ({
   onRefreshFolder,
   setMusicFiles,
   onOpenEq,
+  initialTab,
   onShortcutsChange,
   onAudioSettingsChange,
 }) => {
-  const [activeTab, setActiveTab] = useState('general');
+  const [activeTab, setActiveTab] = useState(initialTab || 'general'); // back from the EQ: the tab it was opened from
   const [downloadFolder, setDownloadFolder] = useState('');
   const [audioDevices, setAudioDevices] = useState([]);
   const [disabledDevices, setDisabledDevices] = useState([]);
@@ -89,8 +91,8 @@ const SettingsView = ({
   // MQA: the whole library, in the background; progress comes back as events
   useEffect(() => {
     const on = (e, p) => setMqaScan(p);
-    window.ipcRenderer.on('mqa:progress', on);
-    return () => window.ipcRenderer.removeListener?.('mqa:progress', on);
+    ipcOn(window.ipcRenderer, 'mqa:progress', on);
+    return () => ipcOff(window.ipcRenderer, 'mqa:progress', on);
   }, []);
   const findMqa = async () => {
     const r = await window.ipcRenderer.invoke('mqa:check-library');

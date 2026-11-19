@@ -63,6 +63,13 @@ const INVOKE_CHANNELS = new Set([
     'media:state',
     'open:take',
     'waveform:get',
+    'wordTiming:status',
+    'wordTiming:run',
+    'wordTiming:cancel',
+    'cadence:models',
+    'cadence:download',
+    'cadence:cancel',
+    'cadence:delete',
     'lyrics-float:toggle',
     'lyrics-float:state',
     'lyrics-float:lock',
@@ -180,6 +187,9 @@ const EVENT_CHANNELS = new Set([
     'spectrum:state',
     'library:partial',
     'stats:changed',
+    'wordTiming:progress',
+    'cadence:models',
+    'cadence:progress',
     'lyrics:saved',
     'covers:saved',
     'artists:saved',
@@ -226,9 +236,14 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
         assertChannel(INVOKE_CHANNELS, channel);
         return ipcRenderer.invoke(channel, ...args);
     },
+    // Returns a function that removes this listener. removeListener(channel, fn) can't: the bridge hands
+    // over a new copy of fn on every call, so the one given to removeListener is never the one registered.
     on: (channel, listener) => {
         assertChannel(EVENT_CHANNELS, channel);
-        ipcRenderer.on(channel, listener);
+        const wrapped = (...args) => listener(...args);
+        ipcRenderer.on(channel, wrapped);
+        let removed = false;
+        return () => { if (!removed) { removed = true; ipcRenderer.removeListener(channel, wrapped); } };
     },
     off: (channel, listener) => {
         assertChannel(EVENT_CHANNELS, channel);
@@ -237,6 +252,11 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
     removeListener: (channel, listener) => {
         assertChannel(EVENT_CHANNELS, channel);
         ipcRenderer.removeListener(channel, listener);
+    },
+    // how many listeners a channel has (for tests and the log: a number only)
+    listenerCount: (channel) => {
+        assertChannel(EVENT_CHANNELS, channel);
+        return ipcRenderer.listenerCount(channel);
     },
     removeAllListeners: (channel) => {
         assertChannel(EVENT_CHANNELS, channel);
