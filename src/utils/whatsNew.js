@@ -2,6 +2,14 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.1.0-beta.14',
+    items: [
+      'Back up to a folder: a second drive, a share on your NAS, or a folder your OneDrive, Google Drive or Dropbox app keeps in step. Settings > TeleCloud Sync > Add a storage > A folder, or "Or back up to a folder" before you set up Telegram: no Telegram account is needed for it.',
+      'A folder works like a Telegram chat: the same encryption with your recovery key, streaming with seeking, the cache, the library index, restore on another computer (add the same folder and enter your recovery key), the backup check and repair.',
+      'Move tracks between a Telegram chat and a folder, either way, with "Move to…": the stored files are copied as they are, still encrypted.',
+    ],
+  },
+  {
     version: '1.1.0-beta.13',
     items: [
       'TeleCloud is ready to be translated: every text in the app, the tray menu, the titles of the file pickers and the messages can now show in another language. There is no translation yet, so everything is in English as before; once there is one, Settings > Appearance gets a Language choice that changes the app at once, without a restart, and keeps the music playing.',

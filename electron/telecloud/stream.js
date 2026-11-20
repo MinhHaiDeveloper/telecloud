@@ -1,7 +1,8 @@
 // Streaming for TeleCloud (runs inside the worker process).
 // A small HTTP server on 127.0.0.1 serves each cloud track at a secret URL. mpv reads it with
 // normal byte-range requests, so seeking works and the bytes are exactly the uploaded file
-// (bit-perfect). Behind the server, the file is fetched from Telegram in 512 KB blocks, decrypted
+// (bit-perfect). Behind the server, the file is fetched from its storage (a Telegram chat, or a folder
+// through folderStorage.js) in 512 KB blocks, decrypted
 // and written into a block cache on disk: replays and re-seeks don't download again, and once
 // every block is there (and the checksum matches) it becomes a normal cached file.
 
@@ -16,7 +17,8 @@ const ACTIVE_STREAMS = 2;    // the playing track and the prefetched next one ke
 const IDLE_CLOSE_MS = 10 * 60 * 1000;
 const MIME = { '.flac': 'audio/flac', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.aiff': 'audio/aiff', '.dsf': 'audio/dsf' };
 
-function createStreamer({ client, peerOf, master, bigInt }, emit) {
+function createStreamer({ client, peerOf, master, bigInt, folder }, emit) {
+  const fromFolder = (peer) => peer?.kind === 'folder';
   const token = crypto.randomBytes(16).toString('hex');
   const sessions = new Map();
   let server = null;
@@ -65,13 +67,17 @@ function createStreamer({ client, peerOf, master, bigInt }, emit) {
       return this.msgMedia;
     }
 
-    /** Download block b from Telegram, decrypt it and store it */
+    /** Download block b from the storage (a Telegram chat or a folder), decrypt it and store it */
     async fetch(b) {
       this.inFlight.add(b);
       try {
         const offset = b * PART;
         const want = Math.min(PART, this.size - offset);
         let buf = null;
+        if (fromFolder(this.peer)) {
+          buf = await folder.readRange(this.peer.root, this.messageId, offset, want);
+          if (buf.length !== want) throw new Error(`Short read (${buf.length}/${want})`);
+        }
         for (let attempt = 0; attempt < 3 && !buf; attempt++) {
           try {
             const parts = [];
@@ -302,6 +308,18 @@ function createStreamer({ client, peerOf, master, bigInt }, emit) {
     },
     /** Download speed test: up to `bytes` from the start of a file, nothing is kept */
     async speedTest({ peer, messageId, size, bytes = 16 * 1024 * 1024 }) {
+      if (fromFolder(peer)) {
+        const total = Math.min(Number(size), bytes);
+        const t0 = Date.now();
+        let got = 0;
+        let first = 0;
+        for (let off = 0; off < total; off += PART) {
+          got += (await folder.readRange(peer.root, messageId, off, Math.min(PART, total - off))).length;
+          if (!first) first = Date.now() - t0;
+        }
+        const secs = Math.max(0.001, (Date.now() - t0) / 1000);
+        return { bytes: got, seconds: secs, bytesPerSec: got / secs, firstByteMs: first };
+      }
       const [msg] = await client().getMessages(peerOf(peer), { ids: [Number(messageId)] });
       if (!msg?.media?.document) throw new Error('No file to test with');
       const total = Math.min(Number(size), bytes);

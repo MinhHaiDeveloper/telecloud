@@ -111,7 +111,8 @@ scripts/release.js   build one channel into beta/ or release/
 | `service.js` | Sign-in, backup queue, cache, restore, storages, index |
 | `store.js` | TeleCloud tables |
 | `workerClient.js` | Starts the worker and passes calls to it |
-| `worker.js` | Everything that talks to Telegram, in a separate process |
+| `worker.js` | Everything that moves files to and from a storage, in a separate process |
+| `folderStorage.js` | A folder (drive, NAS share) as storage, the same shape as a Telegram chat |
 | `stream.js` | Local HTTP server that streams cloud tracks to mpv |
 | `crypto.js` | Client-side encryption |
 | `caption.js` | The text stored with each message in Telegram |
@@ -300,6 +301,8 @@ Telegram work runs in a `utilityProcess` (`worker.js`), so the interface stays s
 **When Telegram ends the sign-in.** Errors like `AUTH_KEY_UNREGISTERED` or `SESSION_REVOKED` mark the session ended (`markSessionEnded`): backups stop, nothing is deleted, and the page says why in words, with how long Telegram keeps an unused sign-in (`account.getAuthorizations`' `authorizationTtlDays`, asked every 12 hours). Signing in again (`resign-start` / `resign-finish`) needs only the code and keeps the storages and the key.
 
 **Caption prefixes in Telegram:** `tc1:` for audio, `tcm1:` for the manifest, `tcc1:` for covers. They also tell TeleCloud's messages apart from the user's own.
+
+**Kinds of storage.** A storage is a Telegram chat (`kind` channel, group or self) or a **folder** (`kind` folder: a second drive, a NAS share). Both have the same shape, numbered objects each with a file and a caption, so the index, covers, the library index, restore, the backup check and moves are the same code for both. The library keeps pointing at `telegram_channel_id` (the storage's `peer_id`) and `telegram_message_id` (the object's number), whatever the kind; a folder's `peer_id` is `folder-<hash of its path>` and its path is in `storages.config`. The worker takes either (`store.toPeer`): each call (`upload`, `download`, `listMessages`, `deleteMessages`, `pin`, `forward`, streaming) goes to Telegram or to `folderStorage.js`. In a folder TeleCloud writes inside `<chosen folder>\TeleCloud`: `<n>.tc` (the bytes, encrypted the same way), `<n>.json` (caption, name, size; written last, so a half-written object never shows), `pinned.json` (the library index); numbers are random (2^40 to 2^52) and claimed by creating `<n>.tc.part` exclusively: on a NAS the claim alone would do, and in a folder a sync app copies (OneDrive, Google Drive, Dropbox), where each computer only sees its own copy, random numbers keep two computers from taking the same one. Numbers say nothing about order, so a folder is always listed whole, and the newest library index is chosen by its time (`storages.setManifest`), the one this computer just wrote always counting. A move between two chats is still Telegram's forward; with a folder on either side the stored bytes are copied as they are, still encrypted with the same key and IV. Only Telegram storages need the sign-in (`readyFor`): with folders only, Settings > TeleCloud Sync works without a Telegram account, the key is made when the first folder is added, and Telegram can be added later. A new kind (S3, WebDAV) is another module beside `folderStorage.js` with the same calls.
 
 ### Liquid cover and backdrop
 

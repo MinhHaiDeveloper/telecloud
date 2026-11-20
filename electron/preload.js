@@ -103,6 +103,7 @@ const INVOKE_CHANNELS = new Set([
     'telecloud-sync:storages',
     'telecloud-sync:storage-candidates',
     'telecloud-sync:storage-add',
+    'telecloud-sync:pick-folder',
     'telecloud-sync:storage-rename',
     'telecloud-sync:storage-default',
     'telecloud-sync:storage-remove',

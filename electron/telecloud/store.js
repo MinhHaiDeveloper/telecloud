@@ -1,6 +1,10 @@
 // TeleCloud tables (same SQLite file as the library):
-//   storages      Telegram chats used as storage (up to 5): peer id + access hash, so they can be
-//                 reached after a restart without searching the dialog list
+//   storages      where backups go (up to 5). A Telegram chat (kind channel | group | self: peer id + access
+//                 hash, so it can be reached after a restart without searching the dialog list), or a folder
+//                 (kind folder: a drive, a NAS share; peer_id "folder-<hash>", its path in config.root).
+//                 Every storage keeps numbered objects, each a file with a caption: Telegram's message ids, or
+//                 the folder's own numbers. So "message_id" below, and telegram_message_id /
+//                 telegram_channel_id in the library, mean "object number" and "storage" for any kind.
 //   cloud_index   one row per TeleCloud file message: checksum, size, encryption IV, track info
 //   upload_queue  backups waiting / running / failed; survives restarts
 
@@ -53,7 +57,7 @@ function db() {
         PRIMARY KEY (storage_id, cover_key)
       );
     `);
-    for (const col of ['manifest_id INTEGER', 'manifest_at INTEGER', 'manifest_iv TEXT']) {
+    for (const col of ['manifest_id INTEGER', 'manifest_at INTEGER', 'manifest_iv TEXT', 'config TEXT']) {
       try { d.exec(`ALTER TABLE storages ADD COLUMN ${col}`); } catch { /* already there */ }
     }
     // anything "uploading" when the app closed starts over
@@ -63,25 +67,40 @@ function db() {
   return d;
 }
 
-const toPeer = (s) => (s ? { kind: s.kind, id: s.peer_id, accessHash: s.access_hash } : null);
+const configOf = (s) => { try { return JSON.parse(s?.config || '{}') || {}; } catch { return {}; } };
+/** What the worker needs to reach a storage: a Telegram peer, or a folder's path */
+const toPeer = (s) => {
+  if (!s) return null;
+  if (s.kind === 'folder') return { kind: 'folder', id: s.peer_id, root: configOf(s).root };
+  return { kind: s.kind, id: s.peer_id, accessHash: s.access_hash };
+};
+/** Telegram storages need the sign-in; folders don't */
+const isTelegram = (s) => !!s && s.kind !== 'folder';
 
 const storages = {
   all: () => db().prepare('SELECT * FROM storages ORDER BY id').all(),
   get: (id) => db().prepare('SELECT * FROM storages WHERE id = ?').get(id),
   byPeer: (peerId) => db().prepare('SELECT * FROM storages WHERE peer_id = ?').get(String(peerId)),
   default: () => db().prepare('SELECT * FROM storages ORDER BY is_default DESC, id LIMIT 1').get(),
-  add({ kind, peerId, accessHash, title, isDefault }) {
+  add({ kind, peerId, accessHash, title, isDefault, config }) {
     const d = db();
     if (isDefault) d.prepare('UPDATE storages SET is_default = 0').run();
-    d.prepare(`INSERT INTO storages (kind, peer_id, access_hash, title, is_default) VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(peer_id) DO UPDATE SET access_hash = excluded.access_hash, title = excluded.title, is_default = MAX(is_default, excluded.is_default)`)
-      .run(kind, String(peerId), accessHash ? String(accessHash) : null, title || null, isDefault ? 1 : 0);
+    d.prepare(`INSERT INTO storages (kind, peer_id, access_hash, title, is_default, config) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(peer_id) DO UPDATE SET access_hash = excluded.access_hash, title = excluded.title, is_default = MAX(is_default, excluded.is_default), config = COALESCE(excluded.config, config)`)
+      .run(kind, String(peerId), accessHash ? String(accessHash) : null, title || null, isDefault ? 1 : 0, config ? JSON.stringify(config) : null);
     return storages.byPeer(peerId);
   },
   setIndexed: (id, messageId) => db().prepare('UPDATE storages SET last_indexed_id = MAX(last_indexed_id, ?) WHERE id = ?').run(messageId, id),
   resetIndex: (id) => db().prepare('UPDATE storages SET last_indexed_id = 0 WHERE id = ?').run(id),
   /** Remember the newest manifest message seen in the chat */
-  setManifest: (id, messageId, iv, at) => db().prepare('UPDATE storages SET manifest_id = ?, manifest_iv = ?, manifest_at = ? WHERE id = ? AND (manifest_id IS NULL OR manifest_id <= ?)').run(messageId, iv || null, at || Date.now(), id, messageId),
+  // The newest by time, not by number: a folder's numbers are random. The one this computer just wrote always
+  // counts (force), even if another computer's clock runs ahead.
+  setManifest: (id, messageId, iv, at, force = false) => {
+    const when = at || Date.now();
+    if (force) return db().prepare('UPDATE storages SET manifest_id = ?, manifest_iv = ?, manifest_at = ? WHERE id = ?').run(messageId, iv || null, when, id);
+    return db().prepare(`UPDATE storages SET manifest_id = ?, manifest_iv = ?, manifest_at = ? WHERE id = ?
+      AND (manifest_id IS NULL OR manifest_at IS NULL OR manifest_at < ? OR (manifest_at = ? AND manifest_id <= ?))`).run(messageId, iv || null, when, id, when, when, messageId);
+  },
   clearManifest: (id) => db().prepare('UPDATE storages SET manifest_id = NULL, manifest_iv = NULL, manifest_at = NULL WHERE id = ?').run(id),
   clear: () => db().prepare('DELETE FROM storages').run(),
   count: () => db().prepare('SELECT COUNT(*) AS n FROM storages').get().n,
@@ -216,4 +235,4 @@ const library = {
   },
 };
 
-module.exports = { db, storages, index, queue, library, covers: coversStore, toPeer };
+module.exports = { db, storages, index, queue, library, covers: coversStore, toPeer, isTelegram, configOf };

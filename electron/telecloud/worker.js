@@ -11,6 +11,10 @@ const path = require('path');
 const crypto = require('crypto');
 const { subKey, ctrChunk } = require('./crypto');
 const { createStreamer } = require('./stream');
+const folder = require('./folderStorage');
+
+// A storage is a Telegram chat or a folder (folderStorage.js); every call below takes either
+const isFolder = (peer) => peer?.kind === 'folder';
 
 const PART = 512 * 1024;
 const BIG_FILE = 10 * 1024 * 1024;   // Telegram: bigger files use the "big file" upload calls
@@ -34,7 +38,8 @@ function createWorker(emit) {
   let master = null;
   const cancelled = new Set();
   let streamer = null;
-  const streams = () => (streamer ||= createStreamer({ client: need, peerOf: (p) => peerOf(p), master: () => master, bigInt }, emit));
+  const streams = () => (streamer ||= createStreamer({ client: need, peerOf: (p) => peerOf(p), master: () => master, bigInt, folder }, emit));
+  const tmpFile = (tag) => path.join(require('os').tmpdir(), 'telecloud', `tc-${tag}-${crypto.randomBytes(6).toString('hex')}`);
 
   const newClient = (session, apiId, apiHash) => new tg.TelegramClient(new tg.StringSession(session || ''), Number(apiId), apiHash, {
     connectionRetries: 5,
@@ -74,6 +79,84 @@ function createWorker(emit) {
     if (updates?.id) return updates.id; // UpdateShortSentMessage
     throw new Error('Telegram did not return the new message');
   };
+
+  // ---- folders (folderStorage.js): the same parts and the same encryption as an upload to Telegram
+
+  async function uploadToFolder({ jobId, path: file, peer, fileName, mimeType, caption, iv, rateBytes = 0 }) {
+    const size = (await fs.promises.stat(file)).size;
+    if (iv && !master) throw new Error('Encryption key is missing');
+    const fileKey = iv ? subKey(master, 'file') : null;
+    const ivBuf = iv ? Buffer.from(iv, 'base64') : null;
+    const take = bucket(rateBytes);
+    const { id, fh: out, part } = await folder.claim(peer.root);
+    const src = await fs.promises.open(file, 'r');
+    let lastEmit = 0;
+    try {
+      for (let offset = 0; offset < size;) {
+        if (cancelled.has(jobId)) throw new Error('CANCELLED');
+        const length = Math.min(PART, size - offset);
+        const buf = Buffer.alloc(length);
+        await src.read(buf, 0, length, offset);
+        const bytes = fileKey ? ctrChunk(fileKey, ivBuf, offset, buf) : buf;
+        await take(length);
+        await out.write(bytes, 0, bytes.length, offset);
+        offset += length;
+        const now = Date.now();
+        if (now - lastEmit > 200 || offset === size) { lastEmit = now; emit('progress', { jobId, bytes: offset, size }); }
+      }
+      await out.close();
+    } catch (err) {
+      await out.close().catch(() => {});
+      await fs.promises.rm(part, { force: true });
+      throw err;
+    } finally {
+      await src.close();
+    }
+    await folder.commit(peer.root, id, part, { caption, fileName, size, mime: mimeType });
+    return { messageId: id, size };
+  }
+
+  async function* folderChunks(root, id, size) {
+    for (let offset = 0; offset < size; offset += PART) yield await folder.readRange(root, id, offset, Math.min(PART, size - offset));
+  }
+
+  /** One stored object into another storage, bytes as they are (see forward) */
+  async function copyObject(fromPeer, toPeer, id) {
+    let src;
+    let meta;
+    let tmp = null;
+    if (isFolder(fromPeer)) {
+      meta = await folder.meta(fromPeer.root, id);
+      if (!meta) throw new Error('This track is no longer in the storage folder');
+      src = folder.objectPath(fromPeer.root, id);
+    } else {
+      const [msg] = await need().getMessages(peerOf(fromPeer), { ids: [Number(id)] });
+      const doc = msg?.media?.document;
+      if (!doc) throw new Error('This track is no longer in the Telegram chat');
+      const nameAttr = (doc.attributes || []).find(a => a.className === 'DocumentAttributeFilename');
+      meta = { caption: msg.message || '', fileName: nameAttr?.fileName || '', mime: doc.mimeType || 'application/octet-stream' };
+      tmp = tmpFile('copy');
+      await fs.promises.mkdir(path.dirname(tmp), { recursive: true });
+      const out = await fs.promises.open(tmp, 'w');
+      try {
+        let offset = 0;
+        for await (const chunk of client.iterDownload({ file: msg.media, requestSize: PART, fileSize: bigInt(Number(doc.size)), dcId: doc.dcId })) {
+          await out.write(chunk, 0, chunk.length, offset);
+          offset += chunk.length;
+          if (offset >= Number(doc.size)) break;
+        }
+      } finally { await out.close(); }
+      src = tmp;
+    }
+    try {
+      if (isFolder(toPeer)) return await folder.putFile(toPeer.root, src, meta);
+      // already encrypted (or plain) as stored: sent without encrypting again
+      const r = await handlers.upload({ jobId: `copy-${id}-${Date.now()}`, path: src, peer: toPeer, fileName: meta.fileName, mimeType: meta.mime, caption: meta.caption, iv: null });
+      return r.messageId;
+    } finally {
+      if (tmp) await fs.promises.rm(tmp, { force: true }).catch(() => {});
+    }
+  }
 
   const handlers = {
     async connect({ apiId, apiHash, session, masterKey }) {
@@ -139,12 +222,22 @@ function createWorker(emit) {
     },
 
     async renameChat({ peer, title }) {
+      if (isFolder(peer)) return true; // a folder's name in TeleCloud is only its title in the database
       await need().invoke(new Api.channels.EditTitle({ channel: peerOf(peer), title }));
       return true;
     },
 
-    /** Copy messages to another chat on Telegram's side (no re-upload); returns the new ids in order */
+    /**
+     * Copy objects to another storage; returns the new ids in order. Between two Telegram chats, Telegram
+     * copies them itself (no re-upload). With a folder on either side, the stored bytes move as they are:
+     * an encrypted file stays encrypted with the same key and IV, so its caption still fits it.
+     */
     async forward({ fromPeer, toPeer, ids }) {
+      if (isFolder(fromPeer) || isFolder(toPeer)) {
+        const out = [];
+        for (const id of ids) out.push(await copyObject(fromPeer, toPeer, id));
+        return out;
+      }
       const out = [];
       for (let i = 0; i < ids.length; i += 100) {
         const chunk = ids.slice(i, i + 100).map(Number);
@@ -177,7 +270,9 @@ function createWorker(emit) {
       return { sha256: hash.digest('hex') };
     },
 
-    async upload({ jobId, path: file, peer, fileName, mimeType, caption, iv, rateBytes = 0, workers = 4 }) {
+    async upload(params) {
+      const { jobId, path: file, peer, fileName, mimeType, caption, iv, rateBytes = 0, workers = 4 } = params;
+      if (isFolder(peer)) return uploadToFolder(params);
       need();
       const size = (await fs.promises.stat(file)).size;
       const parts = Math.max(1, Math.ceil(size / PART));
@@ -235,10 +330,18 @@ function createWorker(emit) {
     },
 
     async download({ jobId, peer, messageId, targetPath, iv, sha256 }) {
-      const [msg] = await need().getMessages(peerOf(peer), { ids: [Number(messageId)] });
-      const doc = msg?.media?.document;
-      if (!doc) throw new Error('This track is no longer in the Telegram chat');
-      const size = Number(doc.size);
+      let size;
+      let chunks;
+      if (isFolder(peer)) {
+        size = await folder.size(peer.root, messageId);
+        chunks = folderChunks(peer.root, messageId, size);
+      } else {
+        const [msg] = await need().getMessages(peerOf(peer), { ids: [Number(messageId)] });
+        const doc = msg?.media?.document;
+        if (!doc) throw new Error('This track is no longer in the Telegram chat');
+        size = Number(doc.size);
+        chunks = client.iterDownload({ file: msg.media, requestSize: PART, fileSize: bigInt(size), dcId: doc.dcId });
+      }
       if (iv && !master) throw new Error('This track is encrypted: enter your recovery key first');
       const fileKey = iv ? subKey(master, 'file') : null;
       const ivBuf = iv ? Buffer.from(iv, 'base64') : null;
@@ -249,7 +352,7 @@ function createWorker(emit) {
       let offset = 0;
       let lastEmit = 0;
       try {
-        for await (const chunk of client.iterDownload({ file: msg.media, requestSize: PART, fileSize: bigInt(size), dcId: doc.dcId })) {
+        for await (const chunk of chunks) {
           if (cancelled.has(jobId)) throw new Error('CANCELLED');
           const plain = fileKey ? ctrChunk(fileKey, ivBuf, offset, chunk) : chunk;
           hash.update(plain);
@@ -275,16 +378,17 @@ function createWorker(emit) {
     },
 
     // ---- streaming (see stream.js) ----
-    openStream(params) { need(); return streams().open(params); },
+    openStream(params) { if (!isFolder(params.peer)) need(); return streams().open(params); },
     closeStream(params) { return streamer ? streamer.close(params) : true; },
     streamStatus(params) { return streamer ? streamer.status(params) : null; },
-    speedTest(params) { need(); return streams().speedTest(params); },
+    speedTest(params) { if (!isFolder(params.peer)) need(); return streams().speedTest(params); },
 
     cancel({ jobId }) { cancelled.add(jobId); return true; },
     forget({ jobId }) { cancelled.delete(jobId); return true; },
 
     /** File messages newer than minId, oldest first: { id, caption, size, fileName, date } */
     async listMessages({ peer, minId = 0 }) {
+      if (isFolder(peer)) return folder.list(peer.root); // a folder is listed whole: its numbers are random
       const out = [];
       for await (const m of need().iterMessages(peerOf(peer), { minId: Number(minId) || 0, reverse: true })) {
         const doc = m.media?.document;
@@ -301,6 +405,7 @@ function createWorker(emit) {
      * "… pinned a message" notice Telegram posts for it, plus any older ones left in the chat
      */
     async pin({ peer, id }) {
+      if (isFolder(peer)) return folder.pin(peer.root, id);
       const p = peerOf(peer);
       const res = await need().invoke(new Api.messages.UpdatePinnedMessage({ peer: p, id: Number(id), silent: true }));
       const isPinNotice = (m) => m?.className === 'MessageService' && m.action?.className === 'MessageActionPinMessage';
@@ -313,6 +418,11 @@ function createWorker(emit) {
     },
 
     async deleteMessages({ peer, ids }) {
+      if (isFolder(peer)) {
+        await folder.remove(peer.root, ids);
+        emit('delete-progress', { done: ids.length, total: ids.length });
+        return { deleted: ids.length };
+      }
       let done = 0;
       for (let i = 0; i < ids.length; i += 100) {
         await need().deleteMessages(peerOf(peer), ids.slice(i, i + 100), { revoke: true });

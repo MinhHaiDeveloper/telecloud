@@ -129,7 +129,7 @@ const BackupCard = ({ queue, onSync, onPause, onResume, rate, onRate }) => {
 };
 
 /** The chats TeleCloud stores music in (up to 5) */
-const StoragesSection = ({ onChanged }) => {
+const StoragesSection = ({ onChanged, telegram = true }) => {
     const [list, setList] = useState([]);
     const [max, setMax] = useState(5);
     const [adding, setAdding] = useState(null); // null | { mode, name, chats, chatId, busy, error }
@@ -146,13 +146,21 @@ const StoragesSection = ({ onChanged }) => {
         if (msg) alertDialog({ title: t('Storage'), message: msg, tone: 'ok' });
     };
     const openAdd = async () => {
-        setAdding({ mode: 'new', name: '', chats: null, chatId: '', busy: false });
+        // without a Telegram account only folders can be added
+        setAdding({ mode: telegram ? 'new' : 'folder', name: '', chats: null, chatId: '', folder: '', busy: false });
+        if (!telegram) return;
         const r = await ipc().invoke('telecloud-sync:storage-candidates');
         setAdding(a => a && { ...a, chats: r.success ? r.chats : [], error: r.success ? '' : r.error });
     };
+    const pickFolder = async () => {
+        const r = await ipc().invoke('telecloud-sync:pick-folder');
+        if (r?.folder) setAdding(a => a && { ...a, mode: 'folder', folder: r.folder });
+    };
+    const ready = adding && (adding.mode === 'new' ? !!adding.name.trim() : adding.mode === 'folder' ? !!adding.folder : !!adding.chatId);
     const add = async () => {
+        if (!ready) return;
         setAdding(a => ({ ...a, busy: true, error: '' }));
-        const r = await ipc().invoke('telecloud-sync:storage-add', adding.mode === 'new' ? { title: adding.name } : { chatId: adding.chatId });
+        const r = await ipc().invoke('telecloud-sync:storage-add', adding.mode === 'new' ? { title: adding.name } : adding.mode === 'folder' ? { folder: adding.folder, title: adding.name } : { chatId: adding.chatId });
         if (!r.success) { setAdding(a => ({ ...a, busy: false, error: r.error })); return; }
         setAdding(null);
         const found = r.existingFiles ? t(' It already holds {existingFiles} TeleCloud tracks: use Restore to add them to this library.', { existingFiles: r.existingFiles }) : '';
@@ -160,7 +168,10 @@ const StoragesSection = ({ onChanged }) => {
         await after({ success: true }, t('“{title}” is ready.{found}{locked}', { title: r.storage.title, found, locked }));
     };
     const remove = async (st) => {
-        const ok = await confirmDialog({ title: t('Stop using “{title}”?', { title: st.title }), message: t('TeleCloud forgets this chat on this computer. Its {tracks} tracks stay in Telegram; cloud-only ones leave this library and the rest become plain local tracks. You can add the chat again later.', { tracks: st.tracks }), confirmLabel: t('Stop using it'), danger: true });
+        const message = st.kind === 'folder'
+            ? t('TeleCloud forgets this folder on this computer. Its {tracks} tracks stay in the folder; cloud-only ones leave this library and the rest become plain local tracks. You can add the folder again later.', { tracks: st.tracks })
+            : t('TeleCloud forgets this chat on this computer. Its {tracks} tracks stay in Telegram; cloud-only ones leave this library and the rest become plain local tracks. You can add the chat again later.', { tracks: st.tracks });
+        const ok = await confirmDialog({ title: t('Stop using “{title}”?', { title: st.title }), message, confirmLabel: t('Stop using it'), danger: true });
         if (ok) after(await ipc().invoke('telecloud-sync:storage-remove', { id: st.id }));
     };
     const saveName = async () => {
@@ -168,23 +179,23 @@ const StoragesSection = ({ onChanged }) => {
         setRenaming(null);
         after(r);
     };
-    const kindLabel = (k) => (k === 'self' ? t('Saved Messages') : k === 'group' ? t('Private group') : t('Private channel'));
+    const kindLabel = (k) => (k === 'self' ? t('Saved Messages') : k === 'group' ? t('Private group') : k === 'folder' ? t('Folder') : t('Private channel'));
     return (
         <section className="set-section">
             <h3>{t('Storages')}</h3>
             <div className="card set-card">
                 {list.map(st => (
-                    <SettingRow key={st.id} icon={st.kind === 'self' ? 'heart' : 'cloud'}
+                    <SettingRow key={st.id} icon={st.kind === 'self' ? 'heart' : st.kind === 'folder' ? 'folder' : 'cloud'}
                         title={<>{st.title}{st.isDefault && <span className="badge b-local" style={{ marginLeft: 8 }}>{t('Default')}</span>}</>}
-                        desc={t('{kindLabel} · {tracks} tracks · {bytes}', { kindLabel: kindLabel(st.kind), tracks: st.tracks.toLocaleString(), bytes: formatBytes(st.bytes) })}>
+                        desc={t('{kindLabel} · {tracks} tracks · {bytes}', { kindLabel: st.location ? `${kindLabel(st.kind)} · ${st.location}` : kindLabel(st.kind), tracks: st.tracks.toLocaleString(), bytes: formatBytes(st.bytes) })}>
                         <MoreMenu items={[
                             ...(!st.isDefault ? [{ label: t('Use as default'), icon: 'check', onClick: async () => after(await ipc().invoke('telecloud-sync:storage-default', { id: st.id })) }] : []),
-                            ...(st.kind !== 'self' ? [{ label: t('Rename'), icon: 'lyrics', onClick: () => setRenaming({ id: st.id, title: st.title }) }] : []),
+                            ...(st.kind !== 'self' ? [{ label: t('Rename'), icon: 'lyrics', onClick: () => setRenaming({ id: st.id, title: st.title, kind: st.kind }) }] : []),
                             ...(list.length > 1 ? [{ sep: true }, { label: t('Stop using'), icon: 'trash', danger: true, onClick: () => remove(st) }] : []),
                         ]} />
                     </SettingRow>
                 ))}
-                <SettingRow icon="plus" title={t('Add a storage')} desc={t('Keep albums or playlists in separate chats, up to {max}. “Back up now” fills the default one; use “Back up to…” on an album, playlist or track to pick another.', { max })}>
+                <SettingRow icon="plus" title={t('Add a storage')} desc={t('Keep albums or playlists in separate storages, Telegram chats or folders, up to {max}. “Back up now” fills the default one; use “Back up to…” on an album, playlist or track to pick another.', { max })}>
                     <button className="btn-ghost" onClick={openAdd} disabled={list.length >= max}>{list.length >= max ? t('{max} of {max2}', { max, max2: max }) : t('Add')}</button>
                 </SettingRow>
             </div>
@@ -193,8 +204,9 @@ const StoragesSection = ({ onChanged }) => {
                 <Dialog open title={t('Add a storage')} icon="cloud" width={500} onClose={() => setAdding(null)}
                     actions={<>
                         <button className="btn-ghost" onClick={() => setAdding(null)}>{t('Cancel')}</button>
-                        <button className="btn-primary" onClick={add} disabled={adding.busy || (adding.mode === 'new' ? !adding.name.trim() : !adding.chatId)}>{adding.busy ? t('Adding…') : t('Add storage')}</button>
+                        <button className="btn-primary" onClick={add} disabled={adding.busy || !ready}>{adding.busy ? t('Adding…') : t('Add storage')}</button>
                     </>}>
+                    {telegram && <>
                     <label className={`radio-card ${adding.mode === 'new' ? 'on' : ''}`}>
                         <input type="radio" checked={adding.mode === 'new'} onChange={() => setAdding(a => ({ ...a, mode: 'new' }))} />
                         <span className="radio-dot" />
@@ -219,6 +231,21 @@ const StoragesSection = ({ onChanged }) => {
                                     ))}
                         </div>
                     )}
+                    </>}
+                    <label className={`radio-card ${adding.mode === 'folder' ? 'on' : ''}`} style={{ marginTop: telegram ? 8 : 0 }}>
+                        <input type="radio" checked={adding.mode === 'folder'} onChange={() => setAdding(a => ({ ...a, mode: 'folder' }))} />
+                        <span className="radio-dot" />
+                        <div><b>{t('A folder')}</b><span>{t('A second drive or a share on your NAS. TeleCloud keeps its files in a “TeleCloud” folder inside it; files already there are found.')}</span></div>
+                    </label>
+                    {adding.mode === 'folder' && (
+                        <div style={{ margin: '8px 0 4px', display: 'grid', gap: 8 }}>
+                            <div className="row-gap">
+                                <button className="btn-ghost" onClick={pickFolder}><Icon name="folder" />{adding.folder ? t('Change…') : t('Choose a folder…')}</button>
+                                {adding.folder && <span className="mono muted" style={{ fontSize: 12.5, overflowWrap: 'anywhere' }}>{adding.folder}</span>}
+                            </div>
+                            <input className="input" placeholder={t('Name (optional), e.g. NAS')} value={adding.name} onChange={e => setAdding(a => ({ ...a, name: e.target.value }))} onKeyDown={e => e.key === 'Enter' && add()} />
+                        </div>
+                    )}
                     {adding.error && <Callout tone="danger">{adding.error}</Callout>}
                 </Dialog>
             )}
@@ -226,7 +253,7 @@ const StoragesSection = ({ onChanged }) => {
                 <Dialog open title={t('Rename storage')} icon="cloud" onClose={() => setRenaming(null)}
                     actions={<><button className="btn-ghost" onClick={() => setRenaming(null)}>{t('Cancel')}</button><button className="btn-primary" onClick={saveName} disabled={!renaming.title.trim()}>{t('Rename')}</button></>}>
                     <input className="input" autoFocus value={renaming.title} onChange={e => setRenaming(r => ({ ...r, title: e.target.value }))} onKeyDown={e => e.key === 'Enter' && saveName()} />
-                    <span className="field-hint">{t('The Telegram channel is renamed too.')}</span>
+                    <span className="field-hint">{renaming.kind === 'folder' ? t('Only the name TeleCloud shows changes; the folder keeps its name.') : t('The Telegram channel is renamed too.')}</span>
                 </Dialog>
             )}
         </section>
@@ -356,7 +383,8 @@ const TeleCloudSyncSettings = () => {
         if (r?.success && r.isAuthenticated) {
             setStatus(r);
             if (r.queue) setQueue(r.queue);
-            setStep('connected');
+            // folders only, signing in to Telegram as well: stay in the sign-in steps
+            setStep(s => (r.telegram === false && ['credentials', 'phone', 'otp', 'password', 'config'].includes(s) ? s : 'connected'));
         } else if (r?.success && r.sessionEnded) {
             setStatus(r);
             setStep(s => (['otp', 'password'].includes(s) ? s : 'ended'));
@@ -445,8 +473,26 @@ const TeleCloudSyncSettings = () => {
         }
     });
 
+    /** A folder as the first storage (or another one): a drive, a NAS share */
+    const chooseFolder = () => run(async () => {
+        const picked = await ipc().invoke('telecloud-sync:pick-folder');
+        if (!picked?.folder) return;
+        const r = await ipc().invoke('telecloud-sync:storage-add', { folder: picked.folder });
+        if (!r.success) throw new Error(r.error);
+        await refresh();
+        if (r.needKey > 0) {
+            alertDialog({ title: t('Encrypted files found'), message: t('Your {title} already holds {needKey} encrypted tracks from another computer. Enter that recovery key under Encryption to use them.', { title: r.storage.title, needKey: r.needKey }), tone: 'info' });
+        } else if (r.existingFiles > 0) {
+            const ok = await confirmDialog({ title: t('Existing TeleCloud library found'), message: t('{existingFiles} tracks are already in {title}. Add them to this library?', { existingFiles: r.existingFiles, title: r.storage.title }), confirmLabel: t('Restore') });
+            if (ok) restore(true);
+        }
+    });
+
     const disconnect = async () => {
-        const ok = await confirmDialog({ title: t('Disconnect TeleCloud?'), message: t('This signs this app out of Telegram and forgets the encryption key on this computer. Your files stay in Telegram; keep your recovery key to read them later.'), confirmLabel: t('Disconnect') });
+        const foldersOnly = status?.telegram === false;
+        const ok = await confirmDialog(foldersOnly
+            ? { title: t('Stop using TeleCloud Sync?'), message: t('This forgets your storages and the encryption key on this computer. Your files stay in their folders; keep your recovery key to read them later.'), confirmLabel: t('Stop using it') }
+            : { title: t('Disconnect TeleCloud?'), message: t('This signs this app out of Telegram and forgets the encryption key on this computer. Your files stay in Telegram; keep your recovery key to read them later.'), confirmLabel: t('Disconnect') });
         if (!ok) return;
         await run(async () => { await ipc().invoke('telecloud-sync:disconnect'); setStatus(null); setStep('info'); });
     };
@@ -474,12 +520,13 @@ const TeleCloudSyncSettings = () => {
     };
     const clearCache = async () => { await ipc().invoke('telecloud-sync:clear-cache'); refresh(); };
     const deleteAll = async () => {
-        const ok = await confirmDialog({ title: t('Delete your TeleCloud backup?'), message: t('Every file TeleCloud uploaded is deleted from Telegram. Other messages in the chat, and your local music files, are not touched. This cannot be undone.'), confirmLabel: t('Delete backup'), danger: true });
+        const foldersOnly = status?.telegram === false;
+        const ok = await confirmDialog({ title: t('Delete your TeleCloud backup?'), message: foldersOnly ? t('Every file TeleCloud stored in your storage folders is deleted. Your local music files are not touched. This cannot be undone.') : t('Every file TeleCloud uploaded is deleted from Telegram. Other messages in the chat, and your local music files, are not touched. This cannot be undone.'), confirmLabel: t('Delete backup'), danger: true });
         if (!ok) return;
         await run(async () => {
             const r = await ipc().invoke('telecloud-sync:delete-all');
             if (!r.success) throw new Error(r.error);
-            alertDialog({ title: t('Backup deleted'), message: t('Deleted {deletedCount} files from Telegram.', { deletedCount: r.deletedCount }), tone: 'ok' });
+            alertDialog({ title: t('Backup deleted'), message: foldersOnly ? t('Deleted {deletedCount} files from your storage folders.', { deletedCount: r.deletedCount }) : t('Deleted {deletedCount} files from Telegram.', { deletedCount: r.deletedCount }), tone: 'ok' });
             refresh();
         });
     };
@@ -535,6 +582,12 @@ const TeleCloudSyncSettings = () => {
                     </div>
                     {/* Telegram's API terms: an app says plainly that it uses the Telegram API */}
                     <p className="muted" style={{ marginTop: 14, fontSize: 12.5 }}>{t('TeleCloud is an unofficial app that uses the Telegram API. It is not affiliated with Telegram.')}</p>
+                </div>
+                <div className="card set-card" style={{ marginTop: 14 }}>
+                    <SettingRow icon="folder" title={t('Or back up to a folder')} desc={t('A second drive or a share on your NAS, with no Telegram account. Encrypted the same way, and you can add Telegram later.')}>
+                        <button className="btn-ghost" onClick={chooseFolder} disabled={isLoading}>{t('Choose a folder…')}</button>
+                    </SettingRow>
+                    {errorBox}
                 </div>
             </div>
         );
@@ -641,9 +694,18 @@ const TeleCloudSyncSettings = () => {
                     <button className="btn-ghost sm" onClick={showTips} title={t('What to do and avoid so backups complete')}><Icon name="info" />{t('Do\'s & don\'ts')}</button>
                 </h3>
                 <div className="card set-card">
-                    <SettingRow icon="cloud" title={<>{t('Connected')} <span className="badge b-lossless" style={{ marginLeft: 6 }}>{t('Online')}</span></>} desc={`${status?.phoneNumber || t('Telegram account')} · ${status?.storage?.title || t('no storage chat')}${status?.sessionTtlText ? t(' · Telegram signs this computer out after {sessionTtlText} unused (Settings > Devices); opening TeleCloud keeps it signed in', { sessionTtlText: status.sessionTtlText }) : ''}`}>
-                        <button className="btn-outline danger" onClick={disconnect} disabled={isLoading}>{t('Disconnect')}</button>
-                    </SettingRow>
+                    {status?.telegram === false ? (
+                        <SettingRow icon="folder" title={t('Backing up to folders')} desc={t('{title} · No Telegram account: your storages are folders on this computer or your network.', { title: status?.storage?.title || '' })}>
+                            <div className="btn-row">
+                                <button className="btn-ghost" onClick={() => goTo('credentials')} disabled={isLoading}>{t('Add Telegram')}</button>
+                                <button className="btn-outline danger" onClick={disconnect} disabled={isLoading}>{t('Stop using it')}</button>
+                            </div>
+                        </SettingRow>
+                    ) : (
+                        <SettingRow icon="cloud" title={<>{t('Connected')} <span className="badge b-lossless" style={{ marginLeft: 6 }}>{t('Online')}</span></>} desc={`${status?.phoneNumber || t('Telegram account')} · ${status?.storage?.title || t('no storage chat')}${status?.sessionTtlText ? t(' · Telegram signs this computer out after {sessionTtlText} unused (Settings > Devices); opening TeleCloud keeps it signed in', { sessionTtlText: status.sessionTtlText }) : ''}`}>
+                            <button className="btn-outline danger" onClick={disconnect} disabled={isLoading}>{t('Disconnect')}</button>
+                        </SettingRow>
+                    )}
                     <div className="set-sub" style={{ background: 'transparent' }}>
                         <div className="stat-grid">
                             <div className="stat-box"><small>{t('Tracks in cloud')}</small><b>{(status?.syncedItems || 0).toLocaleString()}</b></div>
@@ -654,7 +716,7 @@ const TeleCloudSyncSettings = () => {
                 </div>
             </section>
 
-            <StoragesSection onChanged={refresh} />
+            <StoragesSection onChanged={refresh} telegram={status?.telegram !== false} />
 
             <section className="set-section">
                 <h3>{t('Backup')}</h3>
@@ -702,7 +764,7 @@ const TeleCloudSyncSettings = () => {
             <section className="set-section">
                 <h3>{t('Danger zone')}</h3>
                 <div className="card set-card">
-                    <SettingRow icon="trash" title={t('Delete the TeleCloud backup')} desc={t('Deletes the files TeleCloud uploaded. Your other Telegram messages and local music are not touched.')}>
+                    <SettingRow icon="trash" title={t('Delete the TeleCloud backup')} desc={status?.telegram === false ? t('Deletes the files TeleCloud stored in your storage folders. Your local music is not touched.') : t('Deletes the files TeleCloud uploaded. Your other Telegram messages and local music are not touched.')}>
                         <button className="btn-outline danger" onClick={deleteAll} disabled={isLoading}>{t('Delete backup…')}</button>
                     </SettingRow>
                 </div>

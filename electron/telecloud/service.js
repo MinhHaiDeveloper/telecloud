@@ -105,7 +105,36 @@ function ensureConnected() {
     });
   return connected;
 }
-worker.events.on('exit', () => { connected = null; });
+worker.events.on('exit', () => { connected = null; keyInWorker = false; });
+
+// ---------- storages of any kind ----------
+// A storage is a Telegram chat or a folder (a drive, a NAS share). Only Telegram needs the sign-in; a
+// folder only needs the worker to hold the encryption key, which connecting to Telegram also gives it.
+
+let keyInWorker = false;
+const hasTelegramStorage = () => store.storages.all().some(store.isTelegram);
+/** Backups can run: there is somewhere to put them, and the Telegram sign-in holds if a chat is one of them */
+const cloudReady = () => store.storages.count() > 0 && (!hasTelegramStorage() || signedIn());
+
+/** What a job needs before it touches these storages */
+async function readyFor(storages) {
+  const list = (Array.isArray(storages) ? storages : [storages]).filter(Boolean);
+  if (list.some(store.isTelegram)) { await ensureConnected(); keyInWorker = true; return; }
+  if (!keyInWorker) {
+    await worker.call('setKey', { masterKey: cm().getCredentials()?.masterKey || null });
+    keyInWorker = true;
+  }
+}
+const readyForAll = () => readyFor(store.storages.all());
+
+/** The encryption key, made on first use (a folder can be the first storage, before any Telegram sign-in) */
+function ensureMasterKey() {
+  const creds = cm().getCredentials();
+  if (creds?.masterKey) return;
+  cm().saveCredentials({ ...(creds || {}), masterKey: newMasterKey().toString('base64'), enabled: true });
+  keyCache = null;
+  keyInWorker = false;
+}
 
 /** Setups from earlier versions kept only a channel id and "restored/..." paths */
 async function migrateLegacy(creds) {
@@ -156,7 +185,7 @@ async function refreshIndex(storage, { full = false } = {}) {
  */
 async function checkBackup() {
   if (runner) throw new Error(tx('A backup is running. Check again when it has finished.'));
-  await ensureConnected();
+  await readyForAll();
   const key = masterKey();
   const db = store.db();
   const totals = { tracks: 0, ok: 0, missing: 0, damaged: 0, unreadable: 0, extra: 0, indexOnly: 0, coversMissing: 0 };
@@ -236,7 +265,7 @@ async function restoreCover(storageId, key) {
 /** After a check: tracks still on this computer go back in the queue, lost covers go back, indexes that need it are saved */
 async function repairBackup({ paths }) {
   if (runner) throw new Error(tx('A backup is running. Try again when it has finished.'));
-  await ensureConnected();
+  await readyForAll();
   const report = await checkBackup();
   const wanted = new Set(paths || []);
   const byStorage = new Map();
@@ -385,13 +414,13 @@ async function uploadOne(item) {
 
 function startRunner() {
   if (runner || options().paused) return runner;
-  if (sessionEnded()) return runner; // the queue waits for the sign-in; it starts by itself after it
+  if (hasTelegramStorage() && sessionEnded()) return runner; // the queue waits for the sign-in; it starts by itself after it
   runner = (async () => {
     let sinceCheckpoint = 0;
     let lastCheckpoint = Date.now();
     try {
-      await ensureConnected();
-      // what is already in the chat (also catches uploads made from another computer)
+      await readyForAll();
+      // what is already in each storage (also catches uploads made from another computer)
       for (const s of store.storages.all()) {
         await refreshIndex(s);
         // backed up before covers and the manifest existed: add them now
@@ -609,7 +638,7 @@ async function writeManifest(storageId) {
   });
   await worker.call('pin', { peer: store.toPeer(s), id }).catch(err => console.error('[TeleCloud] pin failed:', err.message));
   const old = s.manifest_id;
-  store.storages.setManifest(s.id, id, iv);
+  store.storages.setManifest(s.id, id, iv, Date.now(), true);
   await saveManifestCache(s.id, id, data);
   console.log(`[TeleCloud] Index saved: ${tracks.length} ${tracks.length === 1 ? 'track' : 'tracks'}, ${data.covers.length} ${data.covers.length === 1 ? 'cover' : 'covers'}`);
   if (old && old !== id) await worker.call('deleteMessages', { peer: store.toPeer(s), ids: [old] }).catch(() => {});
@@ -641,8 +670,8 @@ async function dropReplacedCovers(s, keys) {
 /** A cover was chosen in the app: put the new picture in TeleCloud and the index, and drop the old one */
 async function coversChanged(paths, previous = []) {
   const rows = (paths || []).map(p => store.library.row(p)).filter(r => r?.telegram_message_id);
-  if (!rows.length || !signedIn()) return;
-  await ensureConnected();
+  if (!rows.length || !cloudReady()) return;
+  await readyForAll();
   const touched = new Map();
   for (const row of rows) {
     const s = store.storages.byPeer(row.telegram_channel_id);
@@ -669,8 +698,8 @@ function indexChanged(paths) {
   if (!manifestDirty.size) return;
   clearTimeout(indexTimer);
   indexTimer = setTimeout(async () => {
-    if (runner || !signedIn()) return; // a running backup writes it at its next checkpoint
-    try { await ensureConnected(); await writeDirtyManifests(); } catch (err) { console.warn('[TeleCloud] index update failed:', err.message); }
+    if (runner || !cloudReady()) return; // a running backup writes it at its next checkpoint
+    try { await readyForAll(); await writeDirtyManifests(); } catch (err) { console.warn('[TeleCloud] index update failed:', err.message); }
   }, 5000);
 }
 
@@ -732,8 +761,8 @@ async function streamTrack(libraryPath) {
     return { path: row.cache_path, streaming: false };
   }
   const storage = store.storages.byPeer(row.telegram_channel_id);
-  if (!storage) throw new Error(tx('The Telegram chat for this track is not connected'));
-  await ensureConnected();
+  if (!storage) throw new Error(tx('The storage of this track is not connected'));
+  await readyFor(storage);
   let entry = store.index.get(storage.id, row.telegram_message_id);
   if (!entry) { await refreshIndex(storage); entry = store.index.get(storage.id, row.telegram_message_id); }
   const finalPath = cacheFileFor(row, entry);
@@ -750,8 +779,8 @@ async function streamTrack(libraryPath) {
 
 /** How fast Telegram delivers to this computer (downloads part of the biggest cloud file) */
 async function speedTest() {
-  await ensureConnected();
   const storage = defaultStorage();
+  await readyFor(storage);
   const biggest = store.index.all(storage.id).sort((a, b) => (b.size || 0) - (a.size || 0))[0];
   if (!biggest) throw new Error(tx('Back up at least one track first: the test downloads part of it'));
   return worker.call('speedTest', { peer: store.toPeer(storage), messageId: biggest.message_id, size: biggest.size });
@@ -779,9 +808,9 @@ async function cacheTrack(libraryPath) {
       return row.cache_path;
     }
     const storage = store.storages.byPeer(row.telegram_channel_id);
-    if (!storage) throw new Error(tx('The Telegram chat for this track is not connected'));
+    if (!storage) throw new Error(tx('The storage of this track is not connected'));
     console.log(`[TeleCloud] Downloading to the cache: ${libraryPath}`);
-    await ensureConnected();
+    await readyFor(storage);
     let entry = store.index.get(storage.id, row.telegram_message_id);
     if (!entry) { await refreshIndex(storage); entry = store.index.get(storage.id, row.telegram_message_id); }
     const target = cacheFileFor(row, entry);
@@ -868,7 +897,7 @@ async function cleanTemp() {
 // ---------- restore ----------
 
 async function restore() {
-  await ensureConnected();
+  await readyForAll();
   const database = require('../database');
   let restored = 0, skipped = 0, updated = 0, needKey = 0, coversFetched = 0, gifsFetched = 0;
   const added = [];
@@ -940,6 +969,7 @@ function listStorages() {
   const stats = new Map(store.storages.stats().map(r => [String(r.peer), r]));
   return store.storages.all().map(s => ({
     id: s.id, title: s.title, kind: s.kind, peerId: s.peer_id, isDefault: !!s.is_default,
+    location: s.kind === 'folder' ? store.configOf(s).root || null : null,
     tracks: stats.get(String(s.peer_id))?.tracks || 0, bytes: stats.get(String(s.peer_id))?.bytes || 0,
   }));
 }
@@ -954,10 +984,37 @@ async function storageCandidates() {
   return out;
 }
 
-async function addStorage({ title, chatId }) {
-  if (store.storages.count() >= MAX_STORAGES) throw new Error(tx('TeleCloud can use up to {MAX_STORAGES} chats', { MAX_STORAGES }));
-  await ensureConnected();
+/**
+ * A folder as storage: a second drive, a NAS share. TeleCloud keeps its files in a "TeleCloud" folder
+ * inside it, so a whole drive can be picked. No Telegram sign-in is needed; the encryption key is made
+ * here if this is the first storage.
+ */
+async function addFolderStorage({ folder: picked, title }) {
+  const chosen = path.resolve(String(picked || ''));
+  if (!picked || !fs.existsSync(chosen)) throw new Error(tx('That folder can\'t be reached'));
+  const root = path.basename(chosen).toLowerCase() === 'telecloud' ? chosen : path.join(chosen, 'TeleCloud');
+  await fs.promises.mkdir(root, { recursive: true });
+  const probe = path.join(root, `.write-test-${process.pid}`);
+  try { await fs.promises.writeFile(probe, 'ok'); await fs.promises.rm(probe, { force: true }); } catch { throw new Error(tx('TeleCloud can\'t write in that folder')); }
+  const peerId = `folder-${crypto.createHash('sha256').update(root.toLowerCase()).digest('hex').slice(0, 12)}`;
+  if (store.storages.byPeer(peerId)) throw new Error(tx('That folder is already a storage'));
+  ensureMasterKey();
+  const name = String(title || '').trim().slice(0, 120) || path.basename(chosen) || chosen;
+  return store.storages.add({ kind: 'folder', peerId, title: name, config: { root }, isDefault: store.storages.count() === 0 });
+}
+
+async function addStorage({ title, chatId, folder: picked }) {
+  if (store.storages.count() >= MAX_STORAGES) throw new Error(tx('TeleCloud can use up to {MAX_STORAGES} storages', { MAX_STORAGES }));
   let added;
+  if (picked) {
+    added = await addFolderStorage({ folder: picked, title });
+    await readyFor(added);
+    // a folder used before (or by another computer) may already hold TeleCloud files
+    const r = await refreshIndex(added, { full: true });
+    if (!options().paused && store.queue.counts().queued) startRunner();
+    return { storage: listStorages().find(s => s.id === added.id), existingFiles: store.index.all(added.id).length, needKey: r.needKey };
+  }
+  await ensureConnected();
   if (chatId === 'self') {
     added = store.storages.add({ kind: 'self', peerId: 'self', title: 'Saved Messages' });
   } else if (chatId) {
@@ -979,7 +1036,7 @@ async function renameStorage({ id, title }) {
   const s = store.storages.get(id);
   const name = String(title || '').trim().slice(0, 120);
   if (!s || !name) throw new Error(tx('Nothing to rename'));
-  if (s.kind !== 'self') {
+  if (s.kind !== 'self' && store.isTelegram(s)) {
     await ensureConnected();
     await worker.call('renameChat', { peer: store.toPeer(s), title: name });
   }
@@ -999,9 +1056,9 @@ function removeStorage({ id }) {
 
 /** Queue tracks that aren't in TeleCloud yet for one storage; tell what was left out and why */
 function backupTo({ paths, storageId }) {
-  if (sessionEnded()) throw new Error(endedError());
   const storage = store.storages.get(storageId);
   if (!storage) throw new Error('Unknown storage');
+  if (store.isTelegram(storage) && sessionEnded()) throw new Error(endedError());
   const queued = [];
   const elsewhere = [];
   let missing = 0;
@@ -1025,7 +1082,7 @@ function backupTo({ paths, storageId }) {
 async function moveTo({ paths, storageId }) {
   const target = store.storages.get(storageId);
   if (!target) throw new Error('Unknown storage');
-  await ensureConnected();
+  await readyForAll();
   const bySource = new Map();
   for (const p of paths) {
     const row = store.library.row(p);
@@ -1079,7 +1136,7 @@ async function moveTo({ paths, storageId }) {
  * the library, since TeleCloud held their only copy. Album covers nothing uses any more go too.
  */
 async function removeFromCloud({ paths }) {
-  await ensureConnected();
+  await readyForAll();
   const database = require('../database');
   const byStorage = new Map();
   for (const p of paths) {
@@ -1132,7 +1189,24 @@ async function removeFromCloud({ paths }) {
 
 async function status() {
   const creds = cm().getCredentials();
-  if (!creds?.session) return { success: true, isAuthenticated: false };
+  if (!creds?.session) {
+    // folders only (a drive, a NAS): no Telegram account, the rest of the page works the same
+    if (!store.storages.count()) return { success: true, isAuthenticated: false };
+    const s = store.storages.default();
+    const synced = store.library.syncedStats();
+    const key = masterKey();
+    return {
+      success: true, isAuthenticated: true, telegram: false,
+      lastSync: creds?.lastSync || null, syncedItems: synced.count, storageUsed: synced.bytes,
+      storage: s ? { title: s.title, kind: s.kind } : null,
+      index: s ? { savedAt: store.storages.get(s.id).manifest_at || null, tracks: store.index.all(s.id).length, covers: store.covers.all(s.id).length, pending: manifestDirty.has(s.id) } : null,
+      storageLocation: 'folder',
+      options: options(),
+      encryption: { hasKey: !!key, fingerprint: key ? fingerprint(key) : null },
+      cacheBytes: await cacheUsage(),
+      queue: queueState(),
+    };
+  }
   const ended = sessionEnded();
   if (ended) {
     const s0 = store.storages.default();
@@ -1144,13 +1218,14 @@ async function status() {
   return {
     success: true,
     isAuthenticated: true,
+    telegram: true,
     phoneNumber: creds.phoneNumber,
     lastSync: creds.lastSync,
     syncedItems: synced.count,
     storageUsed: synced.bytes,
     storage: s ? { title: s.title, kind: s.kind } : null,
     index: s ? { savedAt: store.storages.get(s.id).manifest_at || null, tracks: store.index.all(s.id).length, covers: store.covers.all(s.id).length, pending: manifestDirty.has(s.id) } : null,
-    storageLocation: s?.kind === 'self' ? 'saved_messages' : 'private_channel',
+    storageLocation: s?.kind === 'self' ? 'saved_messages' : s?.kind === 'folder' ? 'folder' : 'private_channel',
     sessionTtlDays: kv.get('teleCloudSessionTtl') || null,
     sessionTtlText: ttlWords(kv.get('teleCloudSessionTtl')),
     options: options(),
@@ -1279,7 +1354,7 @@ function setupTeleCloudSyncHandlers() {
 
   // Back up local tracks that have no cloud copy yet
   handle('telecloud-sync:sync-now', async () => {
-    if (sessionEnded()) throw new Error(endedError()); // said once, here; no backup starts to fail again
+    if (hasTelegramStorage() && sessionEnded()) throw new Error(endedError()); // said once, here; no backup starts to fail again
     const storage = defaultStorage();
     const paths = store.library.notUploaded().filter(p => fs.existsSync(p));
     store.queue.add(paths, storage.id);
@@ -1289,7 +1364,7 @@ function setupTeleCloudSyncHandlers() {
     return { success: true, queued: store.queue.counts().queued };
   });
   handle('telecloud-sync:stop-sync', async () => { await pauseQueue(); return { success: true }; });
-  handle('telecloud-sync:resume', async () => { if (sessionEnded()) throw new Error(endedError()); setOptions({ paused: false }); store.queue.retryErrors(); startRunner(); pushQueue(); return { success: true }; });
+  handle('telecloud-sync:resume', async () => { if (hasTelegramStorage() && sessionEnded()) throw new Error(endedError()); setOptions({ paused: false }); store.queue.retryErrors(); startRunner(); pushQueue(); return { success: true }; });
   handle('telecloud-sync:queue-state', async () => queueState());
   handle('telecloud-sync:check-sync-status', async () => ({ isSyncing: !!runner }));
 
@@ -1302,8 +1377,8 @@ function setupTeleCloudSyncHandlers() {
   handle('telecloud-sync:stream-track', async (libraryPath) => ({ success: true, ...(await streamTrack(String(libraryPath))) }));
   // Write the library index now (also adds covers still missing for older backups)
   handle('telecloud-sync:save-index', async () => {
-    await ensureConnected();
     const s = defaultStorage();
+    await readyFor(s);
     await refreshIndex(s);
     for (const p of store.library.withoutCover(s.peer_id)) await ensureCover(p, s).catch(() => {});
     manifestDirty.delete(s.id);
@@ -1313,6 +1388,13 @@ function setupTeleCloudSyncHandlers() {
   handle('telecloud-sync:storages', async () => ({ success: true, storages: listStorages(), max: MAX_STORAGES }));
   handle('telecloud-sync:storage-candidates', async () => ({ success: true, chats: await storageCandidates() }));
   handle('telecloud-sync:storage-add', async (opts = {}) => ({ success: true, ...(await addStorage(opts)) }));
+  // Windows' folder picker, for a folder storage (a drive, a NAS share)
+  handle('telecloud-sync:pick-folder', async () => {
+    const { dialog } = require('electron');
+    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+    const r = await dialog.showOpenDialog(win, { title: tx('Choose a folder for your backup'), properties: ['openDirectory', 'createDirectory'] });
+    return { success: true, folder: r.canceled ? null : r.filePaths[0] || null };
+  });
   handle('telecloud-sync:storage-rename', async (opts = {}) => { await renameStorage(opts); return { success: true, storages: listStorages() }; });
   handle('telecloud-sync:storage-default', async ({ id } = {}) => { store.storages.setDefault(id); return { success: true, storages: listStorages() }; });
   handle('telecloud-sync:storage-remove', async (opts = {}) => { removeStorage(opts); return { success: true, storages: listStorages() }; });
@@ -1328,7 +1410,7 @@ function setupTeleCloudSyncHandlers() {
   // Only TeleCloud's own messages are deleted; the local library is kept (cloud links reset)
   handle('telecloud-sync:delete-all', async () => {
     await pauseQueue();
-    await ensureConnected();
+    await readyForAll();
     let deleted = 0;
     for (const storage of store.storages.all()) {
       const r = await refreshIndex(storage, { full: true });
@@ -1384,7 +1466,7 @@ function setupTeleCloudSyncHandlers() {
 
   // Backed-up files edited on disk: queue a fresh backup (the old cloud copy is replaced)
   require('../music').onCloudFilesChanged((paths) => {
-    if (!store.storages.default() || !signedIn()) return;
+    if (!store.storages.default() || !cloudReady()) return;
     // back up into the storage that held the old copy
     for (const p of paths) {
       const row = store.library.row(p);
@@ -1411,7 +1493,7 @@ function setupTeleCloudSyncHandlers() {
   // Resume a backup that was running when the app closed
   setTimeout(() => {
     try {
-      if (signedIn() && !options().paused && store.queue.counts().queued) startRunner();
+      if (cloudReady() && !options().paused && store.queue.counts().queued) startRunner();
     } catch (err) { console.error('[TeleCloud] resume failed:', err.message); }
   }, 4000);
 }

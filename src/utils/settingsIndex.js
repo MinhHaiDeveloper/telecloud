@@ -128,8 +128,9 @@ export const SETTINGS = [
   // ---- TeleCloud Sync
   e('telecloud', 'Back up your library', 'telegram upload backup', ['cloud']),
   e('telecloud', 'Upload speed limit', 'bandwidth', ['cloud']),
-  s('telecloud', 'Storages', 'telegram channel chat saved messages', ['cloud']),
-  e('telecloud', 'Add a storage', 'telegram channel chat', ['cloud']),
+  s('telecloud', 'Storages', 'telegram channel chat saved messages folder nas', ['cloud']),
+  e('telecloud', 'Add a storage', 'telegram channel chat folder nas drive', ['cloud']),
+  e('telecloud', 'Or back up to a folder', 'nas drive folder network share storage without telegram', ['cloud']),
   e('telecloud', 'Library index', 'manifest', ['cloud']),
   e('telecloud', 'Streaming speed', 'test download', ['cloud']),
   e('telecloud', 'Recovery key', 'encryption password', ['cloud']),
@@ -170,6 +171,8 @@ export const IGNORED = [
   'Scrobble to Last.fm',
   // shows only once there is a translation: move it to SETTINGS (appearance, look) with the first one
   'Language of the app',
+  // the account row when the storages are folders only
+  'Backing up to folders',
 ];
 
 const norm = (text) => String(text).toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '');
