@@ -15,6 +15,10 @@ const TitleBar = ({ subtitle }) => {
     ipcOn(ipc, 'window:state', on);
     return () => ipcOff(ipc, 'window:state', on);
   }, []);
+  // full screen: no title bar, so nothing may keep its height (the app's height is 100vh minus it)
+  useEffect(() => {
+    document.documentElement.classList.toggle('tc-fullscreen', !!state.fullscreen);
+  }, [state.fullscreen]);
   if (state.fullscreen) return null;
   const ipc = window.ipcRenderer;
   return (

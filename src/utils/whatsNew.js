@@ -2,6 +2,16 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.1.0-beta.12',
+    items: [
+      `VU meters in Now Playing: the VU button (or V) opens a page of two analogue meters, left and right, in four faces: Classic, Blue, Theme (in the colours of your theme, and it follows it) and Backdrop (just the scale and needles over the background). 0 VU can sit at −18, −14 or −10 dBFS, a peak light shows when the music nears full scale, and H leaves the meters alone on screen. They only run while you can see them, and never touch the music: bit-perfect stays bit-perfect.`,
+      `Settings has a search box (Ctrl+F there): type a word and every setting that matches shows, from all the tabs, with chips to narrow it to a topic (Bit-perfect, DSD, Lossless & hi-res, Lyrics and more). Pick one and Settings opens at it, lit for a moment.`,
+      `In Now Playing the player bar steps out of the way after 5 seconds and comes back when the mouse reaches the bottom edge.`,
+      `F11 goes full screen (and back), filling the whole screen.`,
+      `Now Playing: the format, moon and volume no longer sit on top of the seek bar's end, and in a small window the lyrics or queue no longer have the song title and badges spilling over them. Closing from the VU page is smooth.`,
+    ],
+  },
+  {
     version: '1.1.0-beta.11',
     items: [
       'Cadence, optional: word-by-word timing worked out on this computer for lyrics that only have line times. Its models are not part of TeleCloud: download them in Settings > Lyrics > Word timing models only if you want them (English and other languages 339 MB, Japanese 341 MB, Voice separation 166 MB) and delete them whenever you like. Lyrics from the sources work as before without them. About a minute a song on a graphics card, 2 to 3 minutes on the processor alone; Chinese is read as pinyin.',

@@ -70,7 +70,7 @@ scripts/release.js   build one channel into beta/ or release/
 | `player.js` | mpv over JSON IPC, filter chain, crossfade, output devices, DSD plan, exclusive buffer, releasing the DAC while paused |
 | `soundChain.js` | Settings > Sound (tone, space, effects, A/B, clip meter) as mpv filters; pure functions |
 | `soundCorrection.js` | Room or headphone correction from a WAV impulse response or a frequency/gain text file |
-| `liveSpectrum.js` | The EQ page's live spectrum: a second, silent mpv through the same filters |
+| `liveSpectrum.js` | The EQ page's live spectrum and Now Playing's VU meters: a second, silent mpv through the same filters (mono FFT, or stereo RMS and peak) |
 | `waveform.js` | The waveform seek bar: a track's loudness, worked out once with mpv and kept |
 | `dsd.js` | Reading DSF/DFF and packing DoP |
 | `asio.js` | Runs `tc-asio.exe` for native DSD |
@@ -304,10 +304,23 @@ Telegram work runs in a `utilityProcess` (`worker.js`), so the interface stays s
 
 Only when the album changes, `LiquidCover.jsx` floods the new cover in over 5 s with a WebGL shader in `utils/liquid.js` (a growing circle with a wobbling rim, ripples through both pictures, colours split at the rim). `FluidBackdrop.jsx` draws the Now Playing background from the cover's colours at about 30 fps, swirls with a change and settles over 4.5 s. Both share one clock per change (`beginChange`, `latestChange`), so a cover that appears mid-way, such as Now Playing opened during a change, joins at the same point. Canvases are compiled once and pooled; pictures are decoded to bitmaps ahead of time (`media:bytes`), and the old cover stays as the background until the first frame, so nothing flashes. Reduce motion, or the same album, just swaps the picture.
 
+### Settings search
+
+The box at the top of the Settings menu (Ctrl+F there) searches every tab at once, and the topic chips (Bit-perfect, DSD, Lossless & hi-res, Sound shaping, Lyrics, Cloud & backup, Online services, Look & motion) narrow it; results come grouped by tab. Picking one opens its tab, scrolls the setting into the middle and lights it for a moment (`SettingRow` carries `data-setting` with its title; headings are found by their text; a row shown only in some states falls back to its section). Enter takes the first result, Esc closes the search. The settings and their keywords and topics are listed in `src/utils/settingsIndex.js`, not read from the pages, so nothing runs until the box is used. **Every `vite build` checks that list against the code** (`scripts/check-settings-index.mjs`, a plugin in `vite.config.js`; also `node scripts/check-settings-index.mjs`): a `SettingRow` title that is not in the list (or in its `IGNORED` list of rows that only show a state), or an entry no longer in the code, fails the build with the file and line. A new setting therefore needs a line in `settingsIndex.js`.
+
+### Now Playing's player bar
+
+In Now Playing the player bar floats as a compact glass bar, and steps down out of the way after 5 s unused (`np-bar-away` on `<html>`, set by `NowPlayingFullscreen.jsx`). The mouse within 110 px of the bottom edge brings it back; once the mouse leaves the bar the 5 s start again. It never goes while the mouse is on it, one of its menus is open, or a control in it has the keyboard. Cover-only (H) hides it outright.
+
+### VU meters
+
+Now Playing's VU button (key V, last after Queue) turns the view into a VU page (`.vu-mode`): the cover and the panels step aside and two analogue-style meters stand side by side, left and right (`VuMeters.jsx`; one above the other when the view is under about 700 px). Cover-only (H) on this page leaves the meters alone on screen. `levels:live` starts a silent second mpv like the EQ page's spectrum (`liveSpectrum.js` with `channels: 2`), which sends each channel's RMS and peak in dBFS 30 times a second (`levels:frame`); `player.js` restarts it on a seek, a new track or new filters, and stops it on pause, with native DSD and for streaming cloud tracks (`levels:state` says why). The renderer runs the needles as a damped spring (about 300 ms to a step with a little overshoot, as a VU meter should) and changes only their CSS transform and the peak lights' opacity, so the compositor moves them; the face is a still SVG. Deflection follows voltage, as on a real meter (+3 VU full scale, 0 VU at 71 %). 0 VU sits at −18, −14 or −10 dBFS RMS; the face is Classic (warm white), Blue, Theme (the surfaces, text and accent of the theme chosen in Settings > Appearance, so it follows all ten) or Backdrop (no face: the scale and needles over Now Playing's own background) (`vu-ref`, `vu-style` in localStorage). Nothing is read while the page is closed, the music is paused, or the window is minimised or covered, and the animation stops asking for frames once the needles rest.
+
 ### Windows integration
 
 - **Media controls.** mpv has no media session, so `native/media/tc-media.exe` opens a hidden window with TeleCloud's app id and takes the System Media Transport Controls for it. `media.js` talks to it over stdin/stdout: title, artist, cover (a file in `media-controls/`, named by its hash so Windows never shows an older one), position, and the buttons back. Without the helper, the media keys still work through global shortcuts.
 - **Open with.** `openFiles.js` takes files from the command line (and from a second copy started by Explorer), plays the first at once in Now Playing and queues the rest, without adding them to the library.
+- **Full screen.** F11 toggles it (`before-input-event` in `main.js`): the window has no menu, and Electron's own F11 comes with the menu. The title bar hides and `html.tc-fullscreen` sets `--titlebar-h` to 0, so the app fills the screen; the full-screen events send the state themselves, because `isFullScreen()` can still give the old answer while Windows switches.
 - **Floating lyrics.** `floatingLyrics.js` opens a frameless always-on-top window; locked, it ignores the mouse. Its place and size are in `floating-lyrics.json`.
 
 ### Artist biographies

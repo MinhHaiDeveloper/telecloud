@@ -1,6 +1,8 @@
-// The EQ page's live spectrum: a second, silent mpv decodes what is playing from where it is,
-// through the same filters, so the picture is what you hear. Its samples are read in step with the
-// clock (the pipe holds mpv back when it runs ahead) and analysed a few times a second.
+// The EQ page's live spectrum and Now Playing's VU meters: a second, silent mpv decodes what is playing
+// from where it is, through the same filters, so the picture is what you hear. Its samples are read in
+// step with the clock (the pipe holds mpv back when it runs ahead) and analysed a few times a second.
+// The spectrum reads mono (`analyse`, 4096 points every 60 ms); the meters read stereo (`levels`, each
+// channel's RMS and peak over the last 1470 frames, every 33 ms).
 
 const { spawn } = require('child_process');
 
@@ -52,7 +54,28 @@ function analyse(samples) {
   return out;
 }
 
-function create({ mpvPath, onFrame, onState = () => {} }) {
+/** Each channel's RMS and peak in dBFS over the window: [left rms, left peak, right rms, right peak] */
+function levels(win) {
+  let sl = 0, sr = 0, pl = 0, pr = 0;
+  for (let i = 0; i + 1 < win.length; i += 2) {
+    const l = win[i], r = win[i + 1];
+    sl += l * l; sr += r * r;
+    const al = l < 0 ? -l : l, ar = r < 0 ? -r : r;
+    if (al > pl) pl = al;
+    if (ar > pr) pr = ar;
+  }
+  const n = win.length / 2;
+  const db = (x) => Math.max(-90, Math.round(200 * Math.log10(x || 1e-9)) / 10);
+  return [db(Math.sqrt(sl / n)), db(pl), db(Math.sqrt(sr / n)), db(pr)];
+}
+
+/**
+ * `channels`: 1 (mono, the spectrum) or 2 (stereo, interleaved, the meters); `window`: frames analysed;
+ * `interval`: ms between frames; `analyse`: window (interleaved floats) -> what onFrame gets.
+ */
+function create({ mpvPath, onFrame, onState = () => {}, channels = 1, window: frames = N, interval = 60, analyse: analyseFn = analyse, state = () => ({ freqs: FREQS }) }) {
+  const WIN = frames * channels;     // floats in a window
+  const LEAD = AHEAD * channels;     // floats kept ahead of the clock
   let child = null;
   let run = null; // { path, pos, t0, chunks: [{ at, data }], total, timer }
 
@@ -65,7 +88,7 @@ function create({ mpvPath, onFrame, onState = () => {} }) {
   function start({ path, pos = 0, af = '' }) {
     stop();
     const args = ['--no-config', '--no-video', '--media-controls=no', '--load-scripts=no', '--ytdl=no', '--msg-level=all=error',
-      `--start=${Math.max(0, pos).toFixed(3)}`, '--audio-channels=mono', `--audio-samplerate=${RATE}`,
+      `--start=${Math.max(0, pos).toFixed(3)}`, `--audio-channels=${channels === 2 ? 'stereo' : 'mono'}`, `--audio-samplerate=${RATE}`,
       '--of=f32le', '--oac=pcm_f32le', '--o=-'];
     if (af) args.push(`--af=${af}`);
     args.push('--', path);
@@ -85,35 +108,36 @@ function create({ mpvPath, onFrame, onState = () => {} }) {
       const data = new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.length));
       r.chunks.push({ at: r.total, data });
       r.total += data.length;
-      if (r.total - clock(r) > AHEAD) me.stdout.pause();
+      if (r.total - clock(r) > LEAD) me.stdout.pause();
     });
-    r.timer = setInterval(() => tick(r, me), 60);
-    onState({ running: true, freqs: FREQS });
+    r.timer = setInterval(() => tick(r, me), interval);
+    onState({ running: true, ...state() });
   }
 
-  const clock = (r) => Math.floor(((Date.now() - r.t0) / 1000) * RATE);
+  // where the music is, in floats of the stream (frames times channels)
+  const clock = (r) => Math.floor(((Date.now() - r.t0) / 1000) * RATE) * channels;
 
   function tick(r, me) {
     if (run !== r) return;
     const now = clock(r);
-    if (r.total - now < AHEAD / 2 && me.stdout.isPaused()) me.stdout.resume();
+    if (r.total - now < LEAD / 2 && me.stdout.isPaused()) me.stdout.resume();
     // drop what the window no longer needs
-    while (r.chunks.length > 1 && r.chunks[1].at <= now - N) r.chunks.shift();
-    const end = Math.min(now, r.total);
-    if (end < N) return;
-    const win = new Float32Array(N);
+    while (r.chunks.length > 1 && r.chunks[1].at <= now - WIN) r.chunks.shift();
+    const end = Math.min(now, r.total - (r.total % channels)); // whole frames only, so left stays left
+    if (end < WIN) return;
+    const win = new Float32Array(WIN);
     let filled = 0;
     for (const c of r.chunks) {
-      const from = Math.max(c.at, end - N), to = Math.min(c.at + c.data.length, end);
+      const from = Math.max(c.at, end - WIN), to = Math.min(c.at + c.data.length, end);
       if (to <= from) continue;
-      win.set(c.data.subarray(from - c.at, to - c.at), from - (end - N));
+      win.set(c.data.subarray(from - c.at, to - c.at), from - (end - WIN));
       filled += to - from;
     }
-    if (filled < N / 2) return;
-    onFrame(analyse(win));
+    if (filled < WIN / 2) return;
+    onFrame(analyseFn(win));
   }
 
   return { start, stop, running: () => !!run, startedAt: () => run && { path: run.path, pos: run.pos, t0: run.t0 } };
 }
 
-module.exports = { create, analyse, FREQS, RATE, N };
+module.exports = { create, analyse, levels, FREQS, RATE, N };

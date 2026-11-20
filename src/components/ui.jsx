@@ -142,9 +142,10 @@ export const Field = ({ label, hint, children }) => (
   </label>
 );
 
-/** Rows inside a settings card: title + description on the left, control on the right */
+/** Rows inside a settings card: title + description on the left, control on the right.
+ *  data-setting: the Settings search jumps to a row by its title (src/utils/settingsIndex.js). */
 export const SettingRow = ({ icon, title, desc, children, muted }) => (
-  <div className={`set-row ${muted ? 'muted' : ''}`}>
+  <div className={`set-row ${muted ? 'muted' : ''}`} data-setting={typeof title === 'string' ? title : undefined}>
     {icon && <div className="set-icon"><Icon name={icon} /></div>}
     <div className="set-text">
       <div className="set-title">{title}</div>

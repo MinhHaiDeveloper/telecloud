@@ -9,6 +9,7 @@ import FluidBackdrop from './FluidBackdrop';
 import { latestChange, playCoverChange, motionOff } from '../utils/liquid';
 import LyricsView, { parseLyrics } from './LyricsView';
 import QueueList from './QueueList';
+import VuMeters from './VuMeters';
 import { formatTime, qualityOf, formatBytes, mqaOf } from '../utils/audio';
 import { useAppearance } from '../utils/appearance';
 
@@ -49,7 +50,7 @@ const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce
  * The copy lives in <body> (fixed, on top) so the player bar can't cover or clip it.
  * Both endpoints stay hidden during the flight, which sells the "same artwork" illusion.
  */
-function flyCover(big, small, direction, toRect) {
+function flyCover(big, small, direction, toRect, { fromHidden = false } = {}) {
   const from = big.getBoundingClientRect();
   const to = toRect || small.getBoundingClientRect();
   // On narrow windows the lyrics panel can hide the big cover entirely; just fade then
@@ -71,7 +72,7 @@ function flyCover(big, small, direction, toRect) {
   // main thread (mounting the view, the player morphing) can't make it stutter.
   Object.assign(ghost.style, {
     position: 'fixed', left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px`, height: `${from.height}px`,
-    margin: '0', zIndex: '3000', pointerEvents: 'none', transformOrigin: '0 0', transition: 'none', opacity: '1',
+    margin: '0', zIndex: '3000', pointerEvents: 'none', transformOrigin: '0 0', transition: 'none', opacity: fromHidden ? '0' : '1', // hidden until its fade starts
     borderRadius: `${bigRadius}px`, boxShadow: '0 24px 60px rgba(0,0,0,.4)', willChange: 'transform', overflow: 'hidden',
   });
   document.body.appendChild(ghost);
@@ -88,7 +89,14 @@ function flyCover(big, small, direction, toRect) {
 
   big.style.opacity = '0';
   small.style.visibility = 'hidden';
-  const anim = ghost.animate(direction === 'open' ? [shrunk, full] : [full, shrunk], {
+  // Closing from a page where the cover was not on screen (the VU meters): it comes in from a little behind
+  // its place while it fades in, and is fully there a third of the way down, so nothing pops in
+  const frames = direction === 'open' ? [shrunk, full]
+    : fromHidden ? [{ transform: `translate(${from.width * 0.06}px, ${from.height * 0.06}px) scale(.88)` }, shrunk]
+      : [full, shrunk];
+  // its own clock for the fade, so the flight's fast start does not rush it
+  if (fromHidden) ghost.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, easing: 'ease-in-out', fill: 'forwards' });
+  const anim = ghost.animate(frames, {
     duration: direction === 'open' ? OPEN_MS : CLOSE_MS,
     easing: EASE,
     fill: 'forwards',
@@ -186,6 +194,34 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, playing = true, onSeek
     document.documentElement.classList.toggle('np-cover-only', coverOnly);
     return () => document.documentElement.classList.remove('np-cover-only');
   }, [coverOnly]);
+  // The player bar steps down out of the way after 5 s unused; the mouse near the bottom edge brings it back, and
+  // once the mouse leaves the bar the 5 s start again. Never while the mouse is on it, a menu of it is open, or a
+  // control in it has the keyboard.
+  const [barAway, setBarAway] = useState(false);
+  useEffect(() => {
+    document.documentElement.classList.toggle('np-bar-away', barAway);
+    return () => document.documentElement.classList.remove('np-bar-away');
+  }, [barAway]);
+  useEffect(() => {
+    if (phase !== 'open') return undefined;
+    const bar = () => document.querySelector('.app.np-mode .player');
+    let t = null;
+    const busy = (b) => b && (b.matches(':hover') || b.querySelector('.popover') || (b.contains(document.activeElement) && document.activeElement.matches(':focus-visible')));
+    const arm = () => {
+      clearTimeout(t);
+      t = setTimeout(() => { t = null; if (busy(bar())) arm(); else setBarAway(true); }, 5000);
+    };
+    const move = (e) => {
+      const b = bar();
+      if (b && b.contains(e.target)) { clearTimeout(t); t = null; setBarAway(false); return; }
+      if (e.clientY > window.innerHeight - 110) setBarAway(false);
+      if (!t) arm();
+    };
+    arm();
+    window.addEventListener('mousemove', move, { passive: true });
+    return () => { window.removeEventListener('mousemove', move); clearTimeout(t); setBarAway(false); };
+  }, [phase]);
+
   useEffect(() => {
     if (!coverOnly) return undefined;
     let t = null;
@@ -215,7 +251,7 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, playing = true, onSeek
     if (big) big.style.transform = ''; // the flight starts from the flat cover
     onClosingStart?.();
     if (!big || !small || reducedMotion()) { onClose(); return; }
-    flyCover(big, small, 'close', toRect).then(onClose);
+    flyCover(big, small, 'close', toRect, { fromHidden: !!rootRef.current?.classList.contains('vu-mode') }).then(onClose);
   }, [origin, onClose, onClosingStart]);
 
   // The player bar's artwork toggles the view too; App asks us to close with the animation
@@ -228,6 +264,7 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, playing = true, onSeek
       if (e.key.toLowerCase() === 'h') setCoverOnly(v => !v);
       if (e.key.toLowerCase() === 'l') setPanel(p => (p === 'lyrics' ? null : 'lyrics'));
       if (e.key.toLowerCase() === 'q') setPanel(p => (p === 'queue' ? null : 'queue'));
+      if (e.key.toLowerCase() === 'v') setPanel(p => (p === 'vu' ? null : 'vu'));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -247,7 +284,7 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, playing = true, onSeek
   ].filter(Boolean);
 
   return (
-    <section ref={rootRef} className={`np-full ${panel ? 'with-panel' : ''} np-${phase} ${coverOnly ? 'cover-only' : ''}`} aria-label="Now playing">
+    <section ref={rootRef} className={`np-full ${panel && panel !== 'vu' ? 'with-panel' : ''} ${panel === 'vu' ? 'vu-mode' : ''} np-${phase} ${coverOnly ? 'cover-only' : ''}`} aria-label="Now playing">
       {coverOnly && (
         <button className={`np-reveal ${peek ? 'show' : ''}`} onClick={() => setCoverOnly(false)} title="Show everything (H or Esc)">
           <Icon name="eye" />
@@ -273,10 +310,19 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, playing = true, onSeek
           <button className={`np-pill ${panel === 'queue' ? 'on' : ''}`} onClick={() => toggle('queue')} title="Queue (Q)">
             <Icon name="queue" />Queue{queueFiles.length ? <span className="np-count">{queueFiles.length}</span> : null}
           </button>
+          <button className={`np-pill ${panel === 'vu' ? 'on' : ''}`} onClick={() => toggle('vu')} title="VU meters (V)">
+            <Icon name="vu" />VU
+          </button>
         </div>
       </header>
 
       <div className="np-body">
+        {/* the VU page: both meters across the whole view, the cover and the panels out of the way */}
+        {panel === 'vu' && (
+          <div className="np-vu">
+            <VuMeters active={phase !== 'leaving'} label={q ? (q.bits === 1 ? q.label : q.rate ? `PCM ${(q.rate / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} kHz` : q.label) : null} />
+          </div>
+        )}
         <div className="np-hero">
           <LiquidCover file={currentFile} className="np-cover" coverKey={`c-${currentFile?.path}`} />
           <div className="np-info np-fade">

@@ -197,6 +197,35 @@ input[type="number"].input::-webkit-inner-spin-button { opacity: .4; }
 /* a bar that runs up and down beside the list, like the sidebar's */
 .settings-nav .indicator { left: 0; width: 3px; border-radius: 3px; background: var(--accent); z-index: 2; } /* above the item, so its hover can't hide it */
 .settings-nav .nav-items > button:hover { background: var(--surface); }
+/* Settings search (SettingsSearch.jsx, src/utils/settingsIndex.js) */
+.set-search { position: relative; display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 0 10px; height: 36px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text-3); transition: border-color .15s; }
+.set-search:focus-within, .set-search.on { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); color: var(--text-2); }
+.set-search .ico { width: 15px; height: 15px; }
+.set-search-input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font-size: 13px; color: var(--text); }
+.set-search-input:focus-visible { outline: none; }
+.set-search-x { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: var(--text-3); }
+.set-search-x:hover { background: var(--surface-hover); color: var(--text); }
+.set-search-x .ico { width: 13px; height: 13px; }
+.set-results { display: flex; flex-direction: column; gap: 16px; }
+.set-topics { display: flex; flex-wrap: wrap; gap: 6px; }
+.set-topic { padding: 5px 12px; border-radius: 99px; font-size: 12.5px; font-weight: 600; color: var(--text-2); background: var(--surface); border: 1px solid var(--border); transition: background .15s, color .15s, border-color .15s; }
+.set-topic:hover { color: var(--text); }
+.set-topic.on { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.set-topic.clear { background: none; border-style: dashed; }
+.set-count { font-size: 12.5px; color: var(--text-3); }
+.set-group h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); }
+.set-group h4 .ico { width: 14px; height: 14px; }
+.set-hit { display: grid; grid-template-columns: minmax(0, auto) auto minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 11px 16px; text-align: left; border-top: 1px solid var(--border); }
+.set-hit:first-child { border-top: 0; }
+.set-hit:hover, .set-hit:focus-visible { background: var(--surface-hover); outline: none; }
+.set-hit-title { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-hit-kind { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); padding: 1px 6px; border-radius: 5px; background: var(--surface-2); }
+.set-hit-topics { font-size: 12px; color: var(--text-3); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-hit-go { width: 14px; height: 14px; color: var(--text-3); transform: rotate(-90deg); }
+/* the setting the search led to, lit for a moment */
+@keyframes setFlash { 0%, 30% { box-shadow: inset 0 0 0 2px var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); } 100% { box-shadow: inset 0 0 0 2px transparent; background: transparent; } }
+.set-flash { animation: setFlash 2s var(--ease-out); border-radius: 10px; }
 .settings-body { min-width: 0; display: flex; flex-direction: column; gap: 22px; padding-bottom: 20px; animation: fadeIn .25s; }
 .set-section h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 1.1px; color: var(--text-3); font-weight: 700; margin: 0 0 10px 4px; display: flex; align-items: center; gap: 8px; }
 .set-section h3 .icon-btn { width: 24px; height: 24px; }
@@ -533,6 +562,8 @@ html[style*="--np-lyric-align: right"] .np-lyrics .lyric { transform-origin: rig
 @media (max-width: 960px) {
   .np-full.with-panel .np-body { grid-template-columns: minmax(0, 0fr) minmax(0, 1fr); }
   .np-panel-inner { margin-left: 0; min-width: 0; }
+  /* the cover's column is squeezed to nothing: its title and badges go with it instead of spilling over */
+  .np-full.with-panel .np-hero { opacity: 0; visibility: hidden; transition: opacity .2s, visibility 0s .2s; }
 }
 .cover-btn { display: block; padding: 0; flex-shrink: 0; border-radius: 8px; }
 
@@ -540,9 +571,10 @@ html[style*="--np-lyric-align: right"] .np-lyrics .lyric { transform-origin: rig
    The track info sinks away (it's already on screen, big), and transport, seek bar, format
    and volume pull together into one floating glass bar so the view gets the whole window. */
 .app.np-mode .player {
-  grid-template-columns: minmax(0, 0px) minmax(0, 1fr) minmax(0, 270px);
+  /* the right column holds the format, the moon and the volume (with the room the main bar gives its icons) */
+  grid-template-columns: minmax(0, 0px) minmax(0, 1fr) minmax(0, 310px);
   gap: 18px; padding: 0 14px 0 22px;
-  width: min(880px, calc(100% - 48px)); height: 70px; margin: 0 auto 14px;
+  width: min(920px, calc(100% - 48px)); height: 70px; margin: 0 auto 14px;
   border-radius: 22px;
   background: color-mix(in srgb, var(--surface) 82%, transparent);
   border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
@@ -556,7 +588,7 @@ html[style*="--np-lyric-align: right"] .np-lyrics .lyric { transform-origin: rig
 .app.np-mode .p-center { justify-content: center; }
 .app.np-mode .seek-wrap.has-wave { height: 24px; }
 .app.np-mode .seek-wrap.has-wave .range::-webkit-slider-thumb { height: 24px; }
-.app.np-mode .p-right .np-hide { opacity: 0; pointer-events: none; width: 0; overflow: hidden; margin: 0; padding: 0; }
+.app.np-mode .p-right .np-hide { opacity: 0; pointer-events: none; width: 0; overflow: hidden; margin: 0 0 0 -10px; padding: 0; } /* takes back its gap too */
 .app.np-mode .p-center { gap: 4px; }
 .app.np-mode .p-controls .icon-btn { width: 32px; height: 32px; }
 .app.np-mode .play-btn { width: 40px; height: 40px; }
@@ -649,6 +681,15 @@ html[style*="--np-lyric-align: right"] .np-lyrics .lyric { transform-origin: rig
 .np-full.cover-only .np-top, .np-full.cover-only .np-info, .np-full.cover-only .np-panel { opacity: 0; pointer-events: none; }
 .np-full.cover-only .np-info { transform: translateY(10px); }
 .np-full.cover-only .cover.np-cover { width: min(78vh, 760px, 90%); }
+/* the bar steps down after 5 s unused (NowPlayingFullscreen) and comes back with the mouse at the bottom */
+.app.np-mode .player {
+  transition: width .5s var(--ease-out), height .5s var(--ease-out), margin .5s var(--ease-out),
+    border-radius .5s var(--ease-out), background .4s, border-color .4s, box-shadow .5s,
+    grid-template-columns .5s var(--ease-out), gap .5s var(--ease-out), padding .5s var(--ease-out),
+    transform .45s var(--ease-out), opacity .35s var(--ease-out);
+}
+html.np-bar-away .app.np-mode .player { transform: translateY(calc(100% + 24px)); opacity: 0; pointer-events: none;
+  transition: transform .7s cubic-bezier(.55, 0, .45, 1), opacity .6s ease-in; }
 html.np-cover-only .app.np-mode .player { opacity: 0; transform: translateY(20px); pointer-events: none; transition: opacity .4s var(--ease-out), transform .4s var(--ease-out); }
 html.np-cover-only .app.np-mode .np-full .np-body { padding: 24px 24px calc(24px + var(--titlebar-h, 32px)); }
 /* cover only: what is hidden takes no room, so the cover sits in the middle of the window at any size (the
@@ -1209,3 +1250,79 @@ h4.whats-new-older { margin-top: 18px; }
 .wle-nowords { position: absolute; inset: 0; display: grid; place-items: center; font-size: 12.5px; color: var(--text-3); pointer-events: none; }
 .wle-tools .btn-primary.sm-btn { padding: 6px 14px; }
 .wle-help { font-size: 11.5px; }
+
+/* ---- Now Playing: VU meters (VuMeters.jsx), a page of their own (.vu-mode). The face is a still SVG; only the
+   needles' transform and the peak lights' opacity change, so the compositor moves them without repainting. */
+.np-vu { position: absolute; inset: 0 40px 28px; z-index: 2; display: flex; container-type: size; animation: fadeIn .35s var(--ease-out); }
+.np-full.vu-mode .np-hero, .np-full.vu-mode .np-panel { opacity: 0; pointer-events: none; transition: opacity .3s; }
+/* closing: the meters fade at once instead of waiting for the cover's flight to end */
+.np-full.np-leaving .np-vu { opacity: 0; transition: opacity .2s var(--ease-out); animation: none; }
+.vu { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 22px; }
+.vu-meters { display: flex; flex-direction: row; gap: 28px; justify-content: center; align-items: center; min-height: 0; width: 100%; }
+/* two across: as wide and as tall as the view allows, never past 620 px each */
+.vu-meter { width: min(620px, calc(50cqw - 14px), calc((100cqh - 110px) * 400 / 230 + 24px)); padding: 12px; border-radius: 18px;
+  background: linear-gradient(160deg, #3a3a3e, #17171a 60%, #222226); box-shadow: 0 14px 40px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .12); }
+/* a narrow window: one above the other */
+@container (max-width: 620px) {
+  .vu-meters { flex-direction: column; gap: 16px; }
+  .vu-meter { width: min(100cqw, calc((50cqh - 70px) * 400 / 230 + 24px)); }
+}
+.vu-glass { position: relative; aspect-ratio: 400 / 230; border-radius: 9px; overflow: hidden; isolation: isolate;
+  background: var(--vu-face); box-shadow: inset 0 2px 10px rgba(0, 0, 0, .45), inset 0 0 0 1px rgba(0, 0, 0, .5); }
+/* the glass: a soft reflection over everything */
+.vu-glass::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 4;
+  background: linear-gradient(172deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, .06) 38%, transparent 40%); }
+.vu-face { position: absolute; inset: 0; width: 100%; height: 100%; }
+.vu-face text { font-family: var(--font, inherit); text-anchor: middle; fill: var(--vu-ink); }
+.vu-arc { fill: none; stroke: var(--vu-ink); stroke-width: 2.2; }
+.vu-arc.red { stroke: var(--vu-red); }
+.vu-arc.thick { stroke-width: 7; }
+.vu-arc.thin { stroke-width: 1; opacity: .7; }
+.vu-tick { stroke: var(--vu-ink); stroke-width: 2.4; stroke-linecap: round; }
+.vu-tick.minor { stroke-width: 1.4; }
+.red .vu-tick, .vu-tick.red { stroke: var(--vu-red); }
+.vu-num { font-size: 17px; font-weight: 600; }
+.red .vu-num, .vu-minus.red { fill: var(--vu-red); }
+.vu-pct { font-size: 9px; opacity: .65; }
+.vu-minus { font-size: 20px; font-weight: 600; }
+.vu-title { font-size: 34px; font-weight: 800; letter-spacing: 1px; }
+.vu-side { font-size: 18px; font-weight: 800; fill: var(--vu-red) !important; text-anchor: start !important; }
+.vu-peaklabel { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-anchor: end !important; }
+/* pivot 32 units under the face, needle 200 long, in a 400 x 230 face */
+.vu-needle { position: absolute; left: 50%; bottom: -13.9%; width: 2px; margin-left: -1px; height: 86.9%; z-index: 2;
+  background: linear-gradient(var(--vu-needle-tip), var(--vu-needle) 22%); border-radius: 1px 1px 0 0;
+  transform-origin: 50% 100%; will-change: transform; box-shadow: 1px 2px 3px rgba(0, 0, 0, .25); }
+.vu-cap { position: absolute; left: 50%; bottom: -13.9%; width: 25%; aspect-ratio: 1; transform: translate(-50%, 50%); z-index: 3; border-radius: 50%;
+  background: radial-gradient(circle at 50% 30%, #3b3b40, #0c0c0e 70%); box-shadow: 0 -1px 0 rgba(255, 255, 255, .15), 0 -3px 10px rgba(0, 0, 0, .35); }
+.vu-led { position: absolute; left: 89.5%; top: 86%; width: 3.6%; aspect-ratio: 1; border-radius: 50%; z-index: 3;
+  background: radial-gradient(circle at 40% 35%, #6b2b2b, #3a1010); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .5); }
+.vu-led::after { content: ''; position: absolute; inset: -60%; border-radius: 50%; opacity: 0; will-change: opacity; transition: opacity .08s;
+  background: radial-gradient(circle, #ff5a4a 0 26%, rgba(255, 60, 40, .55) 34%, transparent 70%); }
+.vu-led.on::after { opacity: 1; }
+.vu-note { text-align: center; font-size: 13px; color: var(--text-2); }
+.vu-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; font-size: 12px; color: var(--text-2); width: min(100%, 1268px); }
+.vu-sp { flex: 1; }
+.vu-format { font-size: 12px; color: var(--text-2); }
+.vu-reflabel { white-space: nowrap; }
+@container (max-width: 760px) { .vu-sp { flex-basis: 100%; height: 0; } }
+/* cover-only (H) on the VU page: the meters alone */
+.np-full.vu-mode.cover-only .np-vu { inset: 24px; }
+.np-full.vu-mode.cover-only .vu-foot { opacity: 0; pointer-events: none; }
+
+/* backlit faces */
+.vu-classic { --vu-face: radial-gradient(120% 95% at 50% 18%, #fffdf6 0%, #f6efdf 45%, #ddd2bb 100%); --vu-ink: #262422; --vu-red: #c6302a; --vu-needle: #1d1b19; --vu-needle-tip: #3a3633; }
+.vu-blue { --vu-face: radial-gradient(120% 100% at 45% 15%, #c7f3ff 0%, #6fcfee 38%, #2c8fd0 75%, #1c5f9e 100%); --vu-ink: #0d2236; --vu-red: #c8382e; --vu-needle: #0b1622; --vu-needle-tip: #1f3346; }
+/* the theme from Settings > Appearance: its surfaces for the face, its text for the ink, its accent for the red */
+.vu-theme { --vu-face: radial-gradient(120% 100% at 50% 15%, color-mix(in srgb, var(--accent) 18%, var(--surface-2)) 0%, var(--surface) 62%, color-mix(in srgb, var(--surface) 70%, #000) 100%);
+  --vu-ink: var(--text); --vu-red: var(--accent); --vu-needle: var(--text); --vu-needle-tip: var(--accent); }
+.vu-theme .vu-meter { background: linear-gradient(160deg, color-mix(in srgb, var(--text) 14%, var(--surface)), color-mix(in srgb, var(--surface) 55%, #000)); }
+.vu-theme .vu-glass::after { opacity: .45; }
+.vu-theme .vu-cap { background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--text) 22%, var(--surface)), var(--surface) 70%); }
+/* no face: the scale, the needles and the lights over the Now Playing background */
+.vu-backdrop { --vu-face: transparent; --vu-ink: var(--text); --vu-red: var(--accent); --vu-needle: var(--text); --vu-needle-tip: var(--accent); }
+.vu-backdrop .vu-meter { background: none; box-shadow: none; padding: 0; }
+.vu-backdrop .vu-glass { box-shadow: none; border-radius: 0; }
+.vu-backdrop .vu-glass::after { display: none; }
+.vu-backdrop .vu-face { filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .35)); }
+.vu-backdrop .vu-cap { background: color-mix(in srgb, var(--text) 16%, transparent); box-shadow: none; }
+.vu-backdrop .vu-needle { box-shadow: 0 0 6px rgba(0, 0, 0, .35); }

@@ -176,8 +176,19 @@ function createWindow() {
   require('./media').attach(win); // Windows media controls, media keys, taskbar buttons
   require('./openFiles').init(); // music opened from Windows plays at once
   win.once('ready-to-show', () => require('./floatingLyrics').restore()); // open again if it was open
-  const sendState = () => { if (!win.isDestroyed()) win.webContents.send('window:state', { maximized: win.isMaximized(), fullscreen: win.isFullScreen(), focused: win.isFocused() }); };
-  ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'focus', 'blur', 'restore'].forEach(ev => win.on(ev, sendState));
+  // isFullScreen() can still give the old answer while Windows switches, so the full-screen events say it themselves
+  let fullscreen = false;
+  const sendState = () => { if (!win.isDestroyed()) win.webContents.send('window:state', { maximized: win.isMaximized(), fullscreen, focused: win.isFocused() }); };
+  ['maximize', 'unmaximize', 'focus', 'blur', 'restore'].forEach(ev => win.on(ev, sendState));
+  win.on('enter-full-screen', () => { fullscreen = true; sendState(); });
+  win.on('leave-full-screen', () => { fullscreen = false; sendState(); });
+  // F11: full screen. The window has no menu (setApplicationMenu(null)), and Electron's own F11 comes with the menu.
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F11' && !input.isAutoRepeat && !input.control && !input.alt && !input.meta) {
+      event.preventDefault();
+      win.setFullScreen(!win.isFullScreen());
+    }
+  });
 
   // The app never opens its own windows or navigates away; external links go through 'open-external'
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));

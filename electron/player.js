@@ -458,7 +458,7 @@ function handleMessage(msg) {
         devicesMayHaveChanged();
       } else if (msg.name === 'time-pos' && typeof msg.data === 'number') {
         maybeCrossfade(msg.data);
-        if (spectrumWanted) spectrumFollow(msg.data);
+        if (spectrumF.wanted || metersF.wanted) liveFollow(msg.data);
         if (!meterTimer && appliedChain?.meter) watchMeter();
         // ~4 updates per second is plenty for the seek bar and synced lyrics
         const now = Date.now();
@@ -473,7 +473,7 @@ function handleMessage(msg) {
         playerPaused = !!msg.data;
         watchMeter();
         if (!released) scheduleRelease();
-        if (spectrumWanted) spectrumFollow(spectrumPos);
+        spectrumF.follow(spectrumF.pos); metersF.follow(metersF.pos);
         send('player:state', { paused: !!msg.data });
       } else if (msg.name === 'audio-out-params' && msg.data) {
         // what really goes to the device: the first thing to look at when a DAC stays silent
@@ -805,7 +805,7 @@ async function applyChain() {
   if (appliedChain && appliedChain.af === spec.af && !appliedChain.live && !appliedChain.liveSound) return;
   await setProp('af', spec.af);
   appliedChain = spec;
-  spectrumRestart();
+  spectrumF.restart(); metersF.restart();
 }
 
 // One chain update at a time; edits that arrive meanwhile are folded into the next run, so a
@@ -863,37 +863,50 @@ async function readMeter() {
   showClip();
 }
 
-// ---------- the EQ page's live spectrum
-const spectrum = require('./liveSpectrum').create({
+// ---------- the EQ page's live spectrum and Now Playing's VU meters
+// Each runs its own silent mpv, only while its view is open and the music plays.
+const liveAnalysis = require('./liveSpectrum');
+function follower(analyser, channel) {
+  const f = { wanted: false, pos: 0 };
+  /** Follow the music: a new track, a seek or new filters start the analysis again from where it is */
+  f.follow = (pos) => {
+    if (!f.wanted) return;
+    f.pos = pos;
+    const at = analyser.startedAt();
+    const local = !!currentPath && !/^https?:/i.test(currentPath) && fs.existsSync(currentPath);
+    if (playerPaused || native || !local) {
+      if (at) analyser.stop();
+      if (currentPath && (!local || native)) send(`${channel}:state`, { running: false, why: native ? 'native' : 'cloud' });
+      return;
+    }
+    const expected = at ? at.pos + (Date.now() - at.t0) / 1000 : null;
+    if (!at || at.path !== currentPath || Math.abs(expected - pos) > 0.8) {
+      analyser.start({ path: currentPath, pos, af: chainSpec({ crossfadeSlot: false }).af });
+    }
+  };
+  f.restart = () => { if (f.wanted && analyser.running()) { analyser.stop(); f.follow(f.pos); } };
+  ipcMain.handle(`${channel}:live`, (event, on) => {
+    f.wanted = !!on;
+    if (!f.wanted) analyser.stop();
+    else f.follow(f.pos);
+    return f.wanted;
+  });
+  return f;
+}
+const spectrum = liveAnalysis.create({
   mpvPath,
   onFrame: (bands) => send('spectrum:frame', bands),
   onState: (st) => send('spectrum:state', st),
 });
-let spectrumWanted = false;
-let spectrumPos = 0;
-/** Follow the music: a new track, a seek or new filters start the analysis again from where it is */
-function spectrumFollow(pos) {
-  if (!spectrumWanted) return;
-  spectrumPos = pos;
-  const at = spectrum.startedAt();
-  const local = !!currentPath && !/^https?:/i.test(currentPath) && fs.existsSync(currentPath);
-  if (playerPaused || native || !local) {
-    if (at) spectrum.stop();
-    if (!local && currentPath) send('spectrum:state', { running: false, why: 'cloud' });
-    return;
-  }
-  const expected = at ? at.pos + (Date.now() - at.t0) / 1000 : null;
-  if (!at || at.path !== currentPath || Math.abs(expected - pos) > 0.8) {
-    spectrum.start({ path: currentPath, pos, af: chainSpec({ crossfadeSlot: false }).af });
-  }
-}
-function spectrumRestart() { if (spectrumWanted && spectrum.running()) { spectrum.stop(); spectrumFollow(spectrumPos); } }
-ipcMain.handle('spectrum:live', (event, on) => {
-  spectrumWanted = !!on;
-  if (!spectrumWanted) spectrum.stop();
-  else spectrumFollow(spectrumPos);
-  return spectrumWanted;
+const spectrumF = follower(spectrum, 'spectrum');
+// stereo RMS and peak, 30 times a second: [left rms, left peak, right rms, right peak] in dBFS
+const meters = liveAnalysis.create({
+  mpvPath, channels: 2, window: 1470, interval: 33, analyse: liveAnalysis.levels, state: () => ({}),
+  onFrame: (lv) => send('levels:frame', lv),
+  onState: (st) => send('levels:state', st),
 });
+const metersF = follower(meters, 'levels');
+const liveFollow = (pos) => { spectrumF.follow(pos); metersF.follow(pos); };
 
 async function applyDevice(deviceId) {
   const exclusive = !!deviceId && deviceId !== '-1';
@@ -1444,6 +1457,6 @@ function playbackReport() {
   };
 }
 
-module.exports = { playingPath: () => currentPath, _playback: playbackReport, listDevices, applyAudioSettings, buildEqFilter, capFilter, chainSpec, _sound: () => ({ soundState, softVolume, clipShown, meter: !!meterTimer, spectrum: spectrum.running() }), _release: () => ({ released, timer: !!releaseTimer, fading: !!fading, settings: { releaseOnPause: currentAudioSettings.releaseOnPause, pauseFade: currentAudioSettings.pauseFade } }), mpvPath, getProp, setStreamPrefix, parseBluetoothOutputs,
+module.exports = { playingPath: () => currentPath, _playback: playbackReport, listDevices, applyAudioSettings, buildEqFilter, capFilter, chainSpec, _sound: () => ({ soundState, softVolume, clipShown, meter: !!meterTimer, spectrum: spectrum.running(), meters: meters.running() }), _release: () => ({ released, timer: !!releaseTimer, fading: !!fading, settings: { releaseOnPause: currentAudioSettings.releaseOnPause, pauseFade: currentAudioSettings.pauseFade } }), mpvPath, getProp, setStreamPrefix, parseBluetoothOutputs,
   // tests only: feed a message as if mpv sent it, and see what is playing
   _mpvMessage: (msg) => handleMessage(msg), _playing: () => ({ entry: currentEntryId, path: currentPath, refused: [...refused] }) };

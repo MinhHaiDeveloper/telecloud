@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { SettingsSearchBox, SettingsResults } from './SettingsSearch';
 import TeleCloudSyncSettings from './TeleCloudSyncSettings';
 import Icon from './Icon';
 import LyricsSettings from './LyricsSettings';
@@ -63,6 +64,48 @@ const SettingsView = ({
   onAudioSettingsChange,
 }) => {
   const [activeTab, setActiveTab] = useState(initialTab || 'general'); // back from the EQ: the tab it was opened from
+  // ---- the search: what is typed, the topic chips, and the setting to show once its tab is open
+  const [query, setQuery] = useState('');
+  const [topics, setTopics] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const searchRef = useRef(null);
+  const jumpTo = useRef(null);
+  const closeSearch = () => { setSearching(false); setQuery(''); setTopics([]); };
+  const pick = (it) => { jumpTo.current = it.title; closeSearch(); setActiveTab(it.tab); };
+  // Ctrl+F on this page goes to the search box
+  useEffect(() => {
+    const onKey = (e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); searchRef.current?.focus(); searchRef.current?.select(); } };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  // Once the tab is on screen: bring the setting into view and light it up for a moment. A row that only shows in
+  // some states (signed in, a device connected) may not be there: its section heading is used instead.
+  useEffect(() => {
+    const title = jumpTo.current;
+    if (!title || searching) return undefined;
+    let timer = 0, done = null;
+    const t0 = performance.now(); // a tab that loads its state first (devices, sign-in) gets up to 3 s to show
+    const find = () => {
+      const body = document.querySelector('.settings-body');
+      if (!body) return null;
+      const css = window.CSS?.escape ? CSS.escape(title) : title.replace(/"/g, '\\"');
+      const row = body.querySelector(`[data-setting="${css}"]`);
+      if (row) return row;
+      const text = (el) => el.textContent.replace(/\s+/g, ' ').trim();
+      const head = [...body.querySelectorAll('h3, .src-order-head > b, .set-title')].find(el => text(el) === title);
+      return head ? (head.closest('.set-row') || head.closest('.set-sub') || head.closest('.set-section') || head) : null;
+    };
+    const go = () => {
+      const el = find();
+      if (!el) { if (performance.now() - t0 < 3000) timer = setTimeout(go, 50); else jumpTo.current = null; return; }
+      jumpTo.current = null;
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el.classList.remove('set-flash'); void el.offsetWidth; el.classList.add('set-flash');
+      done = setTimeout(() => el.classList.remove('set-flash'), 2200);
+    };
+    timer = setTimeout(go, 0); // after the tab has painted
+    return () => { clearTimeout(timer); clearTimeout(done); };
+  }, [activeTab, searching]);
   const [downloadFolder, setDownloadFolder] = useState('');
   const [audioDevices, setAudioDevices] = useState([]);
   const [disabledDevices, setDisabledDevices] = useState([]);
@@ -599,17 +642,20 @@ const SettingsView = ({
     <div className="settings">
       <nav className="settings-nav">
         <h2>Settings</h2>
+        <SettingsSearchBox inputRef={searchRef} query={query} setQuery={setQuery} active={searching} onOpen={() => setSearching(true)} onClose={closeSearch} />
         <div className="nav-items slider-host" ref={navRef}>
           <span className="indicator" />
           {TABS.map(t => (
-            <button key={t.id} className={activeTab === t.id ? 'on' : ''} data-active={activeTab === t.id} onClick={() => setActiveTab(t.id)}>
+            <button key={t.id} className={activeTab === t.id && !searching ? 'on' : ''} data-active={activeTab === t.id} onClick={() => { closeSearch(); setActiveTab(t.id); }}>
               <Icon name={t.icon} />{t.label}
             </button>
           ))}
         </div>
       </nav>
 
-      <div className="settings-body" key={activeTab}>{renderTab()}</div>
+      {searching
+        ? <div className="settings-body" key="search"><SettingsResults query={query} topics={topics} setTopics={setTopics} tabs={TABS} onPick={pick} /></div>
+        : <div className="settings-body" key={activeTab}>{renderTab()}</div>}
 
       <Dialog open={showClearInfoModal} onClose={() => setShowClearInfoModal(false)} title="What gets cleared?" icon="info" width={520}
         actions={<button className="btn-primary" onClick={() => setShowClearInfoModal(false)}>Got it</button>}>
