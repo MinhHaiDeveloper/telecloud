@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { logGrid, totalResponse } from '../utils/autoEqMath';
+import { t } from '../i18n';
 
 // Settings > Sound: tone, space, effects, correction, headroom and A/B. Saved in the "sound" store,
 // sent to the player (electron/soundChain.js checks it and builds the filters).
@@ -109,20 +110,20 @@ export default function useSound(eq) {
 
 /** What is on, in a few words (the signal path's Sound step) */
 export function soundSummary(s, { guard = 0, ab = false, exclusive = false } = {}) {
-  if (ab) return ['Original, level matched'];
+  if (ab) return [t('Original, level matched')];
   const out = [];
   if (s.warmth) out.push(s.warmth > 0 ? `Warm +${s.warmth} dB` : `Bright +${-s.warmth} dB`);
-  if (s.bass) out.push(`Bass ${s.bass > 0 ? '+' : ''}${s.bass} dB`);
-  if (s.treble) out.push(`Treble ${s.treble > 0 ? '+' : ''}${s.treble} dB`);
-  if (s.loudness && !exclusive) out.push('Loudness');
-  if (s.correction) out.push('Correction');
-  if (s.width !== 100) out.push(`Width ${s.width}%`);
-  if (s.channels === 'mono') out.push('Mono');
+  if (s.bass) out.push(t('Bass {value}{bass} dB', { value: s.bass > 0 ? '+' : '', bass: s.bass }));
+  if (s.treble) out.push(t('Treble {value}{treble} dB', { value: s.treble > 0 ? '+' : '', treble: s.treble }));
+  if (s.loudness && !exclusive) out.push(t('Loudness'));
+  if (s.correction) out.push(t('Correction'));
+  if (s.width !== 100) out.push(t('Width {width}%', { width: s.width }));
+  if (s.channels === 'mono') out.push(t('Mono'));
   if (s.channels === 'swap') out.push('L/R swapped');
-  if (s.polarity !== 'normal') out.push(s.polarity === 'both' ? 'Polarity inverted' : `${s.polarity === 'left' ? 'Left' : 'Right'} polarity inverted`);
-  if (s.night !== 'off') out.push(`Night ${s.night}`);
-  if (s.air) out.push(`Air ${s.air}%`);
-  if (s.tube) out.push(`Tube ${s.tube}%`);
-  if (guard) out.push(`Headroom ${guard} dB`);
+  if (s.polarity !== 'normal') out.push(s.polarity === 'both' ? t('Polarity inverted') : t('{value} polarity inverted', { value: s.polarity === 'left' ? t('Left') : t('Right') }));
+  if (s.night !== 'off') out.push(t('Night {night}', { night: s.night }));
+  if (s.air) out.push(t('Air {air}%', { air: s.air }));
+  if (s.tube) out.push(t('Tube {tube}%', { tube: s.tube }));
+  if (guard) out.push(t('Headroom {guard} dB', { guard }));
   return out;
 }

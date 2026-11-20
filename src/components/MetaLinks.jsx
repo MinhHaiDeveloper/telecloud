@@ -1,6 +1,7 @@
 import React, { useContext } from 'react';
 import SongActions from './songActions';
 import { artistsOf, splitArtists } from '../utils/albums';
+import { t } from '../i18n';
 
 export { splitArtists };
 
@@ -18,7 +19,7 @@ const Link = ({ children, onOpen }) => (
 );
 
 /** Artist(s) and, optionally, the album of a track, each one a link to its page */
-const MetaLinks = ({ file, album = true, artist = true, fallback = 'Unknown artist' }) => {
+const MetaLinks = ({ file, album = true, artist = true, fallback = t('Unknown artist') }) => {
   const { openArtist, openAlbum } = useContext(SongActions);
   const m = file?.metadata || {};
   const artists = artistsOf(file).filter(a => a !== 'Unknown Artist');

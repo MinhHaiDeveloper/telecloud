@@ -15,6 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
+const { tx, onLanguage, language } = require('./i18n');
 
 const MAX_DEVICES = 10;
 const COOKIE = 'tc_remote';
@@ -43,7 +44,8 @@ const realName = () => os.hostname();
 const hostInfo = () => {
   const c = load();
   const custom = String(c.name || '').trim();
-  return { name: custom || realName(), realName: realName(), custom: !!custom, beta: require('../package.json').version.includes('-') };
+  // lang: the language TeleCloud is in; the remote page shows itself in it too
+  return { name: custom || realName(), realName: realName(), custom: !!custom, beta: require('../package.json').version.includes('-'), lang: language() };
 };
 
 // ---------- addresses on the local network: Wi-Fi and Ethernet first, virtual adapters last
@@ -221,6 +223,9 @@ let port = 0;
 const clients = new Set(); // { res, device }
 const buckets = new Map(); // device id -> { n, at }: a few commands a second at most
 
+// TeleCloud's language changed: every remote page follows at once
+onLanguage(() => { if (server) broadcast('state', { ...(state || { track: null, queue: [] }), host: hostInfo() }); });
+
 function broadcast(event, data) {
   const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   for (const c of clients) { try { c.res.write(msg); } catch { /* closed */ } }
@@ -351,7 +356,7 @@ async function handle(req, res) {
     const given = String(body?.key || '');
     if (!given || given.length !== c.key.length || !crypto.timingSafeEqual(Buffer.from(given), Buffer.from(c.key))) {
       console.warn('[Remote] A device tried to pair with a wrong or old key');
-      return send(res, 403, { error: 'This link or QR code is old. Scan the one shown in TeleCloud now.' });
+      return send(res, 403, { error: tx('This link or QR code is old. Scan the one shown in TeleCloud now.') });
     }
     // already paired in this browser (the link opened again, or a Fold unfolded): the same device, not a new one
     const known = deviceOf(req);
@@ -394,7 +399,7 @@ async function handle(req, res) {
     if (Number.isFinite(body.offset)) q.offset = Math.max(0, Math.min(1e6, Math.round(body.offset)));
     if (Number.isFinite(body.limit)) q.limit = Math.max(1, Math.min(60, Math.round(body.limit)));
     const r = await ask(q);
-    return r ? send(res, 200, publicAnswer(r)) : send(res, 503, { error: 'TeleCloud did not answer' });
+    return r ? send(res, 200, publicAnswer(r)) : send(res, 503, { error: tx('TeleCloud did not answer') });
   }
   if (req.method === 'GET' && p === '/api/events') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
@@ -425,17 +430,17 @@ data: ${JSON.stringify({ readOnly: !!device.readOnly, label: device.label })}
   }
   if (req.method === 'POST' && p === '/api/cmd') {
     if (req.headers['x-telecloud'] !== '1') return send(res, 400, { error: 'bad request' }); // a page on another site can't send this header
-    if (device.readOnly) return send(res, 403, { error: 'This device can only watch' });
+    if (device.readOnly) return send(res, 403, { error: tx('This device can only watch') });
     const b = buckets.get(device.id) || { n: 0, at: Date.now() };
     if (Date.now() - b.at > 1000) { b.n = 0; b.at = Date.now(); }
-    if (++b.n > 15) { buckets.set(device.id, b); return send(res, 429, { error: 'Too many commands' }); }
+    if (++b.n > 15) { buckets.set(device.id, b); return send(res, 429, { error: tx('Too many commands') }); }
     buckets.set(device.id, b);
     const body = await readJson(req);
     const cmd = String(body?.cmd || '');
     if (!COMMANDS.has(cmd)) return send(res, 400, { error: 'Unknown command' });
     const args = validArgs(cmd, body.args);
     if (!args) return send(res, 400, { error: 'Bad value' });
-    return toWindow(cmd, args, device) ? send(res, 200, { ok: true }) : send(res, 503, { error: 'TeleCloud has no window open' });
+    return toWindow(cmd, args, device) ? send(res, 200, { ok: true }) : send(res, 503, { error: tx('TeleCloud has no window open') });
   }
   return send(res, 404, { error: 'not found' });
 }

@@ -9,6 +9,7 @@ import './styles/themes.css';
 import App from './App';
 import FloatingLyrics from './components/FloatingLyrics';
 import './styles/floating.css';
+import { Relabel } from './i18n';
 import pkg from '../package.json';
 
 // TeleCloud Beta looks its own: the name on the taskbar, a blue-violet mark, a Beta tag
@@ -23,6 +24,6 @@ if (floating) document.documentElement.classList.add('floating-lyrics');
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    {floating ? <FloatingLyrics /> : <App />}
+    {floating ? <Relabel><FloatingLyrics /></Relabel> : <App />}
   </React.StrictMode>
 );

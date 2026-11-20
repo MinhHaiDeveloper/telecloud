@@ -5,6 +5,7 @@ import SongList from './SongList';
 import Cover from './Cover';
 import ArtistPicture from './ArtistPicture';
 import Icon from './Icon';
+import { t } from '../i18n';
 
 // Highlight matched text
 const HighlightText = ({ text, highlight }) => {
@@ -49,20 +50,20 @@ const SearchView = ({ searchQuery, musicFiles, playlists, onNavClick, setSelecte
   return (
     <>
       <div className="page-head">
-        <h2>Results for “{searchQuery}”</h2>
-        <span className="sub">{results.songs.length.toLocaleString()} tracks · {results.albums.length} albums · {results.artists.length} artists</span>
+        <h2>{t('Results for “{searchQuery}', { searchQuery })}”</h2>
+        <span className="sub">{t('{length} tracks · {length2} albums · {length3} artists', { length: results.songs.length.toLocaleString(), length2: results.albums.length, length3: results.artists.length })}</span>
       </div>
 
       {nothing && (
         <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>
           <Icon name="search" style={{ width: 36, height: 36, marginBottom: 10 }} />
-          <div>Nothing matches “{searchQuery}”. Try an artist, album or track title.</div>
+          <div>{t('Nothing matches “{searchQuery}”. Try an artist, album or track title.', { searchQuery })}</div>
         </div>
       )}
 
       {results.albums.length > 0 && (
         <section className="search-section">
-          <div className="section-head"><span>Albums</span></div>
+          <div className="section-head"><span>{t('Albums')}</span></div>
           <div className="h-scroll">
             {results.albums.slice(0, 20).map(a => (
               <button key={a.key} className="tile" onClick={() => openAlbum(a)}>
@@ -77,20 +78,20 @@ const SearchView = ({ searchQuery, musicFiles, playlists, onNavClick, setSelecte
 
       {(results.artists.length > 0 || results.playlists.length > 0) && (
         <section className="search-section">
-          <div className="section-head"><span>Artists & playlists</span></div>
+          <div className="section-head"><span>{t('Artists & playlists')}</span></div>
           <div className="h-scroll" style={{ gridAutoColumns: 130 }}>
             {results.artists.slice(0, 20).map(a => (
               <button key={`a-${a.name}`} className="tile round" onClick={() => { setSearchQuery(''); openArtist?.(a.name); }}>
                 <ArtistPicture name={a.name} file={a.file} />
                 <b><HighlightText text={a.name} highlight={q} /></b>
-                <span>Artist · {trackCount(countUnique ? countUnique(a.songs) : a.songs.length)}</span>
+                <span>{t('Artist · {trackCount}', { trackCount: trackCount(countUnique ? countUnique(a.songs) : a.songs.length) })}</span>
               </button>
             ))}
             {results.playlists.map(p => (
               <button key={`p-${p.id}`} className="tile" onClick={() => { setSearchQuery(''); onOpenPlaylist(p.id); }}>
                 <Cover file={p.songs?.[0]} />
                 <b><HighlightText text={p.name} highlight={q} /></b>
-                <span>Playlist · {p.songs?.length || 0} tracks</span>
+                <span>{t('Playlist · {value} tracks', { value: p.songs?.length || 0 })}</span>
               </button>
             ))}
           </div>
@@ -101,8 +102,8 @@ const SearchView = ({ searchQuery, musicFiles, playlists, onNavClick, setSelecte
         <section className="search-section">
           <SongList
             {...songListProps}
-            title="Tracks"
-            subtitle={results.songs.length > 100 ? `Showing 100 of ${results.songs.length.toLocaleString()}` : `${results.songs.length} tracks`}
+            title={t('Tracks')}
+            subtitle={results.songs.length > 100 ? t('Showing 100 of {length}', { length: results.songs.length.toLocaleString() }) : t('{length} tracks', { length: results.songs.length })}
             musicFiles={results.songs.slice(0, 100)}
           />
         </section>

@@ -4,9 +4,10 @@ import WordLyricsGuide, { GUIDE_SEEN } from './WordLyricsGuide';
 import { Progress, Toggle, Callout } from './ui';
 import { ipcOn, ipcOff } from '../utils/ipc';
 import { parseWordLrc, toWordLrc, linesOf, fmtTime, evenWords, windowOf, splitWords } from '../utils/wordLrc';
+import { t } from '../i18n';
 
 const mb = (n) => `${Math.round(n / 1048576)} MB`;
-const STAGE = { fetch: 'Downloading the track from TeleCloud', decode: 'Reading the song', voice: 'Taking the music away', words: 'Fitting the words' };
+const STAGE = { get fetch() { return t('Downloading the track from TeleCloud'); }, get decode() { return t('Reading the song'); }, get voice() { return t('Taking the music away'); }, get words() { return t('Fitting the words'); } };
 // how far each stage takes the bar, with and without voice separation
 const SPAN = { true: { fetch: [0, 0], decode: [0, 4], voice: [4, 70], words: [70, 100] }, false: { fetch: [0, 0], decode: [0, 10], words: [10, 100] } };
 
@@ -80,14 +81,14 @@ const WordLyricsEditor = ({ text, onEdit, onEditText, file, isThis, isPlaying, p
   // ---- copy and paste word times: a chorus or a loop sung the same way again gets the same timing
   const copy = (cut = false) => {
     const picked = lines.slice(r0, r1 + 1);
-    if (!picked.some(l => l.words?.length)) { say('Nothing to copy: these lines have no word times'); return; }
+    if (!picked.some(l => l.words?.length)) { say(t('Nothing to copy: these lines have no word times')); return; }
     clipboard = picked.map(l => (l.words?.length ? { words: l.words.map(w => ({ dt: w.time - l.time, text: w.text })), end: l.end != null ? l.end - l.time : null } : null));
     const n = clipboard.filter(Boolean).length;
     if (cut) change((ls) => { for (let i = r0; i <= r1; i++) { ls[i].words = null; ls[i].end = null; } });
-    say(`${cut ? 'Cut' : 'Copied'} the word times of ${n} line${n === 1 ? '' : 's'}. Pick where they go and press Ctrl+V.`);
+    say(t('{value} the word times of {n} {n|line|lines}. Pick where they go and press Ctrl+V.', { value: cut ? t('Cut') : t('Copied'), n }));
   };
   const paste = () => {
-    if (!clipboard) { say('Copy the word times of a line first (Ctrl+C)'); return; }
+    if (!clipboard) { say(t('Copy the word times of a line first (Ctrl+C)')); return; }
     // one copied line goes onto every picked line; several go onto the lines from the first picked one down
     const plan = clipboard.length === 1 ? Array.from({ length: r1 - r0 + 1 }, (_, j) => [r0 + j, clipboard[0]]) : clipboard.map((c, j) => [r0 + j, c]);
     // other words: the times would not fit, so those lines are left as they are
@@ -102,7 +103,7 @@ const WordLyricsEditor = ({ text, onEdit, onEditText, file, isThis, isPlaying, p
         }
       });
     }
-    say(`Pasted onto ${done} line${done === 1 ? '' : 's'}${skipped ? `; ${skipped} skipped: ${skipped === 1 ? 'its words differ' : 'their words differ'} from the copied line` : ''}. Ctrl+Z undoes it.`);
+    say(t('Pasted onto {done} {done|line|lines}{value}. Ctrl+Z undoes it.', { done, value: skipped ? t('; {skipped} skipped: {skipped|its words differ|their words differ} from the copied line', { skipped }) : '' }));
   };
   const setWordText = (i, k, t) => change((ls) => {
     const l = ls[i];
@@ -279,8 +280,8 @@ const WordLyricsEditor = ({ text, onEdit, onEditText, file, isThis, isPlaying, p
     running.current = false;
     setJob(null);
     if (!r?.ok) {
-      if (r?.error === 'cancelled') { setNote({ tone: 'info', text: 'Stopped. Nothing was changed.' }); return; }
-      setNote({ tone: r?.needs ? 'warn' : 'danger', text: r?.error || 'Cadence could not time this song', needs: r?.needs });
+      if (r?.error === 'cancelled') { setNote({ tone: 'info', text: t('Stopped. Nothing was changed.') }); return; }
+      setNote({ tone: r?.needs ? 'warn' : 'danger', text: r?.error || t('Cadence could not time this song'), needs: r?.needs });
       return;
     }
     // match Cadence's lines to ours in order (it skips lines without text, as we do here)
@@ -299,13 +300,13 @@ const WordLyricsEditor = ({ text, onEdit, onEditText, file, isThis, isPlaying, p
     setUnsure(nowUnsure);
     const s = r.stats || {};
     const secs = Math.round((s.totalMs || 0) / 1000);
-    setNote({ tone: 'ok', text: `${timed} of ${ls.length} lines timed in ${secs} s${s.separate ? '' : ' (full mix)'}.${nowUnsure.size ? ` ${nowUnsure.size} kept their line time: they are marked Check.` : ''} Play it through and fix any word that is off.` });
+    setNote({ tone: 'ok', text: t('{timed} of {length} lines timed in {secs} s{value}.{value2} Play it through and fix any word that is off.', { timed, length: ls.length, secs, value: s.separate ? '' : t(' (full mix)'), value2: nowUnsure.size ? t(' {size} kept their line time: they are marked Check.', { size: nowUnsure.size }) : '' }) });
   };
   const download = async (id, thenRun) => {
     setNote(null);
     const r = await window.ipcRenderer.invoke('cadence:download', id);
     setDl(null);
-    if (!r?.ok) { if (r?.error !== 'cancelled') setNote({ tone: 'danger', text: `Could not download: ${r?.error}` }); return; }
+    if (!r?.ok) { if (r?.error !== 'cancelled') setNote({ tone: 'danger', text: t('Could not download: {error}', { error: r?.error }) }); return; }
     if (thenRun) runCadence();
   };
   const jobPct = job ? (() => { const span = SPAN[!!(separate && models?.separation)][job.stage] || [0, 100]; return span[0] + (span[1] - span[0]) * (job.done || 0); })() : 0;
@@ -317,32 +318,32 @@ const WordLyricsEditor = ({ text, onEdit, onEditText, file, isThis, isPlaying, p
           <Icon name="sparkle" />
           <div className="wle-cad-text">
             <b>Cadence</b>
-            {note?.tone === 'ok' ? <span className="ok-text">{note.text}</span> : <span>{!hasLineTimes ? 'Sync the lines first (Sync tab): Cadence fits the words inside each line\'s time.'
-                : models && !models.ready ? `Works out when each word is sung, on this computer. It needs the English and other languages pack (${mb(pack('en')?.size || 0)}).`
-                  : `Works out when each word is sung, on this computer: about a minute a song${cloudOnly ? ', once the track has downloaded from TeleCloud' : ''}. ${timedCount ? `${timedCount} of ${lines.length} lines have word times now.` : 'No word times yet.'}`}</span>}
+            {note?.tone === 'ok' ? <span className="ok-text">{note.text}</span> : <span>{!hasLineTimes ? t('Sync the lines first (Sync tab): Cadence fits the words inside each line\'s time.')
+                : models && !models.ready ? t('Works out when each word is sung, on this computer. It needs the English and other languages pack ({mb}).', { mb: mb(pack('en')?.size || 0) })
+                  : t('Works out when each word is sung, on this computer: about a minute a song{value}. {value2}', { value: cloudOnly ? t(', once the track has downloaded from TeleCloud') : '', value2: timedCount ? t('{timedCount} of {length} lines have word times now.', { timedCount, length: lines.length }) : t('No word times yet.') })}</span>}
           </div>
-          {!job && models?.separation && <span className="wle-sep" title="Takes the music away first: better under loud music, slower"><Toggle checked={separate} onChange={setSeparate} label="Voice separation" /></span>}
+          {!job && models?.separation && <span className="wle-sep" title={t('Takes the music away first: better under loud music, slower')}><Toggle checked={separate} onChange={setSeparate} label={t('Voice separation')} /></span>}
           {job
-            ? <button className="btn-ghost" onClick={() => window.ipcRenderer.invoke('wordTiming:cancel')}>Stop</button>
+            ? <button className="btn-ghost" onClick={() => window.ipcRenderer.invoke('wordTiming:cancel')}>{t('Stop')}</button>
             : models && !models.ready
-              ? (dl?.pack === 'en' ? <button className="btn-ghost" onClick={() => window.ipcRenderer.invoke('cadence:cancel')}>Cancel</button>
-                : <button className="btn-primary sm-btn" disabled={!!dl} onClick={() => download('en', hasLineTimes)}><Icon name="download" />Download {mb(pack('en')?.size || 0)}</button>)
+              ? (dl?.pack === 'en' ? <button className="btn-ghost" onClick={() => window.ipcRenderer.invoke('cadence:cancel')}>{t('Cancel')}</button>
+                : <button className="btn-primary sm-btn" disabled={!!dl} onClick={() => download('en', hasLineTimes)}><Icon name="download" />{t('Download {mb}', { mb: mb(pack('en')?.size || 0) })}</button>)
               : (
                 <>
-                  {timedCount > 0 && timedCount < lines.length && <button className="btn-ghost" disabled={!hasLineTimes} onClick={() => runCadence({ only: 'missing' })} title="Keep the words already timed">Only untimed lines</button>}
-                  <button className="btn-primary sm-btn" disabled={!hasLineTimes || !models} onClick={() => runCadence()}><Icon name="sparkle" />{timedCount ? 'Time all words again' : 'Time the words'}</button>
+                  {timedCount > 0 && timedCount < lines.length && <button className="btn-ghost" disabled={!hasLineTimes} onClick={() => runCadence({ only: 'missing' })} title={t('Keep the words already timed')}>{t('Only untimed lines')}</button>}
+                  <button className="btn-primary sm-btn" disabled={!hasLineTimes || !models} onClick={() => runCadence()}><Icon name="sparkle" />{timedCount ? t('Time all words again') : t('Time the words')}</button>
                 </>
               )}
         </div>
         {job && (
           <div className="wle-job">
-            <span>{STAGE[job.stage] || 'Working'}…{job.stage === 'fetch' ? '' : ` ${Math.floor(jobPct)} %`}</span>
+            <span>{STAGE[job.stage] || t('Working')}…{job.stage === 'fetch' ? '' : ` ${Math.floor(jobPct)} %`}</span>
             <Progress value={jobPct} />
           </div>
         )}
         {dl && (
           <div className="wle-job">
-            <span>Downloading {pack(dl.pack)?.title}… {mb(dl.done)} of {mb(dl.total)}</span>
+            <span>{t('Downloading {title}… {mb} of {mb2}', { title: pack(dl.pack)?.title, mb: mb(dl.done), mb2: mb(dl.total) })}</span>
             <Progress value={(dl.done / dl.total) * 100} />
           </div>
         )}
@@ -351,8 +352,8 @@ const WordLyricsEditor = ({ text, onEdit, onEditText, file, isThis, isPlaying, p
             {note.text}
             {note.needs && (
               <span className="wle-needs">
-                <button className="btn-primary sm-btn" disabled={!!dl} onClick={() => download(note.needs, true)}><Icon name="download" />Download {pack(note.needs)?.title} ({mb(pack(note.needs)?.size || 0)})</button>
-                {note.needs === 'ja' && <button className="btn-ghost" onClick={() => runCadence({ withoutJapanese: true })}>Use the English model</button>}
+                <button className="btn-primary sm-btn" disabled={!!dl} onClick={() => download(note.needs, true)}><Icon name="download" />{t('Download {title}', { title: pack(note.needs)?.title })} ({mb(pack(note.needs)?.size || 0)})</button>
+                {note.needs === 'ja' && <button className="btn-ghost" onClick={() => runCadence({ withoutJapanese: true })}>{t('Use the English model')}</button>}
               </span>
             )}
           </Callout>
@@ -360,7 +361,7 @@ const WordLyricsEditor = ({ text, onEdit, onEditText, file, isThis, isPlaying, p
       </div>
 
       <div className="wle-lines" ref={listRef}>
-        {!lines.length && <div className="lyr-empty">{/^\s*(<\?xml[^>]*>\s*)?<tt[\s>]/i.test(text || '') ? 'These lyrics are TTML: they play word by word as they are, but are edited as text in the Sync tab.' : 'No synced lines yet. Sync the lines in the Sync tab first.'}</div>}
+        {!lines.length && <div className="lyr-empty">{/^\s*(<\?xml[^>]*>\s*)?<tt[\s>]/i.test(text || '') ? t('These lyrics are TTML: they play word by word as they are, but are edited as text in the Sync tab.') : t('No synced lines yet. Sync the lines in the Sync tab first.')}</div>}
         {lines.map((l, i) => (
           <div
             key={i} data-i={i}
@@ -377,7 +378,7 @@ const WordLyricsEditor = ({ text, onEdit, onEditText, file, isThis, isPlaying, p
                 ? l.words.map((w, k) => <span key={k} className={`wle-w ${i === playing.line && k === playing.word ? 'now' : ''} ${i === playing.line && k < playing.word ? 'past' : ''}`}>{w.text}</span>)
                 : <span className="wle-plain">{l.text || '…'}</span>}
             </span>
-            {!l.words?.length && l.text.trim() && <span className={`badge mono ${unsure.has(l.time) ? 'b-cached' : 'b-local'}`}>{unsure.has(l.time) ? 'Check' : 'Line only'}</span>}
+            {!l.words?.length && l.text.trim() && <span className={`badge mono ${unsure.has(l.time) ? 'b-cached' : 'b-local'}`}>{unsure.has(l.time) ? t('Check') : t('Line only')}</span>}
           </div>
         ))}
       </div>
@@ -386,18 +387,18 @@ const WordLyricsEditor = ({ text, onEdit, onEditText, file, isThis, isPlaying, p
       {line && (
         <div className="wle-detail">
           <div className="wle-dhead">
-            <span className="mono">{r1 > r0 ? `Lines ${r0 + 1}–${r1 + 1}` : `Line ${sel + 1}`} · {fmtTime(line.time)}</span>
+            <span className="mono">{r1 > r0 ? t('Lines {value}–{value2}', { value: r0 + 1, value2: r1 + 1 }) : t('Line {value}', { value: sel + 1 })} · {fmtTime(line.time)}</span>
             {wordDraft ? (
               <form className="wle-wordedit" onSubmit={(e) => { e.preventDefault(); setWordText(sel, wordDraft.k, wordDraft.text); setWordDraft(null); rootRef.current?.focus(); }}>
-                <span>Word {wordDraft.k + 1}</span>
-                <input className="input sm" autoFocus value={wordDraft.text} aria-label="Word" onChange={(e) => setWordDraft({ ...wordDraft, text: e.target.value })}
+                <span>{t('Word {value}', { value: wordDraft.k + 1 })}</span>
+                <input className="input sm" autoFocus value={wordDraft.text} aria-label={t('Word')} onChange={(e) => setWordDraft({ ...wordDraft, text: e.target.value })}
                   onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.nativeEvent.stopImmediatePropagation?.(); setWordDraft(null); rootRef.current?.focus(); } }} />
-                <button className="btn-primary sm-btn" type="submit">Done</button>
+                <button className="btn-primary sm-btn" type="submit">{t('Done')}</button>
               </form>
             ) : <b>{line.text || '…'}</b>}
             {flash && !tap && <span className="wle-flash">{flash}</span>}
-            {tap && <span className="wle-tapping">Tapping: press Space on each word, then once more at the end · Esc stops</span>}
-            <button className="btn-ghost sm wle-guidebtn" onClick={() => setGuide(true)} title="Steps, the ways to fix a word, and every key"><Icon name="info" />How it works</button>
+            {tap && <span className="wle-tapping">{t('Tapping: press Space on each word, then once more at the end · Esc stops')}</span>}
+            <button className="btn-ghost sm wle-guidebtn" onClick={() => setGuide(true)} title={t('Steps, the ways to fix a word, and every key')}><Icon name="info" />{t('How it works')}</button>
           </div>
           <div className="wle-strip" ref={stripRef} onPointerDown={(e) => { if (e.target === stripRef.current || e.target.classList.contains('wle-tick')) playFrom(timeAt(e.clientX)); }}>
             {ticks.map(t => <i key={t} className={`wle-tick ${Math.abs(t - Math.round(t)) < 1e-6 ? 'sec' : ''}`} style={{ left: xOf(t) }}>{Math.abs(t - Math.round(t)) < 1e-6 ? <em>{fmtTime(t).slice(0, 5)}</em> : null}</i>)}
@@ -414,24 +415,24 @@ const WordLyricsEditor = ({ text, onEdit, onEditText, file, isThis, isPlaying, p
                 </div>
               );
             })}
-            {line.words?.length > 0 && <span className={`wle-endgrip ${selWord === line.words.length ? 'sel' : ''}`} style={{ left: xOf(shown(line.words.length)) }} onPointerDown={beginDrag(line.words.length)} title="Where the line ends" />}
+            {line.words?.length > 0 && <span className={`wle-endgrip ${selWord === line.words.length ? 'sel' : ''}`} style={{ left: xOf(shown(line.words.length)) }} onPointerDown={beginDrag(line.words.length)} title={t('Where the line ends')} />}
             {isThis && pos != null && pos >= wa && pos <= wb && <i className="wle-head" style={{ left: xOf(pos) }} />}
-            {!line.words?.length && <div className="wle-nowords">No word times on this line. Tap them in, spread them evenly, or let Cadence time the song.</div>}
+            {!line.words?.length && <div className="wle-nowords">{t('No word times on this line. Tap them in, spread them evenly, or let Cadence time the song.')}</div>}
           </div>
           <div className="lyr-tools wle-tools">
-            <button className="btn-primary sm-btn" onClick={() => (tap ? setTap(null) : startTap(sel))} disabled={!line.text.trim()} title="Plays the line; press Space as each word starts">{tap ? 'Stop tapping' : 'Tap the words'}</button>
-            <button className="btn-ghost sm" onClick={() => playLine(sel)} title="Play from this line (or double-click it)">Play line</button>
-            <span>Line</span>
-            <button className="btn-ghost sm" onClick={() => shiftLine(sel, -0.1)} title="The line and its words 0.1 s earlier">−0.1s</button>
-            <button className="btn-ghost sm" onClick={() => shiftLine(sel, 0.1)} title="The line and its words 0.1 s later">+0.1s</button>
-            <button className="btn-ghost sm" onClick={() => evenLine(sel)} disabled={!line.text.trim()} title="Spread the words over the line by their letters">Spread evenly</button>
-            <button className="btn-ghost sm" onClick={() => clearLine(sel)} disabled={!line.words} title="Back to a line time only">Clear words</button>
-            <button className="btn-ghost sm" onClick={() => copy()} title="Copy the word times of the picked lines (Ctrl+C; Shift+click picks several)">Copy</button>
-            <button className="btn-ghost sm" onClick={paste} disabled={!clipboard} title="Put the copied word times on the picked lines, from their own line time (Ctrl+V)">Paste</button>
-            {onEditText && <button className="btn-ghost sm" onClick={() => onEditText(line.time)} title="Change the words of this line in the Sync tab">Edit text</button>}
-            <span>All</span>
-            <button className="btn-ghost sm" onClick={() => shiftAll(-0.05)} title="Every line and word 0.05 s earlier">−0.05s</button>
-            <button className="btn-ghost sm" onClick={() => shiftAll(0.05)} title="Every line and word 0.05 s later">+0.05s</button>
+            <button className="btn-primary sm-btn" onClick={() => (tap ? setTap(null) : startTap(sel))} disabled={!line.text.trim()} title={t('Plays the line; press Space as each word starts')}>{tap ? t('Stop tapping') : t('Tap the words')}</button>
+            <button className="btn-ghost sm" onClick={() => playLine(sel)} title={t('Play from this line (or double-click it)')}>{t('Play line')}</button>
+            <span>{t('Line')}</span>
+            <button className="btn-ghost sm" onClick={() => shiftLine(sel, -0.1)} title={t('The line and its words 0.1 s earlier')}>−0.1s</button>
+            <button className="btn-ghost sm" onClick={() => shiftLine(sel, 0.1)} title={t('The line and its words 0.1 s later')}>+0.1s</button>
+            <button className="btn-ghost sm" onClick={() => evenLine(sel)} disabled={!line.text.trim()} title={t('Spread the words over the line by their letters')}>{t('Spread evenly')}</button>
+            <button className="btn-ghost sm" onClick={() => clearLine(sel)} disabled={!line.words} title={t('Back to a line time only')}>{t('Clear words')}</button>
+            <button className="btn-ghost sm" onClick={() => copy()} title={t('Copy the word times of the picked lines (Ctrl+C; Shift+click picks several)')}>{t('Copy')}</button>
+            <button className="btn-ghost sm" onClick={paste} disabled={!clipboard} title={t('Put the copied word times on the picked lines, from their own line time (Ctrl+V)')}>{t('Paste')}</button>
+            {onEditText && <button className="btn-ghost sm" onClick={() => onEditText(line.time)} title={t('Change the words of this line in the Sync tab')}>{t('Edit text')}</button>}
+            <span>{t('All')}</span>
+            <button className="btn-ghost sm" onClick={() => shiftAll(-0.05)} title={t('Every line and word 0.05 s earlier')}>−0.05s</button>
+            <button className="btn-ghost sm" onClick={() => shiftAll(0.05)} title={t('Every line and word 0.05 s later')}>+0.05s</button>
           </div>
         </div>
       )}

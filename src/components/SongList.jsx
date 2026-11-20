@@ -5,25 +5,26 @@ import SongActions from './songActions';
 import MetaLinks from './MetaLinks';
 import { formatTime, qualityOf, storageOf, mqaOf } from '../utils/audio';
 import { Select } from './ui';
-import { SOURCE_HELP, QUALITY_HELP, PLAYS_HELP } from '../utils/badges';
+import { SOURCE_HELP, QUALITY_HELP, playsHelp } from '../utils/badges';
 import useRemembered from '../hooks/useRemembered';
+import { t } from '../i18n';
 
 const SORTS = [
-  { id: 'latest', label: 'Recently added' },
-  { id: 'name', label: 'Title' },
-  { id: 'name_ignore_the', label: "Title (ignore 'The')" },
-  { id: 'artist', label: 'Artist' },
-  { id: 'album', label: 'Album' },
-  { id: 'quality', label: 'Quality' },
-  { id: 'rate', label: 'Sample rate' },
-  { id: 'bits', label: 'Bit depth' },
-  { id: 'plays', label: 'Most played' },
+  { id: 'latest', get label() { return t('Recently added'); } },
+  { id: 'name', get label() { return t('Title'); } },
+  { id: 'name_ignore_the', get label() { return t('Title (ignore \'The\')'); } },
+  { id: 'artist', get label() { return t('Artist'); } },
+  { id: 'album', get label() { return t('Album'); } },
+  { id: 'quality', get label() { return t('Quality'); } },
+  { id: 'rate', get label() { return t('Sample rate'); } },
+  { id: 'bits', get label() { return t('Bit depth'); } },
+  { id: 'plays', get label() { return t('Most played'); } },
 ];
 
 const SRC_BADGE = {
-  local: <span className="badge b-local" key="l">Local</span>,
-  cloud: <span className="badge b-cloud" key="c">Cloud</span>,
-  cached: <span className="badge b-cached" key="h">Cached</span>,
+  get local() { return <span className="badge b-local" key="l">{t('Local')}</span>; },
+  get cloud() { return <span className="badge b-cloud" key="c">{t('Cloud')}</span>; },
+  get cached() { return <span className="badge b-cached" key="h">{t('Cached')}</span>; },
 };
 
 // Rows have a fixed height, so only the ones near the viewport are rendered (libraries can hold 10k+ tracks)
@@ -96,19 +97,19 @@ const HeaderInfo = ({ label, className = '', children }) => {
 
 /** What Local / Cloud / Cached mean */
 const SourceInfo = () => (
-  <HeaderInfo label="What do the source tags mean?">
-    <b>Source</b>
+  <HeaderInfo label={t('What do the source tags mean?')}>
+    <b>{t('Source')}</b>
     <HelpRows rows={SOURCE_HELP} />
-    <b>Quality</b>
+    <b>{t('Quality')}</b>
     <HelpRows rows={QUALITY_HELP} />
   </HeaderInfo>
 );
 
 /** When a listen counts as a play */
 const PlaysInfo = () => (
-  <HeaderInfo label="How are plays counted?" className="plays-help">
-    <b>Plays</b>
-    {PLAYS_HELP.map(text => <div className="plays-help-row" key={text}>{text}</div>)}
+  <HeaderInfo label={t('How are plays counted?')} className="plays-help">
+    <b>{t('Plays')}</b>
+    {playsHelp().map(text => <div className="plays-help-row" key={text}>{text}</div>)}
   </HeaderInfo>
 );
 
@@ -188,8 +189,8 @@ const SongList = ({
     const counts = new Map();
     musicFiles.forEach(f => qualityKeys(f).forEach(k => counts.set(k, (counts.get(k) || 0) + 1)));
     const label = (name, key) => ({ value: key, label: name, hint: counts.get(key).toLocaleString() });
-    const out = [{ value: 'all', label: 'All quality', hint: musicFiles.length.toLocaleString() }];
-    [['hires', 'Hi-Res'], ['lossless', 'Lossless'], ['lossy', 'Lossy'], ['dsd', 'DSD'], ['mqa', 'MQA']].forEach(([k, n]) => { if (counts.has(k)) out.push(label(n, k)); });
+    const out = [{ value: 'all', label: t('All quality'), hint: musicFiles.length.toLocaleString() }];
+    [['hires', 'Hi-Res'], ['lossless', t('Lossless')], ['lossy', t('Lossy')], ['dsd', 'DSD'], ['mqa', 'MQA']].forEach(([k, n]) => { if (counts.has(k)) out.push(label(n, k)); });
     const numbered = (prefix, name) => [...counts.keys()].filter(k => k[0] === prefix).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))).forEach(k => out.push(label(name(Number(k.slice(1))), k)));
     numbered('b', n => `${n}-bit`);
     numbered('r', rateLabel);
@@ -206,8 +207,8 @@ const SongList = ({
     switch (sortOption) {
       case 'name': return list.sort((a, b) => titleOf(a).localeCompare(titleOf(b)));
       case 'name_ignore_the': return list.sort((a, b) => noThe(a).localeCompare(noThe(b)));
-      case 'artist': return list.sort((a, b) => (a.metadata?.artist || 'Unknown').localeCompare(b.metadata?.artist || 'Unknown'));
-      case 'album': return list.sort((a, b) => (a.metadata?.album || 'Unknown').localeCompare(b.metadata?.album || 'Unknown'));
+      case 'artist': return list.sort((a, b) => (a.metadata?.artist || t('Unknown')).localeCompare(b.metadata?.artist || t('Unknown')));
+      case 'album': return list.sort((a, b) => (a.metadata?.album || t('Unknown')).localeCompare(b.metadata?.album || t('Unknown')));
       case 'quality': return list.sort((a, b) => qualityRank(b) - qualityRank(a));
       case 'rate': return list.sort((a, b) => (qualityOf(b).rate || 0) - (qualityOf(a).rate || 0));
       case 'bits': return list.sort((a, b) => (qualityOf(b).bits || 0) - (qualityOf(a).bits || 0));
@@ -303,15 +304,15 @@ const SongList = ({
       {(title || showSort) && (
         <div className="page-head">
           {title && <h2>{title}</h2>}
-          {onInfoClick && <button className="icon-btn sm" onClick={onInfoClick} title="What do the badges mean?"><Icon name="info" /></button>}
-          <span className="sub">{activeFilter !== 'all' ? `${shown.length.toLocaleString()} of ${musicFiles.length.toLocaleString()} tracks` : subtitle ?? `${musicFiles.length.toLocaleString()} tracks`}</span>
+          {onInfoClick && <button className="icon-btn sm" onClick={onInfoClick} title={t('What do the badges mean?')}><Icon name="info" /></button>}
+          <span className="sub">{activeFilter !== 'all' ? t('{length} of {length2} tracks', { length: shown.length.toLocaleString(), length2: musicFiles.length.toLocaleString() }) : subtitle ?? t('{length} tracks', { length: musicFiles.length.toLocaleString() })}</span>
           {headerActions}
           {showSort && (
             <div className="end" ref={sortRef}>
               {qualityOptions.length > 0 && <Select variant="ghost" icon="eq" align="right" value={activeFilter} options={qualityOptions} onChange={setQualityFilter} />}
               <button className="btn-ghost" onClick={() => setSortOpen(o => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                 <Icon name="sort" style={{ width: 15, height: 15 }} />
-                {SORTS.find(s => s.id === sortOption)?.label || 'Default'}
+                {SORTS.find(s => s.id === sortOption)?.label || t('Default')}
               </button>
               {sortOpen && (
                 <div className="menu" style={{ right: 0, top: 'calc(100% + 6px)' }}>
@@ -329,19 +330,19 @@ const SongList = ({
 
       {toolbar}
       {sorted.length === 0 ? (
-        <div className="empty">No tracks here yet.</div>
+        <div className="empty">{t('No tracks here yet.')}</div>
       ) : (
         <>
           <div className="track-head">
-            <span className="t-num">#</span><span>Title</span><span className="c-album">Album</span>
-            <span>Quality</span><span className="c-src src-head">Source<SourceInfo /></span><span className="c-plays src-head">Plays<PlaysInfo /></span><span style={{ textAlign: 'right' }}>Time</span><span />
+            <span className="t-num">#</span><span>{t('Title')}</span><span className="c-album">{t('Album')}</span>
+            <span>{t('Quality')}</span><span className="c-src src-head">{t('Source')}<SourceInfo /></span><span className="c-plays src-head">{t('Plays')}<PlaysInfo /></span><span style={{ textAlign: 'right' }}>{t('Time')}</span><span />
           </div>
           <div className="track-rows" ref={rowsRef} style={{ paddingTop: start * ROW_H, height: items.length * ROW_H }}>
           {items.slice(start, end).map((item) => {
             if (!item.file) {
               return (
                 <div key={`disc-${item.disc}`} className="disc-head">
-                  <span className="disc-ico" aria-hidden="true" /><b>Disc {item.disc}</b><span>{item.count} {item.count === 1 ? 'track' : 'tracks'}</span>
+                  <span className="disc-ico" aria-hidden="true" /><b>{t('Disc {disc}', { disc: item.disc })}</b><span>{item.count} {item.count === 1 ? t('track') : t('tracks')}</span>
                 </div>
               );
             }
@@ -371,11 +372,11 @@ const SongList = ({
                   </div>
                 </div>
                 <span className="t-album c-album">{linkAlbum ? (<MetaLinks file={file} artist={false} />) : (file.metadata?.album || '—')}{linkAlbum && (!file.metadata?.album || file.metadata.album === 'Unknown Album') && '—'}</span>
-                <span className="q-cell"><span className={`badge b-${q.tier} mono`}>{q.label}</span>{mqaOf(file) && <span className={`badge ${mqaOf(file).cls} mono`} title={`${mqaOf(file).label}${mqaOf(file).rate ? `, ${khzText(mqaOf(file).rate)} original` : ''}`}>{mqaOf(file).short}</span>}</span>
-                <span className="t-src c-src" title={file.telegram_message_id && storageNames ? `In ${storageNames.get(String(file.telegram_channel_id)) || 'TeleCloud'}` : undefined}>{storageOf(file).map(s => SRC_BADGE[s])}{ctx.duplicates?.has(file.path) && <span className="badge b-cached" key="dup" title={`Extra copy of ${ctx.duplicates.get(file.path)}`}>Copy</span>}</span>
+                <span className="q-cell"><span className={`badge b-${q.tier} mono`}>{q.label}</span>{mqaOf(file) && <span className={`badge ${mqaOf(file).cls} mono`} title={`${mqaOf(file).label}${mqaOf(file).rate ? t(', {khzText} original', { khzText: khzText(mqaOf(file).rate) }) : ''}`}>{mqaOf(file).short}</span>}</span>
+                <span className="t-src c-src" title={file.telegram_message_id && storageNames ? t('In {storage}', { storage: storageNames.get(String(file.telegram_channel_id)) || 'TeleCloud' }) : undefined}>{storageOf(file).map(s => SRC_BADGE[s])}{ctx.duplicates?.has(file.path) && <span className="badge b-cached" key="dup" title={t('Extra copy of {get}', { get: ctx.duplicates.get(file.path) })}>{t('Copy')}</span>}</span>
                 <span className="c-plays">
                   {ctx.playCounts?.[file.path] > 0 && (
-                    <span className="t-plays" title={`Played ${ctx.playCounts[file.path]} ${ctx.playCounts[file.path] === 1 ? 'time' : 'times'}`}>
+                    <span className="t-plays" title={t('Played {value|# time|# times}', { value: ctx.playCounts[file.path] })}>
                       <Icon name="play" filled />{ctx.playCounts[file.path].toLocaleString()}
                     </span>
                   )}
@@ -385,11 +386,11 @@ const SongList = ({
                   <button
                     className={`${fav ? 'fav' : ''} ${popKey === file.path ? 'pop' : ''}`}
                     onClick={(e) => { e.stopPropagation(); onToggleFavorite(file); setPopKey(null); requestAnimationFrame(() => setPopKey(file.path)); }}
-                    title={fav ? 'Remove from favourites' : 'Add to favourites'}
+                    title={fav ? t('Remove from favourites') : t('Add to favourites')}
                   >
                     <Icon name="heart" />
                   </button>
-                  <button className={menu?.idx === idx ? 'open' : ''} onClick={(e) => openMenu(e, idx)} title="More"><Icon name="more" /></button>
+                  <button className={menu?.idx === idx ? 'open' : ''} onClick={(e) => openMenu(e, idx)} title={t('More')}><Icon name="more" /></button>
                 </span>
               </div>
             );
@@ -400,25 +401,25 @@ const SongList = ({
 
       {menu && menuFile && (
         <div className="menu" ref={menuRef} style={{ position: 'fixed', left: menu.x, top: menu.y, width: 210 }}>
-          {ctx.onPlayNextMany && <button className="menu-item" onClick={() => { const f = menuFile; setMenu(null); ctx.onPlayNextMany([f]); }}><Icon name="next" />Play next</button>}
-          {onQueueMany && <button className="menu-item" onClick={() => { const f = menuFile; setMenu(null); onQueueMany([f]); }}><Icon name="queue" />Add to queue</button>}
+          {ctx.onPlayNextMany && <button className="menu-item" onClick={() => { const f = menuFile; setMenu(null); ctx.onPlayNextMany([f]); }}><Icon name="next" />{t('Play next')}</button>}
+          {onQueueMany && <button className="menu-item" onClick={() => { const f = menuFile; setMenu(null); onQueueMany([f]); }}><Icon name="queue" />{t('Add to queue')}</button>}
           {ctx.onRepeat && (
-            <div className="menu-item menu-chips" role="group" aria-label="Play this track several times in a row">
-              <Icon name="repeat" />Play
-              {[2, 3, 5].map(n => <button key={n} className="chip" onClick={() => { const f = menuFile; setMenu(null); ctx.onRepeat(f, n); }} title={`Play it ${n} times in a row`}>{n}×</button>)}
+            <div className="menu-item menu-chips" role="group" aria-label={t('Play this track several times in a row')}>
+              <Icon name="repeat" />{t('Play')}
+              {[2, 3, 5].map(n => <button key={n} className="chip" onClick={() => { const f = menuFile; setMenu(null); ctx.onRepeat(f, n); }} title={t('Play it {n} times in a row', { n })}>{n}×</button>)}
             </div>
           )}
           <div className="menu-sep" />
-          <button className="menu-item" onClick={() => act(onToggleFavorite)}><Icon name="heart" />{favSet.has(menuFile.path) ? 'Remove favourite' : 'Add to favourites'}</button>
-          {onAddPlaylist && <button className="menu-item" onClick={() => act(onAddPlaylist)}><Icon name="playlist" />Add to playlist</button>}
-          {onCheckSpectrum && <button className="menu-item" onClick={() => act(onCheckSpectrum)}><Icon name="spectrum" />Check spectrum</button>}
-          {onBackupTo && <button className="menu-item" onClick={() => act(onBackupTo)}><Icon name="cloud" />{menuFile.telegram_message_id ? `In ${storageNames?.get(String(menuFile.telegram_channel_id)) || 'TeleCloud'} · move…` : 'Back up to…'}</button>}
-          {ctx.onEditInfo && <button className="menu-item" onClick={() => { const f = menuFile; setMenu(null); ctx.onEditInfo([f]); }}><Icon name="music" />Edit info…</button>}
-          {ctx.onEditLyrics && <button className="menu-item" onClick={() => act(ctx.onEditLyrics)}><Icon name="lyrics" />Lyrics…</button>}
-          {ctx.onEditCover && <button className="menu-item" onClick={() => { const f = menuFile; setMenu(null); ctx.onEditCover([f]); }}><Icon name="image" />Album cover…</button>}
-          {onDownloadSong && <button className="menu-item" onClick={() => act(onDownloadSong)}><Icon name="download" />Download</button>}
-          {ctx.onOpenLocation && menuFile.storage_type !== 'cloud' && !menuFile.path.startsWith('tc://') && <button className="menu-item" onClick={() => act(ctx.onOpenLocation)}><Icon name="folder" />Open file location</button>}
-          {onRemoveFromCloud && menuFile.telegram_message_id && <button className="menu-item danger" onClick={() => { const f = menuFile; setMenu(null); onRemoveFromCloud([f]); }}><Icon name="cloud" />Remove from TeleCloud</button>}
+          <button className="menu-item" onClick={() => act(onToggleFavorite)}><Icon name="heart" />{favSet.has(menuFile.path) ? t('Remove favourite') : t('Add to favourites')}</button>
+          {onAddPlaylist && <button className="menu-item" onClick={() => act(onAddPlaylist)}><Icon name="playlist" />{t('Add to playlist')}</button>}
+          {onCheckSpectrum && <button className="menu-item" onClick={() => act(onCheckSpectrum)}><Icon name="spectrum" />{t('Check spectrum')}</button>}
+          {onBackupTo && <button className="menu-item" onClick={() => act(onBackupTo)}><Icon name="cloud" />{menuFile.telegram_message_id ? t('In {value} · move…', { value: storageNames?.get(String(menuFile.telegram_channel_id)) || 'TeleCloud' }) : t('Back up to…')}</button>}
+          {ctx.onEditInfo && <button className="menu-item" onClick={() => { const f = menuFile; setMenu(null); ctx.onEditInfo([f]); }}><Icon name="music" />{t('Edit info…')}</button>}
+          {ctx.onEditLyrics && <button className="menu-item" onClick={() => act(ctx.onEditLyrics)}><Icon name="lyrics" />{t('Lyrics…')}</button>}
+          {ctx.onEditCover && <button className="menu-item" onClick={() => { const f = menuFile; setMenu(null); ctx.onEditCover([f]); }}><Icon name="image" />{t('Album cover…')}</button>}
+          {onDownloadSong && <button className="menu-item" onClick={() => act(onDownloadSong)}><Icon name="download" />{t('Download')}</button>}
+          {ctx.onOpenLocation && menuFile.storage_type !== 'cloud' && !menuFile.path.startsWith('tc://') && <button className="menu-item" onClick={() => act(ctx.onOpenLocation)}><Icon name="folder" />{t('Open file location')}</button>}
+          {onRemoveFromCloud && menuFile.telegram_message_id && <button className="menu-item danger" onClick={() => { const f = menuFile; setMenu(null); onRemoveFromCloud([f]); }}><Icon name="cloud" />{t('Remove from TeleCloud')}</button>}
           {onDeleteSong && <>
             <div className="menu-sep" />
             <button className="menu-item danger" onClick={() => act(onDeleteSong)}><Icon name="trash" />{deleteLabel}</button>
@@ -427,24 +428,24 @@ const SongList = ({
       )}
 
       {selected.size > 0 && (
-        <div className="select-bar" role="toolbar" aria-label="Selected tracks">
-          <b>{selected.size.toLocaleString()} selected</b>
-          <button className="btn-ghost sm" onClick={() => onPlay(selectedFiles[0], 0, selectedFiles)}><Icon name="play" />Play</button>
-          {ctx.onPlayNextMany && <button className="btn-ghost sm" onClick={() => ctx.onPlayNextMany(selectedFiles)}><Icon name="next" />Play next</button>}
-          {onQueueMany && <button className="btn-ghost sm" onClick={() => onQueueMany(selectedFiles)}><Icon name="queue" />Add to queue</button>}
-          {onAddPlaylist && <button className="btn-ghost sm" onClick={() => onAddPlaylist(selectedFiles[0], selectedFiles)}><Icon name="playlist" />Add to playlist</button>}
-          {ctx.onEditInfo && <button className="btn-ghost sm" onClick={() => ctx.onEditInfo(selectedFiles)}><Icon name="music" />Edit info</button>}
+        <div className="select-bar" role="toolbar" aria-label={t('Selected tracks')}>
+          <b>{t('{size} selected', { size: selected.size.toLocaleString() })}</b>
+          <button className="btn-ghost sm" onClick={() => onPlay(selectedFiles[0], 0, selectedFiles)}><Icon name="play" />{t('Play')}</button>
+          {ctx.onPlayNextMany && <button className="btn-ghost sm" onClick={() => ctx.onPlayNextMany(selectedFiles)}><Icon name="next" />{t('Play next')}</button>}
+          {onQueueMany && <button className="btn-ghost sm" onClick={() => onQueueMany(selectedFiles)}><Icon name="queue" />{t('Add to queue')}</button>}
+          {onAddPlaylist && <button className="btn-ghost sm" onClick={() => onAddPlaylist(selectedFiles[0], selectedFiles)}><Icon name="playlist" />{t('Add to playlist')}</button>}
+          {ctx.onEditInfo && <button className="btn-ghost sm" onClick={() => ctx.onEditInfo(selectedFiles)}><Icon name="music" />{t('Edit info')}</button>}
           {onFavoriteMany && (() => {
             const allFav = selectedFiles.every(f => favSet.has(f.path));
-            return <button className={`icon-btn sm ${allFav ? 'on' : ''}`} onClick={() => onFavoriteMany(selectedFiles, !allFav)} title={allFav ? 'Remove from favourites' : 'Add to favourites'}><Icon name="heart" filled={allFav} /></button>;
+            return <button className={`icon-btn sm ${allFav ? 'on' : ''}`} onClick={() => onFavoriteMany(selectedFiles, !allFav)} title={allFav ? t('Remove from favourites') : t('Add to favourites')}><Icon name="heart" filled={allFav} /></button>;
           })()}
-          {onBackupMany && <button className="icon-btn sm" onClick={() => onBackupMany(selectedFiles, `${selectedFiles.length} selected tracks`)} title="Back up to…"><Icon name="cloud" /></button>}
+          {onBackupMany && <button className="icon-btn sm" onClick={() => onBackupMany(selectedFiles, t('{length} selected tracks', { length: selectedFiles.length }))} title={t('Back up to…')}><Icon name="cloud" /></button>}
           {onRemoveFromCloud && selectedFiles.some(f => f.telegram_message_id) && (
-            <button className="btn-ghost sm danger" onClick={() => onRemoveFromCloud(selectedFiles.filter(f => f.telegram_message_id))}><Icon name="cloud" />Remove from TeleCloud</button>
+            <button className="btn-ghost sm danger" onClick={() => onRemoveFromCloud(selectedFiles.filter(f => f.telegram_message_id))}><Icon name="cloud" />{t('Remove from TeleCloud')}</button>
           )}
           {onDeleteMany && <button className="icon-btn sm danger" onClick={() => onDeleteMany(selectedFiles)} title={deleteLabel}><Icon name="trash" /></button>}
           <span className="sep" />
-          <button className="icon-btn sm" onClick={clearSelection} title="Clear selection (Esc)"><Icon name="close" /></button>
+          <button className="icon-btn sm" onClick={clearSelection} title={t('Clear selection (Esc)')}><Icon name="close" /></button>
         </div>
       )}
     </div>

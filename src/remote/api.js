@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // Talking to TeleCloud from the remote page. Every call names itself with a header a page on
 // another site can't send, and the cookie set when pairing says which device it is.
 export const HEADERS = { 'Content-Type': 'application/json', 'X-TeleCloud': '1' };
@@ -15,7 +16,7 @@ export async function browse(req, { fresh = false } = {}) {
   const hit = cache.get(k);
   if (!fresh && hit && Date.now() - hit.at < KEEP) return hit.data;
   const r = await fetch('/api/browse', { method: 'POST', headers: HEADERS, body: JSON.stringify(req) });
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `TeleCloud answered ${r.status}`);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || t('TeleCloud answered {status}', { status: r.status }));
   const data = await r.json();
   cache.set(k, { at: Date.now(), data });
   if (cache.size > 200) cache.delete(cache.keys().next().value);

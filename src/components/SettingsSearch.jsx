@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import Icon from './Icon';
 import { TOPICS, searchSettings } from '../utils/settingsIndex';
+import { t } from '../i18n';
 
 /** The search box at the top of the Settings menu */
 export const SettingsSearchBox = ({ inputRef, query, setQuery, active, onOpen, onClose }) => (
@@ -10,8 +11,8 @@ export const SettingsSearchBox = ({ inputRef, query, setQuery, active, onOpen, o
       ref={inputRef}
       className="set-search-input"
       value={query}
-      placeholder="Search settings"
-      aria-label="Search settings"
+      placeholder={t('Search settings')}
+      aria-label={t('Search settings')}
       onFocus={onOpen}
       onChange={(e) => { setQuery(e.target.value); onOpen(); }}
       onKeyDown={(e) => {
@@ -20,7 +21,7 @@ export const SettingsSearchBox = ({ inputRef, query, setQuery, active, onOpen, o
         if (e.key === 'Enter') { e.preventDefault(); document.querySelector('.set-results .set-hit')?.click(); }
       }}
     />
-    {active && <button className="set-search-x" onClick={onClose} title="Close the search (Esc)" aria-label="Close the search"><Icon name="close" /></button>}
+    {active && <button className="set-search-x" onClick={onClose} title={t('Close the search (Esc)')} aria-label={t('Close the search')}><Icon name="close" /></button>}
   </div>
 );
 
@@ -39,13 +40,13 @@ export const SettingsResults = ({ query, topics, setTopics, tabs, onPick }) => {
   };
   return (
     <section className="set-results" onKeyDown={keys}>
-      <div className="set-topics" role="group" aria-label="Filter by topic">
+      <div className="set-topics" role="group" aria-label={t('Filter by topic')}>
         {TOPICS.map(t => (
           <button key={t.id} className={`set-topic ${topics.includes(t.id) ? 'on' : ''}`} aria-pressed={topics.includes(t.id)} onClick={() => toggle(t.id)}>{t.label}</button>
         ))}
-        {topics.length > 0 && <button className="set-topic clear" onClick={() => setTopics([])}>Clear</button>}
+        {topics.length > 0 && <button className="set-topic clear" onClick={() => setTopics([])}>{t('Clear')}</button>}
       </div>
-      <div className="set-count">{hits.length ? `${hits.length} setting${hits.length === 1 ? '' : 's'}` : 'Nothing matches. Try another word, or fewer topics.'}</div>
+      <div className="set-count">{hits.length ? t('{length} {length|setting|settings}', { length: hits.length }) : t('Nothing matches. Try another word, or fewer topics.')}</div>
       {groups.map(g => (
         <div key={g.tab.id} className="set-group">
           <h4><Icon name={g.tab.icon} />{g.tab.label}</h4>
@@ -53,7 +54,7 @@ export const SettingsResults = ({ query, topics, setTopics, tabs, onPick }) => {
             {g.items.map(it => (
               <button key={it.title} className="set-hit" onClick={() => onPick(it)}>
                 <span className="set-hit-title">{it.title}</span>
-                {it.section && <span className="set-hit-kind">Section</span>}
+                {it.section && <span className="set-hit-kind">{t('Section')}</span>}
                 <span className="set-hit-topics">{it.topics.map(t => TOPICS.find(x => x.id === t)?.label).filter(Boolean).join(' · ')}</span>
                 <Icon name="chevron" className="set-hit-go" />
               </button>

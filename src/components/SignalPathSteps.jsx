@@ -1,4 +1,5 @@
 import React from 'react';
+import { t } from '../i18n';
 
 // Renders the steps produced by computeSignalPath(); the EQ step doubles as a toggle, and a step
 // whose processing pushes the sound over 0 dBFS blinks red
@@ -12,14 +13,14 @@ const SignalPathSteps = ({ signal, eqEnabled, setEqEnabled, onOpenEq }) => (
         </span>
         {s.key === 'eq' && setEqEnabled ? (
           <label>
-            {eqEnabled ? 'On' : 'Off'}
+            {eqEnabled ? 'On' : t('Off')}
             <input type="checkbox" checked={!!eqEnabled} onChange={(e) => setEqEnabled(e.target.checked)} />
           </label>
         ) : (
           <span className="val mono">{s.value}</span>
         )}
         {s.detail && <small className="sp-detail">{s.detail}</small>}
-        {s.clip && <small className="sp-detail sp-clip">Clipping: lower a boost, or turn on Prevent clipping in Settings &gt; Sound</small>}
+        {s.clip && <small className="sp-detail sp-clip">{t('Clipping: lower a boost, or turn on Prevent clipping in Settings > Sound')}</small>}
       </div>
     ))}
   </div>

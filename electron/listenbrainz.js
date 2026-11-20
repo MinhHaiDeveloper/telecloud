@@ -7,6 +7,7 @@ const { ipcMain, app, safeStorage, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const stats = require('./stats');
+const { tx } = require('./i18n');
 
 const API = process.env.LISTENBRAINZ_API_URL || 'https://api.listenbrainz.org';
 const MB_API = process.env.MUSICBRAINZ_API_URL || 'https://musicbrainz.org/ws/2';
@@ -66,7 +67,7 @@ async function request(url, { method = 'GET', token, body, timeout = 10000 } = {
     }
     return j || {};
   } catch (err) {
-    if (err.name === 'AbortError') throw new Error('ListenBrainz did not answer in time');
+    if (err.name === 'AbortError') throw new Error(tx('ListenBrainz did not answer in time'));
     if (err.message === 'fetch failed') throw new Error("couldn't connect");
     throw err;
   } finally { clearTimeout(t); }
@@ -207,9 +208,9 @@ async function nowPlaying(t) {
 
 async function connect(token) {
   const tk = String(token || '').trim();
-  if (!/^[0-9a-f-]{20,}$/i.test(tk)) throw new Error('That is not a ListenBrainz user token. Copy it from listenbrainz.org/settings.');
+  if (!/^[0-9a-f-]{20,}$/i.test(tk)) throw new Error(tx('That is not a ListenBrainz user token. Copy it from listenbrainz.org/settings.'));
   const r = await request(`${API}/1/validate-token`, { token: tk });
-  if (!r.valid) throw new Error('ListenBrainz does not know this token. Copy it again from listenbrainz.org/settings.');
+  if (!r.valid) throw new Error(tx('ListenBrainz does not know this token. Copy it again from listenbrainz.org/settings.'));
   require('./logger').addSecrets([tk]);
   saveAccount({ user: r.user_name, token: tk, connectedAt: Date.now(), scrobble: true });
   sendPending().catch(() => {});

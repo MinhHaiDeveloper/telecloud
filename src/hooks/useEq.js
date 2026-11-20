@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { flatBands } from '../utils/autoEqMath';
+import { t } from '../i18n';
 
 // EQ state for the whole app: bands, preamp, on/off, AutoEQ choices and an undo history.
 // Persisted to the "eq" store and pushed to the player (af-command makes small, fast updates cheap).
@@ -41,7 +42,7 @@ export default function useEq(device) {
         if (d.profiles && typeof d.profiles === 'object' && !Array.isArray(d.profiles)) profiles.current = d.profiles;
         if (d.perDevice) setPerDevice(true);
       }
-      setHistory({ stack: [{ bands: b, preamp: p, label: 'Saved EQ', ts: Date.now() }], index: 0 });
+      setHistory({ stack: [{ bands: b, preamp: p, label: t('Saved EQ'), ts: Date.now() }], index: 0 });
     }).catch(() => {}).finally(() => setLoaded(true));
   }, []);
 
@@ -62,7 +63,7 @@ export default function useEq(device) {
     setPreamp(Number.isFinite(next.preamp) ? next.preamp : 0);
     setEnabled(!!next.enabled);
     if (next.auto) setAuto(a => ({ ...a, ...next.auto, params: { ...AUTOEQ_DEFAULTS, ...(next.auto.params || {}) } }));
-    setHistory({ stack: [{ bands: next.bands, preamp: next.preamp || 0, label: 'Switched output', ts: Date.now() }], index: 0 });
+    setHistory({ stack: [{ bands: next.bands, preamp: next.preamp || 0, label: t('Switched output'), ts: Date.now() }], index: 0 });
   }, [loaded, perDevice, device]);
 
   // Save shortly after the last change

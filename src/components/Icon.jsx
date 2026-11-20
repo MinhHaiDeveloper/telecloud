@@ -45,6 +45,7 @@ const PATHS = {
   info: <><circle cx="12" cy="12" r="9" /><path d="M12 16v-4M12 8h.01" /></>,
   sort: <path d="M3 6h18M6 12h12M10 18h4" />,
   monitor: <><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8" /></>,
+  globe: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9s1.3-6.4 3.8-9z" /></>,
   check: <path d="M20 6L9 17l-5-5" />,
   alert: <><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></>,
   lyrics: <><path d="M4 6h16M4 10h10M4 14h16M4 18h8" /></>,

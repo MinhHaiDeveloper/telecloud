@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const database = require('./database');
 const covers = require('./covers');
 const { describeWriteError, withWritable } = require('./fileWrite');
+const { tx } = require('./i18n');
 
 const UA = 'TeleCloud/1.0 (https://github.com/MinhHaiDeveloper/telecloud)';
 const IMAGE_EXT = /\.(jpe?g|png)$/i;
@@ -15,11 +16,11 @@ const MAX_SIDE = 1400;
 const MAX_DOWNLOAD = 30 * 1024 * 1024;
 
 const SOURCES = {
-  local: { label: 'This computer', online: false, note: 'Other tracks of the album, and pictures in its folder.' },
+  get local() { return { label: tx('This computer'), online: false, note: tx('Other tracks of the album, and pictures in its folder.') }; },
   itunes: { label: 'Apple Music', online: true },
   deezer: { label: 'Deezer', online: true },
-  qq: { label: 'QQ Music', online: true, note: 'Best for Chinese and other Asian albums.' },
-  musicbrainz: { label: 'MusicBrainz', online: true, note: 'Cover Art Archive. Best for older and rarer releases.' },
+  get qq() { return { label: 'QQ Music', online: true, note: tx('Best for Chinese and other Asian albums.') }; },
+  get musicbrainz() { return { label: 'MusicBrainz', online: true, note: tx('Cover Art Archive. Best for older and rarer releases.') }; },
   lastfm: { label: 'Last.fm', online: true },
 };
 const DEFAULTS = {
@@ -268,7 +269,7 @@ async function download(url) {
   if (!/^https?:\/\//i.test(url)) throw new Error('Bad image address');
   const r = await get(url, { json: false, timeout: 25000 });
   const buf = Buffer.from(await r.arrayBuffer());
-  if (buf.length > MAX_DOWNLOAD) throw new Error('The picture is too large');
+  if (buf.length > MAX_DOWNLOAD) throw new Error(tx('The picture is too large'));
   return buf;
 }
 
@@ -282,18 +283,18 @@ async function loadImage(image) {
       return download(image.fallback);
     }
   }
-  if (image?.track) return (await embeddedPicture(image.track)) || Promise.reject(new Error('That track has no picture'));
+  if (image?.track) return (await embeddedPicture(image.track)) || Promise.reject(new Error(tx('That track has no picture')));
   if (image?.file) {
-    if (!IMAGE_EXT.test(image.file)) throw new Error('Use a JPG or PNG picture');
+    if (!IMAGE_EXT.test(image.file)) throw new Error(tx('Use a JPG or PNG picture'));
     return fs.promises.readFile(image.file);
   }
-  throw new Error('No picture chosen');
+  throw new Error(tx('No picture chosen'));
 }
 
 /** Every cover is stored as a JPEG of at most 1400 px, so an album's tags don't grow by much */
 function toJpeg(buf) {
   const img = nativeImage.createFromBuffer(buf);
-  if (img.isEmpty()) throw new Error('That file is not a JPG or PNG picture');
+  if (img.isEmpty()) throw new Error(tx('That file is not a JPG or PNG picture'));
   const { width, height } = img.getSize();
   const isJpeg = buf[0] === 0xff && buf[1] === 0xd8;
   if (Math.max(width, height) <= MAX_SIDE && isJpeg) return buf;
@@ -412,11 +413,11 @@ async function embeddedCount(paths) {
 
 async function pick(e) {
   const win = BrowserWindow.fromWebContents(e.sender);
-  const r = await dialog.showOpenDialog(win, { title: 'Choose a cover picture', properties: ['openFile'], filters: [{ name: 'Pictures', extensions: ['jpg', 'jpeg', 'png'] }] });
+  const r = await dialog.showOpenDialog(win, { title: tx('Choose a cover picture'), properties: ['openFile'], filters: [{ name: tx('Pictures'), extensions: ['jpg', 'jpeg', 'png'] }] });
   if (r.canceled || !r.filePaths?.[0]) return null;
   const file = r.filePaths[0];
   const t = thumbOf(await fs.promises.readFile(file));
-  if (!t) throw new Error('That file is not a JPG or PNG picture');
+  if (!t) throw new Error(tx('That file is not a JPG or PNG picture'));
   return { file, ...t, name: path.basename(file) };
 }
 

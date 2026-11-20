@@ -1,6 +1,7 @@
 // node-taglib-sharp opens every format TeleCloud tags except DSF. A DSF file keeps one ID3v2 tag after
 // its audio, and its header says where, so that one is read and written here.
 const fs = require('fs');
+const { tx } = require('./i18n');
 
 const HEADER = 28; // "DSD ", its size, the file's size, where the tag starts
 
@@ -8,13 +9,13 @@ function layout(fd) {
   const size = fs.fstatSync(fd).size;
   const head = Buffer.alloc(HEADER + 12);
   fs.readSync(fd, head, 0, head.length, 0);
-  if (head.toString('latin1', 0, 4) !== 'DSD ' || head.toString('latin1', 28, 32) !== 'fmt ') throw new Error('This is not a DSF file');
+  if (head.toString('latin1', 0, 4) !== 'DSD ' || head.toString('latin1', 28, 32) !== 'fmt ') throw new Error(tx('This is not a DSF file'));
   const dataAt = HEADER + Number(head.readBigUInt64LE(32));
   const chunk = Buffer.alloc(12);
   fs.readSync(fd, chunk, 0, 12, dataAt);
-  if (chunk.toString('latin1', 0, 4) !== 'data') throw new Error('This DSF file is damaged');
+  if (chunk.toString('latin1', 0, 4) !== 'data') throw new Error(tx('This DSF file is damaged'));
   const audioEnd = dataAt + Number(chunk.readBigUInt64LE(4));
-  if (audioEnd > size) throw new Error('This DSF file is damaged');
+  if (audioEnd > size) throw new Error(tx('This DSF file is damaged'));
   const pointer = Number(head.readBigUInt64LE(20));
   return { size, tagAt: pointer >= audioEnd && pointer < size ? pointer : audioEnd };
 }

@@ -5,20 +5,21 @@ import SongActions from './songActions';
 import { Segmented } from './ui';
 import { OnThisDay } from './ListeningHistory';
 import { ipcOn, ipcOff } from '../utils/ipc';
+import { t } from '../i18n';
 
 // Listening statistics from the play history (electron/stats.js)
 
 const DAY = 86400000;
-const startOfDay = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+const startOfDay = (value) => { const d = new Date(value); d.setHours(0, 0, 0, 0); return d.getTime(); };
 const RANGES = [
-  { value: 'day', label: 'Today' },
-  { value: 'week', label: '7 days' },
-  { value: 'month', label: '30 days' },
-  { value: 'year', label: '12 months' },
-  { value: 'all', label: 'All time' },
-  { value: 'custom', label: 'Pick dates' },
+  { value: 'day', get label() { return t('Today'); } },
+  { value: 'week', get label() { return t('7 days'); } },
+  { value: 'month', get label() { return t('30 days'); } },
+  { value: 'year', get label() { return t('12 months'); } },
+  { value: 'all', get label() { return t('All time'); } },
+  { value: 'custom', get label() { return t('Pick dates'); } },
 ];
-const dayInput = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const dayInput = (value) => { const d = new Date(value); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const fromInput = (s) => { const [y, m, d] = String(s).split('-').map(Number); return y ? new Date(y, m - 1, d).getTime() : NaN; };
 
 // time window, bucket size and the list of bucket starts (so empty days still show as gaps)
@@ -58,12 +59,12 @@ function windowFor(range, first, custom) {
 
 const fmtDuration = (ms) => {
   const m = Math.round(ms / 60000);
-  if (m < 60) return `${m} min`;
+  if (m < 60) return t('{m} min', { m });
   const h = Math.floor(m / 60);
-  return h < 48 ? `${h} h ${m % 60} min` : `${Math.round(h).toLocaleString()} h`;
+  return h < 48 ? t('{h} h {value} min', { h, value: m % 60 }) : `${Math.round(h).toLocaleString()} h`;
 };
-const bucketLabel = (t, bucket, long = false) => {
-  const d = new Date(t);
+const bucketLabel = (value, bucket, long = false) => {
+  const d = new Date(value);
   if (bucket === 'hour') return long ? `${String(d.getHours()).padStart(2, '0')}:00–${String(d.getHours() + 1).padStart(2, '0')}:00` : String(d.getHours()).padStart(2, '0');
   if (bucket === 'month') return d.toLocaleDateString('en', long ? { month: 'long', year: 'numeric' } : { month: 'short' });
   return d.toLocaleDateString('en', long ? { weekday: 'long', day: 'numeric', month: 'long' } : { day: 'numeric', month: 'short' });
@@ -88,7 +89,7 @@ const Columns = ({ data, height = 180, label, tip }) => {
   return (
     <div className="dash-chart" onMouseLeave={() => setHover(null)}>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={label}>
-        {ticks.map(t => <line key={t} className="grid" x1={padL} x2={W} y1={y(t)} y2={y(t)} />)}
+        {ticks.map(value => <line key={value} className="grid" x1={padL} x2={W} y1={y(value)} y2={y(value)} />)}
         {data.map((d, i) => {
           const x = padL + i * bw + (bw - barW) / 2;
           const h = Math.max(0, H - padB - y(d.v));
@@ -101,7 +102,7 @@ const Columns = ({ data, height = 180, label, tip }) => {
           );
         })}
       </svg>
-      <div className="dash-yaxis">{ticks.slice().reverse().map(t => <span key={t} style={{ top: `${(y(t) / H) * 100}%` }}>{Math.round(t).toLocaleString()}</span>)}</div>
+      <div className="dash-yaxis">{ticks.slice().reverse().map(value => <span key={value} style={{ top: `${(y(value) / H) * 100}%` }}>{Math.round(value).toLocaleString()}</span>)}</div>
       <div className="dash-xaxis">
         {data.map((d, i) => (i % every === 0 ? <span key={i} style={{ left: `${((padL + (i + 0.5) * bw) / W) * 100}%` }}>{d.x}</span> : null))}
       </div>
@@ -113,9 +114,9 @@ const Columns = ({ data, height = 180, label, tip }) => {
 };
 
 const QUALITY = [
-  { key: 'hires', label: 'Hi-Res' },
-  { key: 'lossless', label: 'CD lossless' },
-  { key: 'lossy', label: 'Lossy' },
+  { key: 'hires', get label() { return t('Hi-Res'); } },
+  { key: 'lossless', get label() { return t('CD lossless'); } },
+  { key: 'lossy', get label() { return t('Lossy'); } },
 ];
 
 const DashboardView = ({ musicFiles, onPlay }) => {
@@ -128,18 +129,18 @@ const DashboardView = ({ musicFiles, onPlay }) => {
 
   useEffect(() => {
     let alive = true;
-    let t = null;
+    let timer = null;
     const load = () => window.ipcRenderer.invoke('stats:summary', { from: win.from, to: win.to, bucket: win.bucket }).then(r => {
       if (!alive) return;
       setData(r);
       if (r?.first && r.first !== first) setFirst(r.first);
     }).catch(() => {});
     // new plays, or tracks that moved on disk (their plays are re-attached on the next read)
-    const again = () => { clearTimeout(t); t = setTimeout(load, 500); };
+    const again = () => { clearTimeout(timer); timer = setTimeout(load, 500); };
     load();
     ipcOn(window.ipcRenderer, 'stats:changed', again);
     window.addEventListener('telecloud:library-changed', again);
-    return () => { alive = false; clearTimeout(t); ipcOff(window.ipcRenderer, 'stats:changed', again); window.removeEventListener('telecloud:library-changed', again); };
+    return () => { alive = false; clearTimeout(timer); ipcOff(window.ipcRenderer, 'stats:changed', again); window.removeEventListener('telecloud:library-changed', again); };
   }, [win]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const byPath = useMemo(() => new Map(musicFiles.map(f => [f.path, f])), [musicFiles]);
@@ -149,7 +150,7 @@ const DashboardView = ({ musicFiles, onPlay }) => {
   }, [data, win]);
   const hours = (data?.hours || []).map((ms, h) => ({ t: h, x: String(h).padStart(2, '0'), v: ms / 60000 }));
   const qTotal = QUALITY.reduce((s, q) => s + (data?.quality?.[q.key] || 0), 0);
-  const t = data?.totals || { plays: 0, ms: 0, tracks: 0, artists: 0, albums: 0 };
+  const totals = data?.totals || { plays: 0, ms: 0, tracks: 0, artists: 0, albums: 0 };
 
   const playTrack = (p) => {
     const f = byPath.get(p.path);
@@ -161,46 +162,46 @@ const DashboardView = ({ musicFiles, onPlay }) => {
   return (
     <div className="dash">
       <div className="page-head">
-        <h2>Dashboard</h2>
-        <span className="sub">Your listening, from TeleCloud's play history</span>
+        <h2>{t('Dashboard')}</h2>
+        <span className="sub">{t('Your listening, from TeleCloud\'s play history')}</span>
         <div className="end"><Segmented value={range} onChange={setRange} options={RANGES} size="sm" /></div>
       </div>
       {range === 'custom' && (
         <div className="dash-dates">
-          <label>From <input className="input sm mono" type="date" value={dayInput(custom.from)} max={dayInput(custom.to)} onChange={(e) => { const t = fromInput(e.target.value); if (Number.isFinite(t)) setCustom(c => ({ ...c, from: t })); }} /></label>
-          <label>to <input className="input sm mono" type="date" value={dayInput(custom.to)} min={dayInput(custom.from)} max={dayInput(Date.now())} onChange={(e) => { const t = fromInput(e.target.value); if (Number.isFinite(t)) setCustom(c => ({ ...c, to: t })); }} /></label>
+          <label>{t('From')} <input className="input sm mono" type="date" value={dayInput(custom.from)} max={dayInput(custom.to)} onChange={(e) => { const time = fromInput(e.target.value); if (Number.isFinite(time)) setCustom(c => ({ ...c, from: time })); }} /></label>
+          <label>{t('to')} <input className="input sm mono" type="date" value={dayInput(custom.to)} min={dayInput(custom.from)} max={dayInput(Date.now())} onChange={(e) => { const time = fromInput(e.target.value); if (Number.isFinite(time)) setCustom(c => ({ ...c, to: time })); }} /></label>
         </div>
       )}
 
-      {data && t.plays === 0 ? (
+      {data && totals.plays === 0 ? (
         <div className="card dash-empty">
           <Icon name="clock" />
-          <b>No plays in this period yet</b>
-          <span>A play counts once you've heard half a track or four minutes of it, like Last.fm.</span>
+          <b>{t('No plays in this period yet')}</b>
+          <span>{t('A play counts once you\'ve heard half a track or four minutes of it, like Last.fm.')}</span>
         </div>
       ) : (
         <>
           <div className="dash-kpis">
-            <div className="card kpi"><small>Listening time</small><b>{fmtDuration(t.ms)}</b></div>
-            <div className="card kpi"><small>Plays</small><b>{t.plays.toLocaleString()}</b></div>
-            <div className="card kpi"><small>Tracks</small><b>{t.tracks.toLocaleString()}</b></div>
-            <div className="card kpi"><small>Artists</small><b>{t.artists.toLocaleString()}</b></div>
-            <div className="card kpi"><small>Albums</small><b>{t.albums.toLocaleString()}</b></div>
+            <div className="card kpi"><small>{t('Listening time')}</small><b>{fmtDuration(totals.ms)}</b></div>
+            <div className="card kpi"><small>{t('Plays')}</small><b>{totals.plays.toLocaleString()}</b></div>
+            <div className="card kpi"><small>{t('Tracks')}</small><b>{totals.tracks.toLocaleString()}</b></div>
+            <div className="card kpi"><small>{t('Artists')}</small><b>{totals.artists.toLocaleString()}</b></div>
+            <div className="card kpi"><small>{t('Albums')}</small><b>{totals.albums.toLocaleString()}</b></div>
           </div>
 
           <div className="card dash-card">
-            <div className="dash-head"><b>Minutes listened</b><span>{range === 'custom' ? `${new Date(win.from).toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' })} – ${new Date(win.to - DAY).toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' })}` : RANGES.find(r => r.value === range).label} · per {win.bucket}</span></div>
-            <Columns data={series} label="Minutes listened over time" tip={(d) => <><b>{bucketLabel(d.t, win.bucket, true)}</b><span>{Math.round(d.v)} min · {d.plays} {d.plays === 1 ? 'play' : 'plays'}</span></>} />
+            <div className="dash-head"><b>{t('Minutes listened')}</b><span>{t('{value} · per {bucket}', { value: range === 'custom' ? `${new Date(win.from).toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' })} – ${new Date(win.to - DAY).toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' })}` : RANGES.find(r => r.value === range).label, bucket: win.bucket })}</span></div>
+            <Columns data={series} label={t('Minutes listened over time')} tip={(d) => <><b>{bucketLabel(d.t, win.bucket, true)}</b><span>{t('{round} min · {plays}', { round: Math.round(d.v), plays: d.plays })} {d.plays === 1 ? t('play') : t('plays')}</span></>} />
           </div>
 
           <div className="dash-grid">
             <div className="card dash-card">
-              <div className="dash-head"><b>Top tracks</b>{(() => { const files = (data?.topTracks || []).map(p => byPath.get(p.path)).filter(Boolean); return files.length ? <button className="btn-ghost sm" onClick={() => onPlay(files[0], 0, files)}><Icon name="play" filled />Play all</button> : null; })()}</div>
+              <div className="dash-head"><b>{t('Top tracks')}</b>{(() => { const files = (data?.topTracks || []).map(p => byPath.get(p.path)).filter(Boolean); return files.length ? <button className="btn-ghost sm" onClick={() => onPlay(files[0], 0, files)}><Icon name="play" filled />{t('Play all')}</button> : null; })()}</div>
               <ol className="dash-list">
                 {(data?.topTracks || []).map((p, i) => {
                   const f = byPath.get(p.path);
                   return (
-                    <li key={p.path} className={f ? 'playable' : ''} onClick={() => playTrack(p)} title={f ? 'Play' : 'No longer in your library'}>
+                    <li key={p.path} className={f ? 'playable' : ''} onClick={() => playTrack(p)} title={f ? t('Play') : t('No longer in your library')}>
                       <span className="rank mono">{i + 1}</span>
                       <Cover file={f || null} />
                       <div className="txt"><b>{p.title}</b><span>{p.artist}</span></div>
@@ -212,10 +213,10 @@ const DashboardView = ({ musicFiles, onPlay }) => {
               </ol>
             </div>
             <div className="card dash-card">
-              <div className="dash-head"><b>Top artists</b></div>
+              <div className="dash-head"><b>{t('Top artists')}</b></div>
               <ol className="dash-list">
                 {(data?.topArtists || []).map((a, i) => (
-                  <li key={a.name} className="playable" onClick={() => openArtist?.(a.name)} title="Open artist">
+                  <li key={a.name} className="playable" onClick={() => openArtist?.(a.name)} title={t('Open artist')}>
                     <span className="rank mono">{i + 1}</span>
                     <div className="txt"><b>{a.name}</b><span>{fmtDuration(a.ms)}</span></div>
                     <div className="meter"><span style={{ width: `${(a.plays / maxArtist) * 100}%` }} /></div>
@@ -227,13 +228,13 @@ const DashboardView = ({ musicFiles, onPlay }) => {
           </div>
 
           <div className="card dash-card">
-            <div className="dash-head"><b>Top albums</b></div>
+            <div className="dash-head"><b>{t('Top albums')}</b></div>
             <div className="dash-albums">
               {(data?.topAlbums || []).map(a => (
                 <button key={`${a.name}-${a.artist}`} className="dash-album" onClick={() => openAlbum?.(byPath.get(a.path) || a.name)}>
                   <Cover file={byPath.get(a.path) || null} />
                   <b>{a.name}</b>
-                  <span>{a.plays} {a.plays === 1 ? 'play' : 'plays'}</span>
+                  <span>{a.plays} {a.plays === 1 ? t('play') : t('plays')}</span>
                 </button>
               ))}
             </div>
@@ -241,7 +242,7 @@ const DashboardView = ({ musicFiles, onPlay }) => {
 
           <div className="dash-grid">
             <div className="card dash-card">
-              <div className="dash-head"><b>By quality</b><span>share of listening time</span></div>
+              <div className="dash-head"><b>{t('By quality')}</b><span>{t('share of listening time')}</span></div>
               <div className="qbar" role="img" aria-label={QUALITY.map(q => `${q.label} ${qTotal ? Math.round((data.quality[q.key] / qTotal) * 100) : 0}%`).join(', ')}>
                 {QUALITY.map(q => (data?.quality?.[q.key] ? <span key={q.key} className={`q-${q.key}`} style={{ flexGrow: data.quality[q.key] }} title={`${q.label}: ${fmtDuration(data.quality[q.key])}`} /> : null))}
               </div>
@@ -252,8 +253,8 @@ const DashboardView = ({ musicFiles, onPlay }) => {
               </div>
             </div>
             <div className="card dash-card">
-              <div className="dash-head"><b>Time of day</b><span>minutes by hour</span></div>
-              <Columns data={hours} height={120} label="Minutes listened by hour of day" tip={(d) => <><b>{d.x}:00–{String(d.t + 1).padStart(2, '0')}:00</b><span>{Math.round(d.v)} min</span></>} />
+              <div className="dash-head"><b>{t('Time of day')}</b><span>{t('minutes by hour')}</span></div>
+              <Columns data={hours} height={120} label={t('Minutes listened by hour of day')} tip={(d) => <><b>{d.x}:00–{String(d.t + 1).padStart(2, '0')}:00</b><span>{t('{round} min', { round: Math.round(d.v) })}</span></>} />
             </div>
           </div>
         </>

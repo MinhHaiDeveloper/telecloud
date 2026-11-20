@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Dialog } from './ui';
 import Icon from './Icon';
 import { RELEASES, RELEASES_URL, compareVersions, shortVersion } from '../utils/whatsNew';
+import { t } from '../i18n';
 
 const openReleases = () => window.ipcRenderer.invoke('open-external', RELEASES_URL);
 
@@ -19,14 +20,14 @@ const Notes = ({ release: r }) => (
 /** Shown once, the first time the app opens after an update */
 export const WhatsNewDialog = ({ releases, onClose }) => (
   <Dialog
-    title={`What's new in ${shortVersion(releases[0].version)}`}
+    title={t('What\'s new in {shortVersion}', { shortVersion: shortVersion(releases[0].version) })}
     icon="info"
     width={560}
     onClose={onClose}
     actions={(
       <>
-        <button className="btn-ghost" onClick={openReleases}>All releases</button>
-        <button className="btn-primary" onClick={onClose}>Got it</button>
+        <button className="btn-ghost" onClick={openReleases}>{t('All releases')}</button>
+        <button className="btn-primary" onClick={onClose}>{t('Got it')}</button>
       </>
     )}
   >
@@ -50,12 +51,12 @@ export const WhatsNewSection = ({ version }) => {
   return (
     <section className="set-section">
       <div className="head-row">
-        <h3>What's new in {shortVersion(latest.version)}</h3>
-        <div className="btn-row"><button className="btn-ghost sm" onClick={openReleases}><Icon name="info" />All releases</button></div>
+        <h3>{t('What\'s new in {shortVersion}', { shortVersion: shortVersion(latest.version) })}</h3>
+        <div className="btn-row"><button className="btn-ghost sm" onClick={openReleases}><Icon name="info" />{t('All releases')}</button></div>
       </div>
       <div className="card whats-new-card">
         <Notes release={latest} />
-        {rest.length > 0 && <button className="link-btn whats-new-more" onClick={() => setOlder(v => !v)}>{older ? 'Hide earlier versions' : 'Show earlier versions'}</button>}
+        {rest.length > 0 && <button className="link-btn whats-new-more" onClick={() => setOlder(v => !v)}>{older ? t('Hide earlier versions') : t('Show earlier versions')}</button>}
         {older && rest.map(r => (
           <div key={r.version}>
             <h4 className="whats-new-older">{shortVersion(r.version)}</h4>

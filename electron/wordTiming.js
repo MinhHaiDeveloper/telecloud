@@ -16,6 +16,7 @@ const fs = require('fs');
 const { mpvPath } = require('./player');
 const { isPlayablePath, isInAppStorage } = require('./paths');
 const models = require('./cadenceModels');
+const { tx } = require('./i18n');
 
 const modelsDir = () => models.dir();
 const KANA = /[぀-ヿ]/;
@@ -30,9 +31,9 @@ function status() {
 function run(sender, { path: file, lyrics, separate = true, gpu = true, withoutJapanese = false }) {
   return new Promise((resolve) => {
     const st = status();
-    if (!st.ready) { resolve({ ok: false, error: 'Download the English and other languages pack first', needs: 'en' }); return; }
+    if (!st.ready) { resolve({ ok: false, error: tx('Download the English and other languages pack first'), needs: 'en' }); return; }
     const japanese = KANA.test(lyrics);
-    if (japanese && !st.japanese && !withoutJapanese) { resolve({ ok: false, error: 'This song is in Japanese: download the Japanese pack first', needs: 'ja' }); return; }
+    if (japanese && !st.japanese && !withoutJapanese) { resolve({ ok: false, error: tx('This song is in Japanese: download the Japanese pack first'), needs: 'ja' }); return; }
     if (separate && !st.separation) separate = false;
     // the worker loads onnxruntime-node from the app's own node_modules (unpacked from the asar when packaged)
     const proc = utilityProcess.fork(path.join(__dirname, 'cadence', 'worker.js'), [], { serviceName: 'TeleCloud word timing', stdio: 'pipe' });
@@ -72,10 +73,10 @@ ipcMain.handle('wordTiming:status', () => status());
 
 ipcMain.handle('wordTiming:run', async (event, opts = {}) => {
   let file = String(opts.path || '');
-  if (!opts.lyrics || typeof opts.lyrics !== 'string') return { ok: false, error: 'No line-synced lyrics' };
-  if (running || fetching) return { ok: false, error: 'Another song is being timed' };
-  if (!status().ready) return { ok: false, error: 'Download the English and other languages pack first', needs: 'en' };
-  if (KANA.test(opts.lyrics) && !status().japanese && !opts.withoutJapanese) return { ok: false, error: 'This song is in Japanese: download the Japanese pack first', needs: 'ja' };
+  if (!opts.lyrics || typeof opts.lyrics !== 'string') return { ok: false, error: tx('No line-synced lyrics') };
+  if (running || fetching) return { ok: false, error: tx('Another song is being timed') };
+  if (!status().ready) return { ok: false, error: tx('Download the English and other languages pack first'), needs: 'en' };
+  if (KANA.test(opts.lyrics) && !status().japanese && !opts.withoutJapanese) return { ok: false, error: tx('This song is in Japanese: download the Japanese pack first'), needs: 'ja' };
   // a cloud-only track: its copy in the TeleCloud cache, downloaded from Telegram first when it is not there
   if (file.startsWith('tc://')) {
     fetching = { cancelled: false };
@@ -84,7 +85,7 @@ ipcMain.handle('wordTiming:run', async (event, opts = {}) => {
       if (!event.sender.isDestroyed()) event.sender.send('wordTiming:progress', { stage: 'fetch', done: 0 });
       file = await require('./telecloud/service')._internals.cacheTrack(file);
     } catch (e) {
-      return { ok: false, error: `Could not download the track from TeleCloud: ${e.message}` };
+      return { ok: false, error: tx('Could not download the track from TeleCloud: {message}', { message: e.message }) };
     } finally { fetching = null; }
     if (me.cancelled) return { ok: false, error: 'cancelled' };
   }

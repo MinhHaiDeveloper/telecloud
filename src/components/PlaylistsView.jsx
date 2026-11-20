@@ -7,12 +7,13 @@ import { Select, MoreMenu, confirmDialog } from './ui';
 import { formatDuration } from '../utils/audio';
 import SmartPlaylistDialog from './SmartPlaylistDialog';
 import { describe } from '../utils/smartPlaylist';
+import { t } from '../i18n';
 
 const SORTS = [
-  { value: 'latest', label: 'Recently created' },
-  { value: 'name', label: 'Name A → Z' },
-  { value: 'name-desc', label: 'Name Z → A' },
-  { value: 'size', label: 'Most tracks' },
+  { value: 'latest', get label() { return t('Recently created'); } },
+  { value: 'name', get label() { return t('Name A → Z'); } },
+  { value: 'name-desc', get label() { return t('Name Z → A'); } },
+  { value: 'size', get label() { return t('Most tracks'); } },
 ];
 
 // 2x2 grid of the first covers, or a single cover / placeholder
@@ -50,9 +51,9 @@ const PlaylistsView = ({ playlists, setPlaylists, onSavePlaylists, currentFile, 
 
   const remove = async (p) => {
     const ok = await confirmDialog({
-      title: 'Delete playlist?',
-      message: `"${p.name}" will be removed. The tracks stay in your library.`,
-      confirmLabel: 'Delete playlist',
+      title: t('Delete playlist?'),
+      message: t('"{name}" will be removed. The tracks stay in your library.', { name: p.name }),
+      confirmLabel: t('Delete playlist'),
       danger: true,
     });
     if (!ok) return;
@@ -100,13 +101,13 @@ const PlaylistsView = ({ playlists, setPlaylists, onSavePlaylists, currentFile, 
   return (
     <>
       <div className="page-head">
-        <h2>Playlists</h2>
-        <span className="sub">{playlists.length} playlists</span>
+        <h2>{t('Playlists')}</h2>
+        <span className="sub">{t('{length} playlists', { length: playlists.length })}</span>
         <div className="end">
           <Select variant="ghost" icon="sort" align="right" value={sortBy} options={SORTS} onChange={setSortBy} />
-          {onImport && <button className="btn-ghost" onClick={onImport} title="Make a playlist from an .m3u or .m3u8 file"><Icon name="fileIn" />Import</button>}
-          <button className="btn-ghost" onClick={() => setSmartEdit({ playlist: null })} title="A playlist made of rules, that keeps itself up to date"><Icon name="sparkle" />New smart playlist</button>
-          <button className="btn-primary" onClick={() => setIsCreating(true)}><Icon name="plus" />New playlist</button>
+          {onImport && <button className="btn-ghost" onClick={onImport} title={t('Make a playlist from an .m3u or .m3u8 file')}><Icon name="fileIn" />{t('Import')}</button>}
+          <button className="btn-ghost" onClick={() => setSmartEdit({ playlist: null })} title={t('A playlist made of rules, that keeps itself up to date')}><Icon name="sparkle" />{t('New smart playlist')}</button>
+          <button className="btn-primary" onClick={() => setIsCreating(true)}><Icon name="plus" />{t('New playlist')}</button>
         </div>
       </div>
 
@@ -114,17 +115,17 @@ const PlaylistsView = ({ playlists, setPlaylists, onSavePlaylists, currentFile, 
         <div className="card list-panel">
           {isCreating && (
             <form className="inline-form" onSubmit={create}>
-              <input className="input sm" autoFocus value={newName} onChange={e => setNewName(e.target.value)} placeholder="Playlist name"
+              <input className="input sm" autoFocus value={newName} onChange={e => setNewName(e.target.value)} placeholder={t('Playlist name')}
                 onKeyDown={e => { if (e.key === 'Escape') { setIsCreating(false); setNewName(''); } }} />
-              <button type="submit" className="icon-btn sm on" title="Create"><Icon name="check" /></button>
-              <button type="button" className="icon-btn sm" title="Cancel" onClick={() => { setIsCreating(false); setNewName(''); }}><Icon name="close" /></button>
+              <button type="submit" className="icon-btn sm on" title={t('Create')}><Icon name="check" /></button>
+              <button type="button" className="icon-btn sm" title={t('Cancel')} onClick={() => { setIsCreating(false); setNewName(''); }}><Icon name="close" /></button>
             </form>
           )}
-          {sorted.length === 0 && !isCreating && <div className="empty">No playlists yet.</div>}
+          {sorted.length === 0 && !isCreating && <div className="empty">{t('No playlists yet.')}</div>}
           {sorted.map(p => (
             <button key={p.id} className={`list-item ${selectedPlaylistId === p.id ? 'on' : ''}`} onClick={() => setSelectedPlaylistId(p.id)}>
               <PlaylistCover songs={p.songs} />
-              <div className="meta"><b>{p.smart && <Icon name="sparkle" className="sp-mark" />}{p.name}</b><span>{p.songs.length} tracks{p.smart ? ' · smart' : ''}</span></div>
+              <div className="meta"><b>{p.smart && <Icon name="sparkle" className="sp-mark" />}{p.name}</b><span>{t('{length} tracks{value}', { length: p.songs.length, value: p.smart ? t(' · smart') : '' })}</span></div>
             </button>
           ))}
         </div>
@@ -135,33 +136,33 @@ const PlaylistsView = ({ playlists, setPlaylists, onSavePlaylists, currentFile, 
               <div className="detail-head">
                 <PlaylistCover songs={selected.songs} />
                 <div className="info">
-                  <span className="eyebrow">{selected.smart ? 'Smart playlist' : 'Playlist'}</span>
+                  <span className="eyebrow">{selected.smart ? t('Smart playlist') : t('Playlist')}</span>
                   {renaming?.id === selected.id ? (
                     <form onSubmit={rename} style={{ display: 'flex', gap: 6 }}>
                       <input className="input" autoFocus value={renaming.name} onChange={e => setRenaming({ ...renaming, name: e.target.value })}
                         onBlur={rename} onKeyDown={e => e.key === 'Escape' && setRenaming(null)} style={{ fontSize: 20, fontWeight: 800 }} />
                     </form>
                   ) : <h2>{selected.name}</h2>}
-                  <div className="meta">{selected.songs.length} tracks · {formatDuration(total)}</div>
+                  <div className="meta">{t('{length} tracks · {duration}', { length: selected.songs.length, duration: formatDuration(total) })}</div>
                   {selected.smart && <div className="sp-rules-text muted" title={describe(selected.smart)}>{describe(selected.smart)}</div>}
                   <div className="btn-row">
-                    <button className="btn-primary" disabled={!selected.songs.length} onClick={() => onPlay(selected.songs[0], 0, selected.songs)}><Icon name="play" filled />Play</button>
-                    <button className="btn-ghost" disabled={!selected.songs.length} onClick={() => { const s = [...selected.songs].sort(() => Math.random() - 0.5); onPlay(s[0], 0, s); }}><Icon name="shuffle" />Shuffle</button>
-                    {selected.smart && <button className="btn-ghost" onClick={() => setSmartEdit({ playlist: selected })}><Icon name="sparkle" />Edit rules</button>}
+                    <button className="btn-primary" disabled={!selected.songs.length} onClick={() => onPlay(selected.songs[0], 0, selected.songs)}><Icon name="play" filled />{t('Play')}</button>
+                    <button className="btn-ghost" disabled={!selected.songs.length} onClick={() => { const s = [...selected.songs].sort(() => Math.random() - 0.5); onPlay(s[0], 0, s); }}><Icon name="shuffle" />{t('Shuffle')}</button>
+                    {selected.smart && <button className="btn-ghost" onClick={() => setSmartEdit({ playlist: selected })}><Icon name="sparkle" />{t('Edit rules')}</button>}
                     <MoreMenu items={[
-                      ...(selected.smart?.sort === 'random' ? [{ label: 'Shuffle again', icon: 'shuffle', onClick: () => reshuffle(selected) }] : []),
-                      { label: 'Rename', icon: 'lyrics', onClick: () => setRenaming({ id: selected.id, name: selected.name }) },
-                      ...(onExport && selected.songs.length ? [{ label: 'Export as .m3u8…', icon: 'fileOut', onClick: () => onExport(selected) }] : []),
-                      ...(onBackupMany && selected.songs.length ? [{ label: 'Back up playlist to…', icon: 'cloud', onClick: () => onBackupMany(selected.songs, `“${selected.name}”`) }] : []),
-                      ...(onRemoveFromCloud && selected.songs.some(f => f.telegram_message_id) ? [{ label: 'Remove playlist tracks from TeleCloud', icon: 'cloud', danger: true, onClick: () => onRemoveFromCloud(selected.songs.filter(f => f.telegram_message_id)) }] : []),
+                      ...(selected.smart?.sort === 'random' ? [{ label: t('Shuffle again'), icon: 'shuffle', onClick: () => reshuffle(selected) }] : []),
+                      { label: t('Rename'), icon: 'lyrics', onClick: () => setRenaming({ id: selected.id, name: selected.name }) },
+                      ...(onExport && selected.songs.length ? [{ label: t('Export as .m3u8…'), icon: 'fileOut', onClick: () => onExport(selected) }] : []),
+                      ...(onBackupMany && selected.songs.length ? [{ label: t('Back up playlist to…'), icon: 'cloud', onClick: () => onBackupMany(selected.songs, `“${selected.name}”`) }] : []),
+                      ...(onRemoveFromCloud && selected.songs.some(f => f.telegram_message_id) ? [{ label: t('Remove playlist tracks from TeleCloud'), icon: 'cloud', danger: true, onClick: () => onRemoveFromCloud(selected.songs.filter(f => f.telegram_message_id)) }] : []),
                       { sep: true },
-                      { label: 'Delete playlist', icon: 'trash', danger: true, onClick: () => remove(selected) },
+                      { label: t('Delete playlist'), icon: 'trash', danger: true, onClick: () => remove(selected) },
                     ]} />
                   </div>
                 </div>
               </div>
               {selected.songs.length === 0 ? (
-                <div className="empty">{selected.smart ? 'No tracks match these rules yet. Edit the rules, or it fills itself as your library and plays grow.' : "This playlist is empty. Use “Add to playlist” from any track's menu."}</div>
+                <div className="empty">{selected.smart ? t('No tracks match these rules yet. Edit the rules, or it fills itself as your library and plays grow.') : t('This playlist is empty. Use “Add to playlist” from any track\'s menu.')}</div>
               ) : (
                 <SongList
                   musicFiles={selected.songs}
@@ -177,14 +178,14 @@ const PlaylistsView = ({ playlists, setPlaylists, onSavePlaylists, currentFile, 
                   onDownloadSong={onDownloadSong}
                   onDeleteSong={selected.smart ? undefined : (file) => removeTrack(selected, file)}
                   onDeleteMany={selected.smart ? undefined : (files) => { const gone = new Set(files.map(f => f.path)); save(playlists.map(p => (p.id === selected.id ? { ...p, songs: p.songs.filter(s => !gone.has(s.path)) } : p))); }}
-                  deleteLabel="Remove from playlist"
+                  deleteLabel={t('Remove from playlist')}
                 />
               )}
             </>
           ) : (
             <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>
               <Icon name="playlist" style={{ width: 36, height: 36, marginBottom: 10 }} />
-              <div>Select a playlist to see its tracks</div>
+              <div>{t('Select a playlist to see its tracks')}</div>
             </div>
           )}
         </div>

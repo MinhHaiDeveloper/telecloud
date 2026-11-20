@@ -18,6 +18,7 @@ const INVOKE_CHANNELS = new Set([
     'mqa:check-library',
     'remote:status',
     'remote:set',
+    'i18n:set',
     'remote:renew',
     'remote:remove-device',
     'remote:network',

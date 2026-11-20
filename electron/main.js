@@ -40,6 +40,7 @@ const database = require('./database');
 const { getLibraryRoots, getTempDir, safeFileName, readSettings } = require('./paths');
 const { backgroundRefresh } = require('./music.js');
 const { applyAudioSettings } = require('./player.js');
+require('./i18n'); // the app's language, sent by the window: the tray, file pickers and messages follow it
 require('./spectrum.js');
 require('./soundCorrection.js');
 require('./waveform.js');

@@ -2,6 +2,15 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.1.0-beta.13',
+    items: [
+      'TeleCloud is ready to be translated: every text in the app, the tray menu, the titles of the file pickers and the messages can now show in another language. There is no translation yet, so everything is in English as before; once there is one, Settings > Appearance gets a Language choice that changes the app at once, without a restart, and keeps the music playing.',
+      'The Remote follows the language TeleCloud is in, on every phone and tablet that opens it.',
+      'Counts of a thousand and more (tracks, plays, files) are written with the thousands separator your Windows uses.',
+      'For people who want to help with code or translations: CONTRIBUTING.md on GitHub says how.',
+    ],
+  },
+  {
     version: '1.1.0-beta.12',
     items: [
       `VU meters in Now Playing: the VU button (or V) opens a page of two analogue meters, left and right, in four faces: Classic, Blue, Theme (in the colours of your theme, and it follows it) and Backdrop (just the scale and needles over the background). 0 VU can sit at −18, −14 or −10 dBFS, a peak light shows when the music nears full scale, and H leaves the meters alone on screen. They only run while you can see them, and never touch the music: bit-perfect stays bit-perfect.`,

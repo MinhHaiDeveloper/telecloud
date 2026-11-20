@@ -3,37 +3,38 @@
 const { app, Tray, Menu, nativeImage, BrowserWindow } = require('electron');
 const path = require('path');
 const { readSettings } = require('./paths');
+const { tx, onLanguage } = require('./i18n');
 
 let tray = null;
 let quitting = false;
 let now = { playing: false, hasTrack: false, sleep: null, floating: { open: false, locked: false } }; // what plays, for the menu
 
 // the sleep timer's choices, as in the player bar
-const SLEEP = [[15, '15 minutes'], [30, '30 minutes'], [45, '45 minutes'], [60, '1 hour'], [90, '1 hour 30']];
+const SLEEP = () => [[15, tx('15 minutes')], [30, tx('30 minutes')], [45, tx('45 minutes')], [60, tx('1 hour')], [90, tx('1 hour 30')]];
 function menu() {
   const media = (cmd, value) => () => require('./media').command(cmd, value !== undefined ? { value } : {});
   return Menu.buildFromTemplate([
-    { label: 'Show TeleCloud', click: showWindow },
+    { label: tx('Show TeleCloud'), click: showWindow },
     { type: 'separator' },
-    { label: now.playing ? 'Pause' : 'Play', enabled: now.hasTrack, click: media('toggle') },
-    { label: 'Next', enabled: now.hasTrack, click: media('next') },
-    { label: 'Previous', enabled: now.hasTrack, click: media('prev') },
+    { label: now.playing ? tx('Pause') : tx('Play'), enabled: now.hasTrack, click: media('toggle') },
+    { label: tx('Next'), enabled: now.hasTrack, click: media('next') },
+    { label: tx('Previous'), enabled: now.hasTrack, click: media('prev') },
     {
-      label: now.sleep ? `Sleep timer: ${now.sleep.label}` : 'Sleep timer',
+      label: now.sleep ? tx('Sleep timer: {label}', { label: now.sleep.label }) : tx('Sleep timer'),
       submenu: [
-        ...SLEEP.map(([m, label]) => ({ label, click: media('sleep', { minutes: m }) })),
+        ...SLEEP().map(([m, label]) => ({ label, click: media('sleep', { minutes: m }) })),
         { type: 'separator' },
-        { label: 'End of this track', enabled: now.hasTrack, click: media('sleep', { kind: 'track' }) },
-        { label: 'End of this album', enabled: now.hasTrack, click: media('sleep', { kind: 'album' }) },
+        { label: tx('End of this track'), enabled: now.hasTrack, click: media('sleep', { kind: 'track' }) },
+        { label: tx('End of this album'), enabled: now.hasTrack, click: media('sleep', { kind: 'album' }) },
         { type: 'separator' },
-        { label: 'Off', enabled: !!now.sleep, click: media('sleep', null) },
+        { label: tx('Off'), enabled: !!now.sleep, click: media('sleep', null) },
       ],
     },
     { type: 'separator' },
-    { label: 'Floating lyrics', type: 'checkbox', checked: !!now.floating?.open, click: () => require('./floatingLyrics')[now.floating?.open ? 'close' : 'open']() },
-    { label: 'Lock floating lyrics', type: 'checkbox', checked: !!now.floating?.locked, enabled: !!now.floating?.open, click: () => require('./floatingLyrics').setLocked(!now.floating?.locked) },
+    { label: tx('Floating lyrics'), type: 'checkbox', checked: !!now.floating?.open, click: () => require('./floatingLyrics')[now.floating?.open ? 'close' : 'open']() },
+    { label: tx('Lock floating lyrics'), type: 'checkbox', checked: !!now.floating?.locked, enabled: !!now.floating?.open, click: () => require('./floatingLyrics').setLocked(!now.floating?.locked) },
     { type: 'separator' },
-    { label: 'Quit TeleCloud', click: () => app.quit() },
+    { label: tx('Quit TeleCloud'), click: () => app.quit() },
   ]);
 }
 /** The renderer's state changed: the menu follows, if the tray is there */
@@ -42,6 +43,9 @@ function update(next) {
   now = { ...now, ...next };
   if (tray && JSON.stringify(now) !== was) tray.setContextMenu(menu());
 }
+
+// a new language: the menu is built again in it
+onLanguage(() => { if (tray) tray.setContextMenu(menu()); });
 
 function showWindow() {
   const win = require('./mainWindow').get();

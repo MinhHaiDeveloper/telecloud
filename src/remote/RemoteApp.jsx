@@ -5,12 +5,16 @@ import { Cover, Badges, Pill, Sheet, Where, ArtRev } from './parts';
 import Library, { LibRev } from './Library';
 import Lyrics from './Lyrics';
 import OverflowTooltip from '../components/OverflowTooltip';
+import { t, chosenLanguage, setLanguage } from '../i18n';
+
+// the remote shows itself in the language TeleCloud is in (kept on this device for the next time it opens)
+const followHost = (host) => { if (host?.lang && host.lang !== chosenLanguage()) setLanguage(host.lang); };
 
 const TABS = {
-  now: { label: 'Playing', icon: 'play' },
-  library: { label: 'Library', icon: 'library' },
-  queue: { label: 'Up next', icon: 'queue' },
-  side: { label: 'Output', icon: 'speaker' },
+  now: { get label() { return t('Playing'); }, icon: 'play' },
+  library: { get label() { return t('Library'); }, icon: 'library' },
+  queue: { get label() { return t('Up next'); }, icon: 'queue' },
+  side: { get label() { return t('Output'); }, icon: 'speaker' },
 };
 // what the switcher holds on each screen size; the rest stays on screen
 const LAYOUT_TABS = {
@@ -21,7 +25,7 @@ const LAYOUT_TABS = {
   fold: ['queue', 'library', 'side'],
   flex: ['controls', 'queue', 'library', 'side'],
 };
-TABS.controls = { label: 'Controls', icon: 'play' };
+TABS.controls = { get label() { return t('Controls'); }, icon: 'play' };
 
 /**
  * Which layout fits this screen. Besides phone, tablet and desktop, a Galaxy Z Fold gets its own:
@@ -104,14 +108,14 @@ export default function RemoteApp() {
     const id = Date.now();
     const ms = tone === 'error' ? 4500 : 1800;
     setToast({ id, text, tone });
-    setTimeout(() => setToast(t => (t?.id === id ? { ...t, leaving: true } : t)), ms);
-    setTimeout(() => setToast(t => (t?.id === id ? null : t)), ms + 300);
+    setTimeout(() => setToast(item => (item?.id === id ? { ...item, leaving: true } : item)), ms);
+    setTimeout(() => setToast(item => (item?.id === id ? null : item)), ms + 300);
   }, []);
   const send = useCallback(async (cmd, args, done) => {
-    if (ro) { say('This device can only watch. Change it in TeleCloud > Settings > Remote.'); return false; }
+    if (ro) { say(t('This device can only watch. Change it in TeleCloud > Settings > Remote.')); return false; }
     const code = await post(cmd, args);
     if (code === 200) { if (done) say(done); return true; }
-    say(code === 403 ? 'This device can only watch.' : code === 429 ? 'A little slower, please.' : code === 0 ? "Can't reach TeleCloud." : 'TeleCloud could not do that.');
+    say(code === 403 ? t('This device can only watch.') : code === 429 ? t('A little slower, please.') : code === 0 ? t('Can\'t reach TeleCloud.') : t('TeleCloud could not do that.'));
     return false;
   }, [ro, say]);
 
@@ -129,7 +133,7 @@ export default function RemoteApp() {
     const es = new EventSource('/api/events');
     esRef.current = es;
     es.addEventListener('state', (e) => {
-      try { setS(JSON.parse(e.data)); recvAt.current = performance.now(); markOnline(); } catch { /* skip */ }
+      try { const next = JSON.parse(e.data); setS(next); recvAt.current = performance.now(); markOnline(); followHost(next.host); } catch { /* skip */ }
     });
     es.addEventListener('me', (e) => { try { setMe(JSON.parse(e.data)); } catch { /* skip */ } });
     es.onopen = markOnline;
@@ -157,12 +161,16 @@ export default function RemoteApp() {
       if (m) {
         const r = await fetch('/api/pair', { method: 'POST', headers: HEADERS, body: JSON.stringify({ key: m[1] }) }).catch(() => null);
         window.history.replaceState(null, '', window.location.pathname); // the key doesn't stay in the address bar
-        if (r && !r.ok) setProblem((await r.json().catch(() => ({}))).error || 'Could not pair.');
+        const answer = r ? await r.json().catch(() => ({})) : {};
+        followHost(answer.host);
+        if (r && !r.ok) setProblem(answer.error || t('Could not pair.'));
       }
       const hello = await fetch('/api/hello').catch(() => null);
       if (!hello) { setPhase('ready'); setOnline(false); connect(); return; }
       if (hello.status === 401) { setPhase('unpaired'); return; }
-      setMe(await hello.json().catch(() => ({ readOnly: false })));
+      const info = await hello.json().catch(() => ({ readOnly: false }));
+      followHost(info.host);
+      setMe(info);
       setPhase('ready');
       connect();
     })();
@@ -176,7 +184,7 @@ export default function RemoteApp() {
   }, []);
   useEffect(() => {
     const host = s?.host?.name;
-    document.title = host ? `${s?.track?.title ? `${s.track.title} · ` : ''}${host} · TeleCloud Remote` : 'TeleCloud Remote';
+    document.title = host ? t('{value}{host} · TeleCloud Remote', { value: s?.track?.title ? `${s.track.title} · ` : '', host }) : t('TeleCloud Remote');
   }, [s?.host?.name, s?.track?.title]);
   // a problem on the computer (a cloud track that can't stream now): say it here too, once
   const noticeAt = useRef(undefined);
@@ -203,16 +211,16 @@ export default function RemoteApp() {
       <div className="rm rm-center">
         <div className="rm-pair card">
           <div className="rm-logo"><Icon name="logo" /></div>
-          <h1>TeleCloud Remote</h1>
-          <p>Scan the QR code in <b>Settings &gt; Remote</b> on the computer that plays the music, or open the address shown there.</p>
+          <h1>{t('TeleCloud Remote')}</h1>
+          <p>{t('Scan the QR code in {b} on the computer that plays the music, or open the address shown there.', { b: <b>{t('Settings > Remote')}</b> })}</p>
           {problem && <p className="rm-problem">{problem}</p>}
         </div>
       </div>
     );
   }
 
-  const t = s?.track;
-  const dur = t?.duration || 0;
+  const track = s?.track;
+  const dur = track?.duration || 0;
   const livePos = s ? Math.min(dur || Infinity, (s.position || 0) + (s.playing ? (now - recvAt.current) / 1000 : 0)) : 0;
   const pos = seekDraft ?? livePos;
   const vol = volDraft ?? s?.volume ?? 0;
@@ -222,7 +230,7 @@ export default function RemoteApp() {
   const commitSeek = () => { if (seekDraft != null) send('seek', { time: seekDraft }); setSeekDraft(null); };
   const commitVol = () => { if (volDraft != null) send('volume', { volume: volDraft }); setVolDraft(null); };
   const nextRepeat = { none: 'all', all: 'one', one: 'none' }[s?.repeat || 'none'];
-  const fav = (track, on) => send('fav', { id: track.id, on }, on ? 'Added to favourites' : 'Removed from favourites').then(ok => { if (ok) forget(['favorites']); return ok; });
+  const fav = (track, on) => send('fav', { id: track.id, on }, on ? t('Added to favourites') : t('Removed from favourites')).then(ok => { if (ok) forget(['favorites']); return ok; });
 
   // what the library asks for
   const act = {
@@ -232,56 +240,56 @@ export default function RemoteApp() {
       title: track.title,
       sub: [track.artist, track.album].filter(Boolean).join(' · '),
       actions: [
-        { label: 'Play next', icon: 'next', run: () => send('queue', { source, id: track.id, next: true }, 'Playing next') },
-        { label: 'Add to the queue', icon: 'queue', run: () => send('queue', { source, id: track.id }, 'Added to the queue') },
+        { label: t('Play next'), icon: 'next', run: () => send('queue', { source, id: track.id, next: true }, 'Playing next') },
+        { label: t('Add to the queue'), icon: 'queue', run: () => send('queue', { source, id: track.id }, 'Added to the queue') },
         track.fav
-          ? { label: 'Remove from favourites', icon: 'heart', filled: true, run: () => fav(track, false) }
-          : { label: 'Add to favourites', icon: 'heart', run: () => fav(track, true) },
+          ? { label: t('Remove from favourites'), icon: 'heart', filled: true, run: () => fav(track, false) }
+          : { label: t('Add to favourites'), icon: 'heart', run: () => fav(track, true) },
       ],
     }),
     moreList: (title, source) => setSheet({
       open: true,
       title,
       actions: [
-        { label: 'Play next', icon: 'next', run: () => send('queue', { source, next: true }, 'Playing next') },
-        { label: 'Add to the queue', icon: 'queue', run: () => send('queue', { source }, 'Added to the queue') },
+        { label: t('Play next'), icon: 'next', run: () => send('queue', { source, next: true }, 'Playing next') },
+        { label: t('Add to the queue'), icon: 'queue', run: () => send('queue', { source }, 'Added to the queue') },
       ],
     }),
   };
 
   // the blurred cover behind now playing on a Fold: the album's colours fill the page
-  const ambient = (layout === 'fold' || layout === 'flex') && t?.id
-    ? <div className="rm-ambient-box" aria-hidden="true"><div key={`${t.id}-${s?.art || 0}`} className="rm-ambient" style={{ backgroundImage: `url(/api/cover/${t.id}${s?.art ? `?r=${s.art}` : ''})` }} /></div>
+  const ambient = (layout === 'fold' || layout === 'flex') && track?.id
+    ? <div className="rm-ambient-box" aria-hidden="true"><div key={`${track.id}-${s?.art || 0}`} className="rm-ambient" style={{ backgroundImage: `url(/api/cover/${track.id}${s?.art ? `?r=${s.art}` : ''})` }} /></div>
     : null;
   const artEl = (
       <div className={`rm-art-wrap ${showLyrics ? 'lyrics' : ''}`}>
         {showLyrics
-          ? <Lyrics trackId={t?.id} rev={s?.lyrics} pos={pos} onSeek={ro ? null : (time) => send('seek', { time })} />
-          : <Cover id={t?.id} className={`rm-art ${s?.playing ? 'playing' : ''}`} />}
+          ? <Lyrics trackId={track?.id} rev={s?.lyrics} pos={pos} onSeek={ro ? null : (time) => send('seek', { time })} />
+          : <Cover id={track?.id} className={`rm-art ${s?.playing ? 'playing' : ''}`} />}
       </div>
   );
   // long names: the title gets the whole width and two lines, smaller the longer it is; artist and
   // album one line each (pressed and held, the full text); an album named like the track isn't repeated
-  const titleSize = !t ? '' : t.title.length > 44 ? 'xl' : t.title.length > 26 ? 'l' : '';
-  const albumLine = t?.album && t.album.trim().toLowerCase() !== String(t.title || '').trim().toLowerCase() ? t.album : null;
+  const titleSize = !track ? '' : track.title.length > 44 ? 'xl' : track.title.length > 26 ? 'l' : '';
+  const albumLine = track?.album && track.album.trim().toLowerCase() !== String(track.title || '').trim().toLowerCase() ? track.album : null;
   const metaEl = (
       <div className="rm-meta">
-        <b key={t?.id || 'none'} className={`rm-title ${titleSize}`}>{t?.title || 'Nothing playing'}</b>
-        {t ? (
+        <b key={track?.id || 'none'} className={`rm-title ${titleSize}`}>{track?.title || t('Nothing playing')}</b>
+        {track ? (
           <span className="rm-sub">
-            {t.artist && <span className="rm-artist">{t.artist}</span>}
+            {track.artist && <span className="rm-artist">{track.artist}</span>}
             {albumLine && <span className="rm-album">{albumLine}</span>}
           </span>
-        ) : <span className="rm-sub"><span className="rm-album">Pick something in the library or in TeleCloud</span></span>}
+        ) : <span className="rm-sub"><span className="rm-album">{t('Pick something in the library or in TeleCloud')}</span></span>}
         <div className="rm-meta-row">
-          <Badges t={t} />
+          <Badges t={track} />
           <span className="rm-meta-tools">
-            <button className={`rm-icon lyr ${showLyrics ? 'on' : ''}`} onClick={toggleLyrics} aria-pressed={showLyrics} aria-label={showLyrics ? 'Show the cover' : 'Show the lyrics'} title={showLyrics ? 'Cover' : 'Lyrics'}>
+            <button className={`rm-icon lyr ${showLyrics ? 'on' : ''}`} onClick={toggleLyrics} aria-pressed={showLyrics} aria-label={showLyrics ? t('Show the cover') : t('Show the lyrics')} title={showLyrics ? t('Cover') : t('Lyrics')}>
               <Icon name="lyrics" />
             </button>
-            {t && (
-              <button className={`rm-icon cmd heart ${t.fav ? 'on' : ''}`} onClick={() => fav(t, !t.fav)} aria-label={t.fav ? 'Remove from favourites' : 'Add to favourites'} title="Favourite">
-                <Icon name="heart" filled={!!t.fav} />
+            {track && (
+              <button className={`rm-icon cmd heart ${track.fav ? 'on' : ''}`} onClick={() => fav(track, !track.fav)} aria-label={track.fav ? t('Remove from favourites') : t('Add to favourites')} title={t('Favourite')}>
+                <Icon name="heart" filled={!!track.fav} />
               </button>
             )}
           </span>
@@ -291,29 +299,29 @@ export default function RemoteApp() {
   const ctlEl = (
     <div className="rm-ctl">
       <div className="rm-seek">
-        <input type="range" className="rm-range cmd" min="0" max={dur || 1} step="0.5" value={pos} disabled={!t || !dur} aria-label="Position"
+        <input type="range" className="rm-range cmd" min="0" max={dur || 1} step="0.5" value={pos} disabled={!track || !dur} aria-label={t('Position')}
           style={{ '--pct': `${dur ? Math.min(100, (pos / dur) * 100) : 0}%` }}
           onChange={(e) => setSeekDraft(Number(e.target.value))} onPointerUp={commitSeek} onKeyUp={commitSeek} onBlur={commitSeek} />
         <div className="rm-times mono"><span>{clock(pos)}</span><span>{clock(dur)}</span></div>
       </div>
       <div className="rm-controls">
-        <button className={`rm-icon cmd ${s?.shuffle ? 'on' : ''}`} onClick={() => send('shuffle')} aria-label="Shuffle" title="Shuffle"><Icon name="shuffle" /></button>
-        <button className="rm-icon cmd big" onClick={() => send('prev')} aria-label="Previous" title="Previous"><Icon name="prev" /></button>
-        <button className={`rm-play cmd ${s?.playing ? 'is-playing' : ''}`} onClick={() => send('toggle')} aria-label={s?.playing ? 'Pause' : 'Play'} title={s?.playing ? 'Pause' : 'Play'}>
+        <button className={`rm-icon cmd ${s?.shuffle ? 'on' : ''}`} onClick={() => send('shuffle')} aria-label={t('Shuffle')} title={t('Shuffle')}><Icon name="shuffle" /></button>
+        <button className="rm-icon cmd big" onClick={() => send('prev')} aria-label={t('Previous')} title={t('Previous')}><Icon name="prev" /></button>
+        <button className={`rm-play cmd ${s?.playing ? 'is-playing' : ''}`} onClick={() => send('toggle')} aria-label={s?.playing ? t('Pause') : t('Play')} title={s?.playing ? t('Pause') : t('Play')}>
           <Icon key={s?.playing ? 'pause' : 'play'} name={s?.playing ? 'pause' : 'play'} filled={!s?.playing} />
         </button>
-        <button className="rm-icon cmd big" onClick={() => send('next')} aria-label="Next" title="Next"><Icon name="next" /></button>
-        <button className={`rm-icon cmd ${s?.repeat !== 'none' ? 'on' : ''}`} onClick={() => send('repeat', { mode: nextRepeat })} aria-label="Repeat" title={`Repeat: ${s?.repeat || 'none'}`}>
+        <button className="rm-icon cmd big" onClick={() => send('next')} aria-label={t('Next')} title={t('Next')}><Icon name="next" /></button>
+        <button className={`rm-icon cmd ${s?.repeat !== 'none' ? 'on' : ''}`} onClick={() => send('repeat', { mode: nextRepeat })} aria-label={t('Repeat')} title={t('Repeat: {value}', { value: s?.repeat || 'none' })}>
           <Icon name="repeat" />{s?.repeat === 'one' && <i className="rm-one">1</i>}
         </button>
       </div>
       <div className="rm-volume">
-        <button className={`rm-icon cmd ${s?.muted ? 'on' : ''}`} onClick={() => send('mute', { on: !s?.muted })} aria-label={s?.muted ? 'Unmute' : 'Mute'}><Icon name={s?.muted ? 'mute' : 'volume'} /></button>
+        <button className={`rm-icon cmd ${s?.muted ? 'on' : ''}`} onClick={() => send('mute', { on: !s?.muted })} aria-label={s?.muted ? t('Unmute') : t('Mute')}><Icon name={s?.muted ? 'mute' : 'volume'} /></button>
         {s?.exclusive
-          ? <span className="rm-locked">Fixed at 100% in exclusive mode</span>
+          ? <span className="rm-locked">{t('Fixed at 100% in exclusive mode')}</span>
           : (
             <>
-              <input type="range" className="rm-range cmd" min="0" max="100" step="1" value={vol} aria-label="Volume" style={{ '--pct': `${vol}%` }}
+              <input type="range" className="rm-range cmd" min="0" max="100" step="1" value={vol} aria-label={t('Volume')} style={{ '--pct': `${vol}%` }}
                 onChange={(e) => { const v = Number(e.target.value); setVolDraft(v); if (!ro) post('volume', { volume: v }); }} onPointerUp={commitVol} onKeyUp={commitVol} />
               <span className="mono rm-vol">{Math.round(vol)}</span>
             </>
@@ -332,19 +340,19 @@ export default function RemoteApp() {
 
   const queuePanel = (
     <section className="rm-queue card">
-      <div className="rm-sec-head"><b>Up next</b><span className="mono">{queue.length}</span></div>
-      {queue.length === 0 && <p className="rm-empty">Nothing queued. Start an album or a playlist from the library.</p>}
+      <div className="rm-sec-head"><b>{t('Up next')}</b><span className="mono">{queue.length}</span></div>
+      {queue.length === 0 && <p className="rm-empty">{t('Nothing queued. Start an album or a playlist from the library.')}</p>}
       <ol className="rm-list">
         {queue.map((q, i) => (
           <li key={`${q.id}-${i}`} style={{ '--i': Math.min(i, 14) }}>
-            <button className="rm-row cmd" onClick={() => send('jump', { index: i, id: q.id })} title="Play now">
+            <button className="rm-row cmd" onClick={() => send('jump', { index: i, id: q.id })} title={t('Play now')}>
               <Cover id={q.id} className="rm-thumb" />
               <span className="rm-row-text"><b>{q.title}</b><small><Where t={q} />{q.artist}</small></span>
             </button>
             <span className="rm-row-tools cmd">
-              <button className="rm-icon sm" disabled={i === 0} onClick={() => send('move', { from: i, to: i - 1, id: q.id })} aria-label="Move up" title="Move up"><Icon name="chevron" className="up" /></button>
-              <button className="rm-icon sm" disabled={i === queue.length - 1} onClick={() => send('move', { from: i, to: i + 1, id: q.id })} aria-label="Move down" title="Move down"><Icon name="chevron" /></button>
-              <button className="rm-icon sm" onClick={() => send('remove', { index: i, id: q.id })} aria-label="Remove" title="Remove from the queue"><Icon name="close" /></button>
+              <button className="rm-icon sm" disabled={i === 0} onClick={() => send('move', { from: i, to: i - 1, id: q.id })} aria-label={t('Move up')} title={t('Move up')}><Icon name="chevron" className="up" /></button>
+              <button className="rm-icon sm" disabled={i === queue.length - 1} onClick={() => send('move', { from: i, to: i + 1, id: q.id })} aria-label={t('Move down')} title={t('Move down')}><Icon name="chevron" /></button>
+              <button className="rm-icon sm" onClick={() => send('remove', { index: i, id: q.id })} aria-label={t('Remove')} title={t('Remove from the queue')}><Icon name="close" /></button>
             </span>
           </li>
         ))}
@@ -354,35 +362,35 @@ export default function RemoteApp() {
 
   const sidePanel = (
     <section className="rm-side card">
-      <div className="rm-sec-head"><b>Output</b>{s?.verdict && <span className={`badge ${s.bitPerfect ? 'b-lossless' : 'b-cached'}`}>{s.verdict}</span>}</div>
-      <div className="rm-outputs" role="radiogroup" aria-label="Output">
+      <div className="rm-sec-head"><b>{t('Output')}</b>{s?.verdict && <span className={`badge ${s.bitPerfect ? 'b-lossless' : 'b-cached'}`}>{s.verdict}</span>}</div>
+      <div className="rm-outputs" role="radiogroup" aria-label={t('Output')}>
         {(s?.outputs || []).map((o, i) => (
           <button key={o.id} role="radio" aria-checked={s.output === o.id} style={{ '--i': i }} className={`rm-output cmd ${s.output === o.id ? 'on' : ''}`} onClick={() => s.output !== o.id && send('output', { id: o.id })}>
             <Icon name={o.id === '-1' ? 'monitor' : 'speaker'} />
-            <span>{o.name}{o.id === '-1' ? <small>Shared</small> : <small>Exclusive</small>}</span>
+            <span>{o.name}{o.id === '-1' ? <small>{t('Shared')}</small> : <small>{t('Exclusive')}</small>}</span>
             <Icon name="check" className="tick" />
           </button>
         ))}
       </div>
       <label className="rm-switch cmd">
-        <span><Icon name="eq" />Equalizer</span>
+        <span><Icon name="eq" />{t('Equalizer')}</span>
         <input type="checkbox" checked={!!s?.eq} onChange={(e) => send('eq', { on: e.target.checked })} />
         <i />
       </label>
       <div className="rm-sleep">
-        <div className="rm-sleep-head"><span><Icon name="moon" />Sleep timer</span>{s?.sleep && <b className="mono">{s.sleep}</b>}</div>
+        <div className="rm-sleep-head"><span><Icon name="moon" />{t('Sleep timer')}</span>{s?.sleep && <b className="mono">{s.sleep}</b>}</div>
         <div className="rm-sleep-chips">
           {[[15, '15 min'], [30, '30 min'], [60, '1 hour']].map(([m, l]) => <button key={m} className="cmd" onClick={() => send('sleep', { value: { minutes: m } })}>{l}</button>)}
-          <button className="cmd" disabled={!t} onClick={() => send('sleep', { value: { kind: 'track' } })}>End of track</button>
-          {s?.sleep && <button className="cmd off" onClick={() => send('sleep', { value: null })}>Off</button>}
+          <button className="cmd" disabled={!track} onClick={() => send('sleep', { value: { kind: 'track' } })}>{t('End of track')}</button>
+          {s?.sleep && <button className="cmd off" onClick={() => send('sleep', { value: null })}>{t('Off')}</button>}
         </div>
       </div>
-      {t && s?.steps?.length > 0 && (
+      {track && s?.steps?.length > 0 && (
         <div className="rm-sp">
-          <div className="rm-sec-head"><b>Signal path</b></div>
+          <div className="rm-sec-head"><b>{t('Signal path')}</b></div>
           <ol>
             {s.steps.map((x, i) => (
-              <li key={`${i}-${x.label}`} className={`${x.state} ${x.clip ? 'clip' : ''}`} style={{ '--i': i }} title={x.clip ? 'Clipping' : undefined}>
+              <li key={`${i}-${x.label}`} className={`${x.state} ${x.clip ? 'clip' : ''}`} style={{ '--i': i }} title={x.clip ? t('Clipping') : undefined}>
                 <i /><span>{x.label}</span><b className="mono">{x.value}</b>
               </li>
             ))}
@@ -399,20 +407,20 @@ export default function RemoteApp() {
           <b>{host?.name || 'TeleCloud'}{host?.beta && <span className="rm-beta">Beta</span>}</b>
           {host?.custom && <small>{host.realName}</small>}
         </div>
-        {ro && <span className="badge rm-ro-badge" title="Change it in TeleCloud > Settings > Remote">View only</span>}
-        <span className={`rm-conn ${online ? 'on' : ''}`} title={online ? 'Connected' : 'Not connected'} />
+        {ro && <span className="badge rm-ro-badge" title={t('Change it in TeleCloud > Settings > Remote')}>{t('View only')}</span>}
+        <span className={`rm-conn ${online ? 'on' : ''}`} title={online ? t('Connected') : t('Not connected')} />
       </header>
   );
   const panels = { now: nowPanel, library: <Library s={s} act={act} />, queue: queuePanel, side: sidePanel };
   // Flex Mode: the controls get the bottom half to themselves
   if (layout === 'flex') panels.controls = <section className="rm-ctl-panel card">{ctlEl}</section>;
-  const miniBar = shown !== 'now' && t ? (
+  const miniBar = shown !== 'now' && track ? (
     <div className="rm-mini" role="button" tabIndex={0} onClick={() => setTab('now')} onKeyDown={(e) => { if (e.key === 'Enter') setTab('now'); }}>
       <span className="rm-mini-bar" style={{ '--pct': `${dur ? Math.min(100, (pos / dur) * 100) : 0}%` }} />
-      <Cover id={t.id} className="rm-thumb" />
-      <span className="rm-row-text"><b>{t.title}</b><small>{t.artist}</small></span>
-      <button className="rm-icon cmd" onClick={(e) => { e.stopPropagation(); send('toggle'); }} aria-label={s?.playing ? 'Pause' : 'Play'}><Icon name={s?.playing ? 'pause' : 'play'} filled={!s?.playing} /></button>
-      <button className="rm-icon cmd" onClick={(e) => { e.stopPropagation(); send('next'); }} aria-label="Next"><Icon name="next" /></button>
+      <Cover id={track.id} className="rm-thumb" />
+      <span className="rm-row-text"><b>{track.title}</b><small>{track.artist}</small></span>
+      <button className="rm-icon cmd" onClick={(e) => { e.stopPropagation(); send('toggle'); }} aria-label={s?.playing ? t('Pause') : t('Play')}><Icon name={s?.playing ? 'pause' : 'play'} filled={!s?.playing} /></button>
+      <button className="rm-icon cmd" onClick={(e) => { e.stopPropagation(); send('next'); }} aria-label={t('Next')}><Icon name="next" /></button>
     </div>
   ) : null;
   const pill = <Pill value={shown} onChange={setTab} options={tabs.map(v => ({ value: v, ...TABS[v] }))} />;
@@ -422,7 +430,7 @@ export default function RemoteApp() {
     <ArtRev.Provider value={s?.art || 0}><LibRev.Provider value={s?.lib || 0}>
     <div className={`rm rm-l-${layout} ${ro ? 'ro' : ''}`}>
       {layout !== 'flex' && layout !== 'fold' && headerEl}
-      {!online && s && <div className="rm-banner">Can't reach TeleCloud right now. The computer may be asleep or TeleCloud closed, or its address changed: scan the QR code again.</div>}
+      {!online && s && <div className="rm-banner">{t('Can\'t reach TeleCloud right now. The computer may be asleep or TeleCloud closed, or its address changed: scan the QR code again.')}</div>}
 
       {layout === 'phone' && (
         <>

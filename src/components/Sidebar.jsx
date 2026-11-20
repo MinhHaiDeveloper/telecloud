@@ -1,20 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Icon from './Icon';
 import useSlidingIndicator from '../hooks/useSlidingIndicator';
+import { t } from '../i18n';
 
 const PLAYLIST_COLORS = ['#ff5c5c', '#3fcf8e', '#f5b942', '#9b7bff', '#4cc3ff', '#ff8ad8'];
 
 const NAV_MAIN = [
-  { id: 'home', label: 'Discover', icon: 'discover' },
-  { id: 'dashboard', label: 'Dashboard', icon: 'chart' },
-  { id: 'library', label: 'Library', icon: 'library', countKey: 'library' },
+  { id: 'home', get label() { return t('Discover'); }, icon: 'discover' },
+  { id: 'dashboard', get label() { return t('Dashboard'); }, icon: 'chart' },
+  { id: 'library', get label() { return t('Library'); }, icon: 'library', countKey: 'library' },
 ];
 const NAV_MUSIC = [
-  { id: 'favorites', label: 'Favourites', icon: 'heart', countKey: 'favorites' },
-  { id: 'recent', label: 'Recently played', icon: 'clock' },
-  { id: 'artists', label: 'Artists', icon: 'user' },
-  { id: 'albums', label: 'Albums', icon: 'disc' },
-  { id: 'folders', label: 'Folders', icon: 'folder' },
+  { id: 'favorites', get label() { return t('Favourites'); }, icon: 'heart', countKey: 'favorites' },
+  { id: 'recent', get label() { return t('Recently played'); }, icon: 'clock' },
+  { id: 'artists', get label() { return t('Artists'); }, icon: 'user' },
+  { id: 'albums', get label() { return t('Albums'); }, icon: 'disc' },
+  { id: 'folders', get label() { return t('Folders'); }, icon: 'folder' },
 ];
 
 const Sidebar = ({
@@ -64,7 +65,7 @@ const Sidebar = ({
       <div className="logo">
         <div className="logo-mark"><Icon name="logo" /></div>
         <span className="logo-text">TeleCloud{document.documentElement.dataset.channel === 'beta' && <span className="logo-beta">Beta</span>}</span>
-        <button className="icon-btn sm collapse-btn" onClick={onToggleCollapse} title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+        <button className="icon-btn sm collapse-btn" onClick={onToggleCollapse} title={isCollapsed ? t('Expand sidebar') : t('Collapse sidebar')}>
           <Icon name="chevronLeft" />
         </button>
       </div>
@@ -83,10 +84,10 @@ const Sidebar = ({
           {counts.cloud > 0 && <span className="count">{counts.cloud.toLocaleString()}</span>}
         </button>
 
-        <div className="nav-label">Your music</div>
+        <div className="nav-label">{t('Your music')}</div>
         {NAV_MUSIC.map(navButton)}
 
-        <div className="nav-label">Your playlists</div>
+        <div className="nav-label">{t('Your playlists')}</div>
         {playlists.map((p, i) => {
           const key = `pl:${p.id}`;
           return (
@@ -103,21 +104,21 @@ const Sidebar = ({
             </button>
           );
         })}
-        <button className="create-pl" onClick={onCreatePlaylist} title="Create new playlist">
-          <span>Create new playlist</span><Icon name="plus" />
+        <button className="create-pl" onClick={onCreatePlaylist} title={t('Create new playlist')}>
+          <span>{t('Create new playlist')}</span><Icon name="plus" />
         </button>
 
-        <div className="nav-label">System</div>
-        {navButton({ id: 'settings', label: 'Settings', icon: 'settings' })}
+        <div className="nav-label">{t('System')}</div>
+        {navButton({ id: 'settings', label: t('Settings'), icon: 'settings' })}
       </nav>
 
       {/* Output device: shows the live signal state and switches devices */}
       <div className="device-wrap" ref={deviceRef}>
         {deviceMenuOpen && (
           <div className="menu device-menu" style={menuPos ? { position: 'fixed', zIndex: 1200, left: menuPos.left, bottom: menuPos.bottom, width: menuPos.width, right: 'auto', top: 'auto' } : undefined}>
-            <div className="menu-title">Output device</div>
+            <div className="menu-title">{t('Output device')}</div>
             <button className={`menu-item ${selectedDevice === '-1' ? 'on' : ''}`} onClick={() => { onDeviceChange('-1'); setDeviceMenuOpen(false); }}>
-              <Icon name="monitor" />System default (shared)
+              <Icon name="monitor" />{t('System default (shared)')}
             </button>
             {devices.map(d => (
               <button key={d.id} className={`menu-item ${selectedDevice === d.id ? 'on' : ''}`} onClick={() => { onDeviceChange(d.id); setDeviceMenuOpen(false); }} title={d.name}>
@@ -130,12 +131,12 @@ const Sidebar = ({
           <div className="device-top">
             <div className="device-icon"><Icon name="speaker" /></div>
             <div className="device-info">
-              <div className="device-name">{signal?.deviceName?.replace(/ \(WASAPI\)$/, '') || 'System default'}</div>
-              <div className="device-sub">{signal?.exclusive ? 'WASAPI · Exclusive' : 'Shared mode'}</div>
+              <div className="device-name">{signal?.deviceName?.replace(/ \(WASAPI\)$/, '') || t('System default')}</div>
+              <div className="device-sub">{signal?.exclusive ? t('WASAPI · Exclusive') : t('Shared mode')}</div>
             </div>
           </div>
           <div className="device-meta">
-            <span className={`badge ${signal?.bitPerfect ? 'b-lossless' : 'b-cached'}`}>{signal?.verdict || 'Idle'}</span>
+            <span className={`badge ${signal?.bitPerfect ? 'b-lossless' : 'b-cached'}`}>{signal?.verdict || t('Idle')}</span>
             {signal?.outSpec && <span className="badge b-hires mono">{signal.outSpec}{/\/[\d.]+$/.test(signal.outSpec) ? ' kHz' : ''}</span>}
           </div>
         </button>

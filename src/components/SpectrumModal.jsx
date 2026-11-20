@@ -3,6 +3,7 @@ import { Dialog, Progress } from './ui';
 import Icon from './Icon';
 import { formatTime, qualityOf } from '../utils/audio';
 import { ipcOn, ipcOff } from '../utils/ipc';
+import { t } from '../i18n';
 
 // Perceptual "inferno"-like colormap: black → purple → red → orange → pale yellow
 const STOPS = [
@@ -34,25 +35,25 @@ const VERDICT_STYLE = {
 const SpectrumHelp = () => (
   <div className="spec-help">
     <section>
-      <b>How it's measured</b>
-      <p>The whole file is decoded and cut into short overlapping slices. Each slice goes through an FFT, which splits it into frequencies: every column of the picture is one moment, every row one frequency, and brighter means louder (from −120 to 0 dBFS).</p>
-      <p>The levels are then averaged over the entire track. The <b>cutoff</b> (white line) is the highest frequency that stays clearly above the noise floor for a stretch of at least 400 Hz. A cutoff is <b>sharp</b> when the level drops by more than 25 dB within about 1 kHz above it, which is what an encoder's low-pass filter does.</p>
-      <p>Bit depth is checked separately: the samples are inspected to see how many of the declared bits ever change.</p>
+      <b>{t('How it\'s measured')}</b>
+      <p>{t('The whole file is decoded and cut into short overlapping slices. Each slice goes through an FFT, which splits it into frequencies: every column of the picture is one moment, every row one frequency, and brighter means louder (from −120 to 0 dBFS).')}</p>
+      <p>{t('The levels are then averaged over the entire track. The {b} (white line) is the highest frequency that stays clearly above the noise floor for a stretch of at least 400 Hz. A cutoff is {b2} when the level drops by more than 25 dB within about 1 kHz above it, which is what an encoder\'s low-pass filter does.', { b: <b>{t('cutoff')}</b>, b2: <b>{t('sharp')}</b> })}</p>
+      <p>{t('Bit depth is checked separately: the samples are inspected to see how many of the declared bits ever change.')}</p>
     </section>
     <section>
-      <b>What the results mean</b>
+      <b>{t('What the results mean')}</b>
       <dl>
-        <dt className="ok">Lossless, full range</dt><dd>Content reaches at least 93% of the limit for this sample rate (about 20.5 kHz at 44.1 kHz) with no brick wall. What you expect from a CD rip or a real hi-res file.</dd>
-        <dt className="bad">Lossy source</dt><dd>A sharp cutoff between 10 and 20.8 kHz in a lossless file: it was most likely made from an MP3 or AAC. Rough guide: ~16 kHz ≈ 128 kbps, ~19 kHz ≈ 192, ~19.5 kHz ≈ 256, ~20 kHz ≈ 320. It can look perfect elsewhere and still be lossy.</dd>
-        <dt className="bad">Upsampled</dt><dd>A sample rate above 48 kHz with nothing above about 24.5 kHz: the music was made at 44.1 or 48 kHz and converted up. It sounds the same as the original, it is just bigger.</dd>
-        <dt className="bad">Padded bit depth</dt><dd>Declared 24-bit, but only 16 bits ever carry data: 16-bit audio stored in a 24-bit container.</dd>
-        <dt className="warn">Gradual roll-off</dt><dd>The highs fade out slowly instead of stopping. Common for older or analogue recordings and gentle masters; not a sign of lossy encoding on its own.</dd>
-        <dt>Lossy by design</dt><dd>MP3, AAC, Opus and Vorbis files are expected to stop early; the cutoff shows roughly which bitrate.</dd>
+        <dt className="ok">{t('Lossless, full range')}</dt><dd>{t('Content reaches at least 93% of the limit for this sample rate (about 20.5 kHz at 44.1 kHz) with no brick wall. What you expect from a CD rip or a real hi-res file.')}</dd>
+        <dt className="bad">{t('Lossy source')}</dt><dd>{t('A sharp cutoff between 10 and 20.8 kHz in a lossless file: it was most likely made from an MP3 or AAC. Rough guide: ~16 kHz ≈ 128 kbps, ~19 kHz ≈ 192, ~19.5 kHz ≈ 256, ~20 kHz ≈ 320. It can look perfect elsewhere and still be lossy.')}</dd>
+        <dt className="bad">{t('Upsampled')}</dt><dd>{t('A sample rate above 48 kHz with nothing above about 24.5 kHz: the music was made at 44.1 or 48 kHz and converted up. It sounds the same as the original, it is just bigger.')}</dd>
+        <dt className="bad">{t('Padded bit depth')}</dt><dd>{t('Declared 24-bit, but only 16 bits ever carry data: 16-bit audio stored in a 24-bit container.')}</dd>
+        <dt className="warn">{t('Gradual roll-off')}</dt><dd>{t('The highs fade out slowly instead of stopping. Common for older or analogue recordings and gentle masters; not a sign of lossy encoding on its own.')}</dd>
+        <dt>{t('Lossy by design')}</dt><dd>{t('MP3, AAC, Opus and Vorbis files are expected to stop early; the cutoff shows roughly which bitrate.')}</dd>
       </dl>
     </section>
     <section>
-      <b>Limits</b>
-      <p>This is strong evidence, not proof. A high-bitrate AAC or 320 kbps MP3 can reach 20 kHz, some masters are filtered on purpose, and very quiet or very short tracks give weaker readings.</p>
+      <b>{t('Limits')}</b>
+      <p>{t('This is strong evidence, not proof. A high-bitrate AAC or 320 kbps MP3 can reach 20 kHz, some masters are filtered on purpose, and very quiet or very short tracks give weaker readings.')}</p>
     </section>
   </div>
 );
@@ -127,14 +128,14 @@ const SpectrumModal = ({ file, onClose }) => {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <span className={`badge b-${q.tier} mono`}>{q.label}</span>
           {file.metadata?.bitrate > 0 && <span className="badge b-lossy mono">{Math.round(file.metadata.bitrate / 1000)} kbps</span>}
-          {result?.effectiveBits && <span className="badge b-lossy mono">{result.effectiveBits}-bit used</span>}
+          {result?.effectiveBits && <span className="badge b-lossy mono">{t('{effectiveBits}-bit used', { effectiveBits: result.effectiveBits })}</span>}
           {result && <span className="badge b-lossy mono">FFT {result.fftSize}</span>}
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-            <button className={`btn-ghost sm ${showLine ? 'on' : ''}`} onClick={toggleLine} title="The white line marks where the content stops">
-              <Icon name={showLine ? 'eye' : 'eyeOff'} />Cutoff line
+            <button className={`btn-ghost sm ${showLine ? 'on' : ''}`} onClick={toggleLine} title={t('The white line marks where the content stops')}>
+              <Icon name={showLine ? 'eye' : 'eyeOff'} />{t('Cutoff line')}
             </button>
             <button className={`btn-ghost sm ${showHelp ? 'on' : ''}`} onClick={() => setShowHelp(v => !v)} aria-expanded={showHelp}>
-              <Icon name="info" />How it's measured
+              <Icon name="info" />{t('How it\'s measured')}
             </button>
           </span>
         </div>
@@ -166,21 +167,21 @@ const SpectrumModal = ({ file, onClose }) => {
             {!result && !error && (
               <div className="state" style={{ color: '#d8d0e8' }}>
                 <div style={{ width: 260 }}>
-                  <div style={{ marginBottom: 10 }}>Decoding and analysing… {pct}%</div>
+                  <div style={{ marginBottom: 10 }}>{t('Decoding and analysing… {pct}', { pct })}%</div>
                   <Progress value={pct} />
                 </div>
               </div>
             )}
             {error && <div className="state" style={{ color: 'var(--danger)' }}>{error}</div>}
           </div>
-          <div className="spec-legend" style={{ background: GRADIENT }} title="Level, dBFS" />
+          <div className="spec-legend" style={{ background: GRADIENT }} title={t('Level, dBFS')} />
           <div className="spec-time">
             {[0, 0.2, 0.4, 0.6, 0.8, 1].map(f => <span key={f}>{formatTime(duration * f)}</span>)}
           </div>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, color: 'var(--text-3)', marginTop: 6 }}>
-          <span>Frequency (Hz) over time · brighter = louder (−120 → 0 dBFS)</span>
-          {result && <span className="mono">{(result.sampleRate / 1000).toFixed(1)} kHz decode · limit {(nyq / 1000).toFixed(1)} kHz</span>}
+          <span>{t('Frequency (Hz) over time · brighter = louder (−120 → 0 dBFS)')}</span>
+          {result && <span className="mono">{t('{value} kHz decode · limit {value2}', { value: (result.sampleRate / 1000).toFixed(1), value2: (nyq / 1000).toFixed(1) })} kHz</span>}
         </div>
       </div>
     </Dialog>

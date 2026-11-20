@@ -3,11 +3,12 @@ import Icon from './Icon';
 import Cover from './Cover';
 import { Dialog, Segmented } from './ui';
 import { albumQuery } from '../utils/audio';
+import { t } from '../i18n';
 
 const SAVE_TO = [
-  { value: 'file', label: 'cover.jpg' },
-  { value: 'tag', label: 'Tag' },
-  { value: 'both', label: 'Both' },
+  { value: 'file', get label() { return t('cover.jpg'); } },
+  { value: 'tag', get label() { return t('Tag'); } },
+  { value: 'both', get label() { return t('Both'); } },
 ];
 
 /** Search every cover source for an album (or upload a picture), pick one, save it for all its tracks */
@@ -46,7 +47,7 @@ const CoverDialog = ({ files, onClose, onSaved }) => {
   const upload = async () => {
     setProblem('');
     const r = await window.ipcRenderer.invoke('covers:pick');
-    if (!r?.success) { setProblem(r?.error || 'Could not open that picture'); return; }
+    if (!r?.success) { setProblem(r?.error || t('Could not open that picture')); return; }
     if (r.picked) setPick({ image: { file: r.picked.file }, thumb: r.picked.thumb, label: r.picked.name, size: `${r.picked.width} × ${r.picked.height}` });
   };
   const save = async (allowReadOnly = false) => {
@@ -55,13 +56,13 @@ const CoverDialog = ({ files, onClose, onSaved }) => {
     setReadOnly(0);
     const r = await window.ipcRenderer.invoke('covers:save', { paths, image: pick.image, to: saveTo, allowReadOnly });
     setSaving(false);
-    if (!r?.success) { setProblem(r?.error || 'Could not save the cover'); return; }
+    if (!r?.success) { setProblem(r?.error || t('Could not save the cover')); return; }
     if (r.file || r.tag || r.cloud) onSaved?.(r);
     if (!r.errors?.length) { onClose(); return; }
     const n = r.errors.length;
     const blocked = r.errors.filter(e => e.readOnly).length;
     setReadOnly(blocked);
-    setProblem(`${r.file ? 'cover.jpg was saved. ' : ''}${n} ${n === 1 ? 'file' : 'files'} could not be changed: ${blocked === n ? (n === 1 ? 'it is read-only.' : 'they are read-only.') : r.errors[0].error}`);
+    setProblem(t('{value}{n|# file|# files} could not be changed: {value2}', { value: r.file ? t('cover.jpg was saved. ') : '', n, value2: blocked === n ? (n === 1 ? t('it is read-only.') : t('they are read-only.')) : r.errors[0].error }));
   };
   const labelOf = (id) => opts?.sources?.[id]?.label || id;
   const shown = results.filter(r => !broken.has(r.thumb));
@@ -70,48 +71,48 @@ const CoverDialog = ({ files, onClose, onSaved }) => {
   // what saving does to the music files themselves
   const rewrites = saveTo === 'file' ? embedded : backedUp || embedded;
   let fileNote = '';
-  if (saveTo === 'file' && embedded) fileNote = ` ${embedded} already ${embedded === 1 ? 'has' : 'have'} a picture inside, which is replaced too.`;
-  if (backedUp && rewrites) fileNote += ' Backed-up files that change are uploaded again.';
+  if (saveTo === 'file' && embedded) fileNote = t(' {embedded} already {embedded|has|have} a picture inside, which is replaced too.', { embedded });
+  if (backedUp && rewrites) fileNote += t(' Backed-up files that change are uploaded again.');
 
   return (
     <Dialog
-      title="Album cover"
+      title={t('Album cover')}
       icon="image"
       width={860}
       onClose={onClose}
       actions={(
         <>
-          <button className="btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" onClick={() => save()} disabled={!pick || saving}>{saving ? 'Saving…' : 'Save cover'}</button>
+          <button className="btn-ghost" onClick={onClose}>{t('Cancel')}</button>
+          <button className="btn-primary" onClick={() => save()} disabled={!pick || saving}>{saving ? t('Saving…') : t('Save cover')}</button>
         </>
       )}
     >
       <div className="cov-body">
         <div className="cov-side">
           {pick ? <Cover src={pick.thumb} className="cov-big" /> : <Cover file={files[0]} className="cov-big" />}
-          <small className="cov-cap">{pick ? `${pick.label}${pick.size ? ` · ${pick.size}` : ''}` : 'Current cover'}</small>
-          <button className="btn-ghost" onClick={upload}><Icon name="plus" />Upload picture…</button>
+          <small className="cov-cap">{pick ? `${pick.label}${pick.size ? ` · ${pick.size}` : ''}` : t('Current cover')}</small>
+          <button className="btn-ghost" onClick={upload}><Icon name="plus" />{t('Upload picture…')}</button>
           {anyLocal && (
             <div className="cov-saveto">
-              <small>Save to</small>
+              <small>{t('Save to')}</small>
               <Segmented value={saveTo} onChange={setSaveTo} size="sm" options={SAVE_TO} />
             </div>
           )}
           <small className="cov-cap">
-            For {files.length} {files.length === 1 ? 'track' : 'tracks'}.{fileNote}
+           {t('For {length}', { length: files.length })} {files.length === 1 ? t('track') : t('tracks')}.{fileNote}
           </small>
           {problem && <small className="cov-problem">{problem}</small>}
-          {readOnly > 0 && pick && <button className="btn-ghost sm" onClick={() => save(true)} disabled={saving} title="Writes the cover into them, then makes them read-only again">Write to them anyway</button>}
+          {readOnly > 0 && pick && <button className="btn-ghost sm" onClick={() => save(true)} disabled={saving} title={t('Writes the cover into them, then makes them read-only again')}>{t('Write to them anyway')}</button>}
         </div>
         <div className="cov-main">
           <form className="lyr-query" onSubmit={(e) => { e.preventDefault(); run({ album, artist }); }}>
-            <input className="input" value={album} onChange={(e) => setAlbum(e.target.value)} placeholder="Album" />
-            <input className="input" value={artist} onChange={(e) => setArtist(e.target.value)} placeholder="Artist" />
-            <button className="btn-ghost" type="submit" disabled={busy}><Icon name="search" />Search</button>
+            <input className="input" value={album} onChange={(e) => setAlbum(e.target.value)} placeholder={t('Album')} />
+            <input className="input" value={artist} onChange={(e) => setArtist(e.target.value)} placeholder={t('Artist')} />
+            <button className="btn-ghost" type="submit" disabled={busy}><Icon name="search" />{t('Search')}</button>
           </form>
           <div className="cov-results">
-            {busy && <div className="lyr-empty"><span className="ring" />Searching…</div>}
-            {!busy && !shown.length && <div className="lyr-empty">Nothing found. Try a shorter album name, or upload a picture.</div>}
+            {busy && <div className="lyr-empty"><span className="ring" />{t('Searching…')}</div>}
+            {!busy && !shown.length && <div className="lyr-empty">{t('Nothing found. Try a shorter album name, or upload a picture.')}</div>}
             {!busy && shown.length > 0 && (
               <div className="cov-grid">
                 {shown.map((r, i) => (
@@ -130,7 +131,7 @@ const CoverDialog = ({ files, onClose, onSaved }) => {
               </div>
             )}
           </div>
-          {!busy && errorIds.length > 0 && <div className="lyr-errors">Not reached: {errorIds.map(id => `${labelOf(id)} (${errors[id]})`).join(', ')}</div>}
+          {!busy && errorIds.length > 0 && <div className="lyr-errors">{t('Not reached: {map}', { map: errorIds.map(id => `${labelOf(id)} (${errors[id]})`).join(', ') })}</div>}
         </div>
       </div>
     </Dialog>

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Cover from './Cover';
 import Icon from './Icon';
 import { qualityOf } from '../utils/audio';
+import { t } from '../i18n';
 
 /**
  * Tracks after the current one. Click a row to play it, drag rows to reorder.
@@ -49,10 +50,10 @@ const QueueList = ({ files, onPlay, onMove, onRemove, limit, numbered = false, s
           >
             {numbered && <span className="q-num mono">{i + 1}</span>}
             <Cover file={f} />
-            <div className="meta"><b>{f.metadata?.title || f.name}</b><span>{f.metadata?.artist || 'Unknown artist'}</span></div>
+            <div className="meta"><b>{f.metadata?.title || f.name}</b><span>{f.metadata?.artist || t('Unknown artist')}</span></div>
             {q && <span className={`badge b-${q.tier} mono`}>{q.label}</span>}
             {onRemove && (
-              <button className="icon-btn sm q-remove" onClick={(e) => { e.stopPropagation(); onRemove(i); }} title="Remove from queue"><Icon name="close" /></button>
+              <button className="icon-btn sm q-remove" onClick={(e) => { e.stopPropagation(); onRemove(i); }} title={t('Remove from queue')}><Icon name="close" /></button>
             )}
           </div>
         );

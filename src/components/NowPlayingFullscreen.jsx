@@ -12,6 +12,7 @@ import QueueList from './QueueList';
 import VuMeters from './VuMeters';
 import { formatTime, qualityOf, formatBytes, mqaOf } from '../utils/audio';
 import { useAppearance } from '../utils/appearance';
+import { t } from '../i18n';
 
 // Small artworks the big cover can fly from / back to
 const ORIGINS = {
@@ -274,19 +275,19 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, playing = true, onSeek
   const q = currentFile ? qualityOf(currentFile) : null;
   const toggle = (name) => setPanel(p => (p === name ? null : name));
   const details = [
-    m.year && { label: 'Year', value: m.year },
-    m.genre && { label: 'Genre', value: m.genre },
-    m.track ? { label: 'Track', value: m.disc > 1 ? `${m.disc}-${m.track}` : m.track } : null,
-    m.duration && { label: 'Length', value: formatTime(m.duration) },
-    { label: 'Plays', value: (playCounts || {})[currentFile?.path] || 0 },
-    m.bitrate && { label: 'Bitrate', value: `${Math.round(m.bitrate / 1000).toLocaleString()} kbps` },
-    currentFile?.size && { label: 'Size', value: formatBytes(currentFile.size) },
+    m.year && { label: t('Year'), value: m.year },
+    m.genre && { label: t('Genre'), value: m.genre },
+    m.track ? { label: t('Track'), value: m.disc > 1 ? `${m.disc}-${m.track}` : m.track } : null,
+    m.duration && { label: t('Length'), value: formatTime(m.duration) },
+    { label: t('Plays'), value: (playCounts || {})[currentFile?.path] || 0 },
+    m.bitrate && { label: t('Bitrate'), value: `${Math.round(m.bitrate / 1000).toLocaleString()} kbps` },
+    currentFile?.size && { label: t('Size'), value: formatBytes(currentFile.size) },
   ].filter(Boolean);
 
   return (
-    <section ref={rootRef} className={`np-full ${panel && panel !== 'vu' ? 'with-panel' : ''} ${panel === 'vu' ? 'vu-mode' : ''} np-${phase} ${coverOnly ? 'cover-only' : ''}`} aria-label="Now playing">
+    <section ref={rootRef} className={`np-full ${panel && panel !== 'vu' ? 'with-panel' : ''} ${panel === 'vu' ? 'vu-mode' : ''} np-${phase} ${coverOnly ? 'cover-only' : ''}`} aria-label={t('Now playing')}>
       {coverOnly && (
-        <button className={`np-reveal ${peek ? 'show' : ''}`} onClick={() => setCoverOnly(false)} title="Show everything (H or Esc)">
+        <button className={`np-reveal ${peek ? 'show' : ''}`} onClick={() => setCoverOnly(false)} title={t('Show everything (H or Esc)')}>
           <Icon name="eye" />
         </button>
       )}
@@ -295,22 +296,22 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, playing = true, onSeek
       </div>
 
       <header className="np-top np-fade">
-        <button className="icon-btn" onClick={requestClose} title="Close (Esc)"><Icon name="chevron" /></button>
+        <button className="icon-btn" onClick={requestClose} title={t('Close (Esc)')}><Icon name="chevron" /></button>
         <div className="np-top-title">
-          <span className="eyebrow" style={{ margin: 0 }}>Now playing</span>
-          <b>{m.album || 'Unknown album'}</b>
+          <span className="eyebrow" style={{ margin: 0 }}>{t('Now playing')}</span>
+          <b>{m.album || t('Unknown album')}</b>
         </div>
         <div className="np-top-actions">
-          <button className="np-pill icon-only" onClick={() => setCoverOnly(true)} title="Cover only (H)">
+          <button className="np-pill icon-only" onClick={() => setCoverOnly(true)} title={t('Cover only (H)')}>
             <Icon name="eyeOff" />
           </button>
-          <button className={`np-pill ${panel === 'lyrics' ? 'on' : ''}`} onClick={() => toggle('lyrics')} title="Lyrics (L)">
-            <Icon name="lyrics" />Lyrics
+          <button className={`np-pill ${panel === 'lyrics' ? 'on' : ''}`} onClick={() => toggle('lyrics')} title={t('Lyrics (L)')}>
+            <Icon name="lyrics" />{t('Lyrics')}
           </button>
-          <button className={`np-pill ${panel === 'queue' ? 'on' : ''}`} onClick={() => toggle('queue')} title="Queue (Q)">
-            <Icon name="queue" />Queue{queueFiles.length ? <span className="np-count">{queueFiles.length}</span> : null}
+          <button className={`np-pill ${panel === 'queue' ? 'on' : ''}`} onClick={() => toggle('queue')} title={t('Queue (Q)')}>
+            <Icon name="queue" />{t('Queue')}{queueFiles.length ? <span className="np-count">{queueFiles.length}</span> : null}
           </button>
-          <button className={`np-pill ${panel === 'vu' ? 'on' : ''}`} onClick={() => toggle('vu')} title="VU meters (V)">
+          <button className={`np-pill ${panel === 'vu' ? 'on' : ''}`} onClick={() => toggle('vu')} title={t('VU meters (V)')}>
             <Icon name="vu" />VU
           </button>
         </div>
@@ -326,7 +327,7 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, playing = true, onSeek
         <div className="np-hero">
           <LiquidCover file={currentFile} className="np-cover" coverKey={`c-${currentFile?.path}`} />
           <div className="np-info np-fade">
-            <h1 title={m.title || currentFile?.name}>{m.title || currentFile?.name || 'Nothing playing'}</h1>
+            <h1 title={m.title || currentFile?.name}>{m.title || currentFile?.name || t('Nothing playing')}</h1>
             <div className="np-sub"><MetaLinks file={currentFile} /></div>
             <CoverNote file={currentFile} />
             {currentFile && (
@@ -334,7 +335,7 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, playing = true, onSeek
                 <span className={`badge b-${q.tier} mono`}>{q.label}</span>
                 {mqaOf(currentFile) && <span className={`badge ${mqaOf(currentFile).cls} mono`}>{mqaOf(currentFile).short}</span>}
                 {signal && <span className={`badge ${signal.bitPerfect ? 'b-lossless' : 'b-cached'}`}>{signal.verdict}</span>}
-                {signal?.outSpec && <span className="badge b-lossy mono">out {signal.outSpec}</span>}
+                {signal?.outSpec && <span className="badge b-lossy mono">{t('out {outSpec}', { outSpec: signal.outSpec })}</span>}
               </div>
             )}
             {!panel && details.length > 0 && (
@@ -352,19 +353,19 @@ const NowPlayingFullscreen = ({ currentFile, currentTime, playing = true, onSeek
               : (
                 <div className="np-empty">
                   <Icon name="lyrics" />
-                  No lyrics for this track
-                  <small>Search the lyrics sources, or type them in.</small>
+                 {t('No lyrics for this track')}
+                  <small>{t('Search the lyrics sources, or type them in.')}</small>
                   <LyricsNote file={currentFile} />
                 </div>
               ))}
             {panel === 'queue' && (
               <div className="np-queue">
-                {queueFiles.length > 0 && <div className="section-head" style={{ margin: '0 8px 8px' }}><span>Up next</span><span className="badge b-lossy">{queueFiles.length}</span></div>}
+                {queueFiles.length > 0 && <div className="section-head" style={{ margin: '0 8px 8px' }}><span>{t('Up next')}</span><span className="badge b-lossy">{queueFiles.length}</span></div>}
                 {queueFiles.length === 0 && (
                   <div className="np-empty">
                     <Icon name="queue" />
-                    Nothing queued after this track
-                    <small>Play an album, playlist or the library to fill the queue.</small>
+                   {t('Nothing queued after this track')}
+                    <small>{t('Play an album, playlist or the library to fill the queue.')}</small>
                   </div>
                 )}
                 {queueFiles.length > 0 && <QueueList files={queueFiles} numbered showQuality onPlay={onPlayQueued} onMove={onMoveQueued} onRemove={onRemoveQueued} />}

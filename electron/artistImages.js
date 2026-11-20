@@ -9,6 +9,7 @@ const database = require('./database');
 const { describeWriteError, withWritable } = require('./fileWrite');
 const { isArtistPictureType, isArtistTagPicture } = require('./covers');
 const { openTags } = require('./tagFile');
+const { tx } = require('./i18n');
 
 const UA = 'TeleCloud/1.0 (https://github.com/MinhHaiDeveloper/telecloud)';
 const MAX_SIDE = 1000; // inside every track of the artist: stays small
@@ -20,13 +21,13 @@ const FOLDER_NAMES = /^(artist|band|performer)\.(jpe?g|png)$/i;
 const NOT_AN_ARTIST = /^(various( artists)?|va|v\.a\.?|compilations?|unknown( artist)?)$/i;
 
 const SOURCES = {
-  local: { label: 'This computer', online: false, note: 'Artist pictures in the tags of their tracks, and artist.jpg next to them.' },
-  lastfm: { label: 'Last.fm', online: true, note: 'The pictures on the artist\'s public page.' },
+  get local() { return { label: tx('This computer'), online: false, note: tx('Artist pictures in the tags of their tracks, and artist.jpg next to them.') }; },
+  get lastfm() { return { label: 'Last.fm', online: true, note: tx('The pictures on the artist\'s public page.') }; },
   deezer: { label: 'Deezer', online: true },
-  theaudiodb: { label: 'TheAudioDB', online: true, note: 'Pictures from its community, with the public free key (30 searches a minute).' },
-  itunes: { label: 'Apple Music', online: true, note: "The picture on the artist's public page." },
-  qq: { label: 'QQ Music', online: true, note: 'Best for Chinese and other Asian artists.' },
-  musicbrainz: { label: 'MusicBrainz', online: true, note: 'Photos it links on Wikimedia Commons. Slower: one question a second.' },
+  get theaudiodb() { return { label: 'TheAudioDB', online: true, note: tx('Pictures from its community, with the public free key (30 searches a minute).') }; },
+  get itunes() { return { label: 'Apple Music', online: true, note: tx('The picture on the artist\'s public page.') }; },
+  get qq() { return { label: 'QQ Music', online: true, note: tx('Best for Chinese and other Asian artists.') }; },
+  get musicbrainz() { return { label: 'MusicBrainz', online: true, note: tx('Photos it links on Wikimedia Commons. Slower: one question a second.') }; },
 };
 const DEFAULTS = { search: true, autoSave: false, order: ['local', 'lastfm', 'deezer', 'theaudiodb', 'itunes', 'qq', 'musicbrainz'], disabled: [] };
 
@@ -108,9 +109,9 @@ function setGifState(name, state) {
 }
 /** The browser engine reads GIFs; Electron's nativeImage doesn't */
 async function readGif(buf) {
-  if (buf.length > MAX_GIF) throw new Error('That GIF is over 15 MB. Use a smaller one.');
+  if (buf.length > MAX_GIF) throw new Error(tx('That GIF is over 15 MB. Use a smaller one.'));
   const win = require('./mainWindow').get();
-  if (!win) throw new Error('TeleCloud has no window to read that GIF');
+  if (!win) throw new Error(tx('TeleCloud has no window to read that GIF'));
   let r;
   try {
     r = await win.webContents.executeJavaScript(`(async () => {
@@ -128,7 +129,7 @@ async function readGif(buf) {
       d.close();
       return out;
     })()`);
-  } catch { throw new Error('That GIF could not be read'); }
+  } catch { throw new Error(tx('That GIF could not be read')); }
   return { ...r, still: Buffer.from(r.still.split(',')[1], 'base64') };
 }
 const motionFor = async (name) => (gifState(name)?.key ? fs.promises.readFile(gifFile(name)).catch(() => null) : null);
@@ -146,7 +147,7 @@ function wantsGif(entry) {
   return loadIndex()[norm(entry.name)]?.source !== 'user';
 }
 async function gifFromCloud(entry, buf) {
-  if (gifKey(buf) !== entry.key) throw new Error('The GIF in TeleCloud does not match the index');
+  if (gifKey(buf) !== entry.key) throw new Error(tx('The GIF in TeleCloud does not match the index'));
   const gif = await readGif(buf);
   await fs.promises.mkdir(dir(), { recursive: true });
   await fs.promises.writeFile(gifFile(entry.name), buf);
@@ -169,7 +170,7 @@ const signature = (tracks) => tracks.slice(0, SCAN_TRACKS).map(t => `${t.path}|$
 
 const resized = (buf, side, quality) => {
   const img = nativeImage.createFromBuffer(buf);
-  if (img.isEmpty()) throw new Error('That file is not a JPG or PNG picture');
+  if (img.isEmpty()) throw new Error(tx('That file is not a JPG or PNG picture'));
   const { width, height } = img.getSize();
   const isJpeg = buf[0] === 0xff && buf[1] === 0xd8;
   if (Math.max(width, height) <= side && isJpeg) return buf;
@@ -569,7 +570,7 @@ async function download(url) {
     const r = await fetch(url, { headers: { 'User-Agent': UA }, signal: ctl.signal });
     if (!r.ok) throw require('./httpError')(r, url);
     const buf = Buffer.from(await r.arrayBuffer());
-    if (buf.length > 30 * 1024 * 1024) throw new Error('The picture is too large');
+    if (buf.length > 30 * 1024 * 1024) throw new Error(tx('The picture is too large'));
     return buf;
   } finally { clearTimeout(t); }
 }
@@ -580,12 +581,12 @@ async function loadImage(image) {
       return download(image.fallback);
     }
   }
-  if (image?.artistTrack) return (await pictureInTrack(image.artistTrack)) || Promise.reject(new Error('That track has no artist picture'));
+  if (image?.artistTrack) return (await pictureInTrack(image.artistTrack)) || Promise.reject(new Error(tx('That track has no artist picture')));
   if (image?.file) {
-    if (!/\.(jpe?g|png|gif)$/i.test(image.file)) throw new Error('Use a JPG, PNG or GIF picture');
+    if (!/\.(jpe?g|png|gif)$/i.test(image.file)) throw new Error(tx('Use a JPG, PNG or GIF picture'));
     return fs.promises.readFile(image.file);
   }
-  throw new Error('No picture chosen');
+  throw new Error(tx('No picture chosen'));
 }
 
 /** The playing track: decided now (reading is safe), written when it stops */
@@ -655,7 +656,7 @@ async function writeToTracks(name, jpeg, { onlyMissing, allowReadOnly }) {
 }
 
 async function save({ name, image, onlyMissing = false, allowReadOnly = false }) {
-  if (!name || NOT_AN_ARTIST.test(name.trim())) throw new Error('That is not one artist');
+  if (!name || NOT_AN_ARTIST.test(name.trim())) throw new Error(tx('That is not one artist'));
   const buf = await loadImage(image);
   const gif = isGif(buf) ? await readGif(buf) : null;
   const moving = gif?.frames > 1; // a GIF of one frame is just a picture
@@ -703,12 +704,12 @@ function targets(name) {
 
 async function pick(e) {
   const win = BrowserWindow.fromWebContents(e.sender);
-  const r = await dialog.showOpenDialog(win, { title: 'Choose an artist picture', properties: ['openFile'], filters: [{ name: 'Pictures', extensions: ['jpg', 'jpeg', 'png', 'gif'] }] });
+  const r = await dialog.showOpenDialog(win, { title: tx('Choose an artist picture'), properties: ['openFile'], filters: [{ name: tx('Pictures'), extensions: ['jpg', 'jpeg', 'png', 'gif'] }] });
   if (r.canceled || !r.filePaths?.[0]) return null;
   const file = r.filePaths[0];
   const buf = await fs.promises.readFile(file);
   const t = thumbOf(isGif(buf) ? (await readGif(buf)).still : buf);
-  if (!t) throw new Error('That file is not a JPG, PNG or GIF picture');
+  if (!t) throw new Error(tx('That file is not a JPG, PNG or GIF picture'));
   return { file, ...t, name: path.basename(file) };
 }
 

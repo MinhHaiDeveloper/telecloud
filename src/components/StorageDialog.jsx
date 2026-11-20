@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import Icon from './Icon';
 import { Dialog, Callout } from './ui';
 import { formatBytes } from '../utils/audio';
+import { t } from '../i18n';
 
 /**
  * "Back up to…" for a track, an album, a playlist or the favourites. Each track lives in one
@@ -43,12 +44,12 @@ const StorageDialog = ({ files, label, storages, onClose, onDone }) => {
       if (kind === 'upload') {
         const r = await ipc.invoke('telecloud-sync:backup-to', { paths: plan.upload.map(f => f.path), storageId: target });
         if (!r.success) throw new Error(r.error);
-        onDone?.(`${r.queued} ${r.queued === 1 ? 'track' : 'tracks'} queued for ${targetStorage.title}`);
+        onDone?.(t('{queued|# track|# tracks} queued for {title}', { queued: r.queued, title: targetStorage.title }));
       } else {
         const paths = [...plan.elsewhere.values()].flat().map(f => f.path);
         const r = await ipc.invoke('telecloud-sync:move-to', { paths, storageId: target });
         if (!r.success) throw new Error(r.error);
-        onDone?.(`Moved ${r.moved} ${r.moved === 1 ? 'track' : 'tracks'} to ${targetStorage.title}`);
+        onDone?.(t('Moved {moved|# track|# tracks} to {title}', { moved: r.moved, title: targetStorage.title }));
       }
       onClose();
     } catch (err) {
@@ -60,12 +61,12 @@ const StorageDialog = ({ files, label, storages, onClose, onDone }) => {
 
   const bytes = plan.upload.reduce((a, f) => a + (f.size || 0), 0);
   return (
-    <Dialog open title={`Back up ${label}`} icon="cloud" width={520} onClose={onClose}
+    <Dialog open title={t('Back up {label}', { label })} icon="cloud" width={520} onClose={onClose}
       actions={<>
-        <button className="btn-ghost" onClick={onClose}>Cancel</button>
-        {plan.moveCount > 0 && <button className="btn-ghost" onClick={() => run('move')} disabled={busy}>Move {plan.moveCount} here</button>}
+        <button className="btn-ghost" onClick={onClose}>{t('Cancel')}</button>
+        {plan.moveCount > 0 && <button className="btn-ghost" onClick={() => run('move')} disabled={busy}>{t('Move {moveCount} here', { moveCount: plan.moveCount })}</button>}
         <button className="btn-primary" onClick={() => run('upload')} disabled={busy || !plan.upload.length}>
-          {busy ? 'Working…' : plan.upload.length ? `Back up ${plan.upload.length} ${plan.upload.length === 1 ? 'track' : 'tracks'}` : 'Nothing to back up'}
+          {busy ? t('Working…') : plan.upload.length ? t('Back up {length|# track|# tracks}', { length: plan.upload.length }) : t('Nothing to back up')}
         </button>
       </>}>
       <div className="storage-pick">
@@ -74,19 +75,19 @@ const StorageDialog = ({ files, label, storages, onClose, onDone }) => {
             <input type="radio" name="storage-target" checked={target === s.id} onChange={() => setTarget(s.id)} />
             <span className="radio-dot" />
             <div>
-              <b>{s.title}{s.isDefault && <span className="badge b-local" style={{ marginLeft: 8 }}>Default</span>}</b>
-              <span>{s.kind === 'self' ? 'Saved Messages' : s.kind === 'group' ? 'Private group' : 'Private channel'} · {s.tracks.toLocaleString()} tracks · {formatBytes(s.bytes)}</span>
+              <b>{s.title}{s.isDefault && <span className="badge b-local" style={{ marginLeft: 8 }}>{t('Default')}</span>}</b>
+              <span>{s.kind === 'self' ? t('Saved Messages') : s.kind === 'group' ? t('Private group') : t('Private channel')} · {t('{tracks} tracks · {bytes}', { tracks: s.tracks.toLocaleString(), bytes: formatBytes(s.bytes) })}</span>
             </div>
           </label>
         ))}
       </div>
       <div className="storage-plan">
-        {plan.upload.length > 0 && <div><Icon name="upload" /><span><b>{plan.upload.length}</b> {plan.upload.length === 1 ? 'track' : 'tracks'} ({formatBytes(bytes)}) will be uploaded to <b>{targetStorage?.title}</b>.</span></div>}
-        {plan.here.length > 0 && <div><Icon name="check" /><span><b>{plan.here.length}</b> already in {targetStorage?.title}.</span></div>}
+        {plan.upload.length > 0 && <div><Icon name="upload" /><span><b>{plan.upload.length}</b> {plan.upload.length === 1 ? t('track') : t('tracks')} ({t('{bytes}) will be uploaded to', { bytes: formatBytes(bytes) })} <b>{targetStorage?.title}</b>.</span></div>}
+        {plan.here.length > 0 && <div><Icon name="check" /><span><b>{plan.here.length}</b> {t('already in {title}', { title: targetStorage?.title })}.</span></div>}
         {[...plan.elsewhere.entries()].map(([title, list]) => (
-          <div key={title}><Icon name="cloud" /><span><b>{list.length}</b> already in <b>{title}</b>: not uploaded again. Use “Move {plan.moveCount} here” to keep them in {targetStorage?.title} instead.</span></div>
+          <div key={title}><Icon name="cloud" /><span><b>{list.length}</b> {t('already in {b}: not uploaded again. Use “Move {moveCount} here” to keep them in {title} instead.', { b: <b>{title}</b>, moveCount: plan.moveCount, title: targetStorage?.title })}</span></div>
         ))}
-        {plan.unavailable > 0 && <div><Icon name="alert" /><span><b>{plan.unavailable}</b> not on this computer, so they can't be uploaded.</span></div>}
+        {plan.unavailable > 0 && <div><Icon name="alert" /><span><b>{plan.unavailable}</b> {t('not on this computer, so they can\'t be uploaded.')}</span></div>}
       </div>
       {error && <Callout tone="danger">{error}</Callout>}
     </Dialog>

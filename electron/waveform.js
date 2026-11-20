@@ -8,6 +8,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { mpvPath } = require('./player');
 const { isPlayablePath, isInAppStorage } = require('./paths');
+const { tx } = require('./i18n');
 
 const BARS = 600;
 const RATE = 11025; // plenty for a loudness outline, and quick to decode
@@ -46,7 +47,7 @@ function decode(file, duration) {
     child.on('error', reject);
     child.on('close', () => {
       if (inBlock) blocks.push(blockMax);
-      if (!blocks.length) { reject(new Error('No audio')); return; }
+      if (!blocks.length) { reject(new Error(tx('No audio'))); return; }
       const peaks = new Array(BARS).fill(0);
       blocks.forEach((v, i) => { const b = Math.min(BARS - 1, Math.floor((i / blocks.length) * BARS)); if (v > peaks[b]) peaks[b] = v; });
       resolve({ peaks: shape(peaks), seconds: (blocks.length * BLOCK) / RATE || duration || 0 });

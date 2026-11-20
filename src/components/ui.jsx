@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import Icon from './Icon';
 import useSlidingIndicator from '../hooks/useSlidingIndicator';
+import { t } from '../i18n';
 
 // Small shared building blocks so every view uses the same controls
 
@@ -96,7 +97,7 @@ export const Select = ({ value, options, onChange, variant, icon, align = 'left'
 };
 
 /** Overflow (⋯) menu. items: [{ label, icon, onClick, danger, sep }] */
-export const MoreMenu = ({ items, title = 'More', trigger }) => {
+export const MoreMenu = ({ items, title = t('More'), trigger }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const close = useCallback(() => setOpen(false), []);
@@ -155,7 +156,7 @@ export const SettingRow = ({ icon, title, desc, children, muted }) => (
   </div>
 );
 
-export const BackButton = ({ onClick, label = 'Back' }) => (
+export const BackButton = ({ onClick, label = t('Back') }) => (
   <button className="icon-btn back-btn" onClick={onClick} title={label} aria-label={label}><Icon name="chevronLeft" /></button>
 );
 
@@ -174,7 +175,7 @@ export const Dialog = ({ open = true, title, icon, tone, onClose, children, acti
         <div className="dialog-head">
           {icon && <div className={`dialog-icon ${tone || ''}`}><Icon name={icon} /></div>}
           <h3>{title}</h3>
-          {!persistent && onClose && <button className="icon-btn sm" onClick={onClose} aria-label="Close"><Icon name="close" /></button>}
+          {!persistent && onClose && <button className="icon-btn sm" onClick={onClose} aria-label={t('Close')}><Icon name="close" /></button>}
         </div>
         <div className="dialog-body">{children}</div>
         {actions && <div className="dialog-actions">{actions}</div>}
@@ -226,8 +227,8 @@ export const DialogHost = () => {
       onClose={() => done(current.kind === 'confirm' ? false : undefined)}
       actions={current.kind === 'confirm' ? (
         <>
-          <button className="btn-ghost" onClick={() => done(false)}>{current.cancelLabel || 'Cancel'}</button>
-          <button className={current.danger ? 'btn-danger' : 'btn-primary'} onClick={() => done(true)} autoFocus>{current.confirmLabel || 'Confirm'}</button>
+          <button className="btn-ghost" onClick={() => done(false)}>{current.cancelLabel || t('Cancel')}</button>
+          <button className={current.danger ? 'btn-danger' : 'btn-primary'} onClick={() => done(true)} autoFocus>{current.confirmLabel || t('Confirm')}</button>
         </>
       ) : (
         <button className="btn-primary" onClick={() => done()} autoFocus>{current.okLabel || 'OK'}</button>

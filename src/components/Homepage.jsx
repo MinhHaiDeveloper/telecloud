@@ -6,6 +6,7 @@ import SongList from './SongList';
 import { qualityOf, storageOf, formatDuration, formatBytes, sortAlbumTracks } from '../utils/audio';
 import { albumIndex, trackCount } from '../utils/albums';
 import { MostPlayed, OnThisDay } from './ListeningHistory';
+import { t } from '../i18n';
 
 const FORMAT_COLORS = ['var(--accent)', 'var(--ok)', '#9b7bff', 'var(--info)', 'var(--text-3)'];
 
@@ -64,7 +65,7 @@ const Homepage = ({ musicFiles, recentPlayed = [], onPlay, onNavClick, setSelect
     const top = [...formats.entries()].sort((a, b) => b[1] - a[1]);
     const shown = top.slice(0, 4);
     const rest = top.slice(4).reduce((s, [, n]) => s + n, 0);
-    if (rest) shown.push(['Other', rest]);
+    if (rest) shown.push([t('Other'), rest]);
     return {
       tracks: settled.length,
       hires,
@@ -86,9 +87,9 @@ const Homepage = ({ musicFiles, recentPlayed = [], onPlay, onNavClick, setSelect
       <section className="hero">
         <div className="card hero-a" onClick={() => recentPlayed.length ? onPlay(recentPlayed[0], 0, recentPlayed) : onNavClick('library')} role="button">
           <div className="eyebrow">
-            {recentPlayed.length ? `${recentPlayed.length} tracks · ${formatDuration(recentDuration)}` : `${stats.tracks.toLocaleString()} tracks in your library`}
+            {recentPlayed.length ? t('{length} tracks · {duration}', { length: recentPlayed.length, duration: formatDuration(recentDuration) }) : t('{tracks} tracks in your library', { tracks: stats.tracks.toLocaleString() })}
           </div>
-          <div className="hero-title">{recentPlayed.length ? 'Continue listening' : 'Start listening'}</div>
+          <div className="hero-title">{recentPlayed.length ? t('Continue listening') : t('Start listening')}</div>
           <Cover file={recentPlayed[0] || settled[settled.length - 1]} />
         </div>
 
@@ -97,32 +98,32 @@ const Homepage = ({ musicFiles, recentPlayed = [], onPlay, onNavClick, setSelect
             <>
               <Cover file={latest.file} className="hero-bg" />
               <div className="content">
-                <div className="eyebrow">Recently added</div>
+                <div className="eyebrow">{t('Recently added')}</div>
                 <div className="hero-title" title={latest.name}>{latest.name}</div>
                 <div className="hero-specs">
                   {latestQuality && <span className={`badge b-${latestQuality.tier} mono`}>{latestQuality.label}</span>}
-                  {latestStorage.includes('local') && <span className="badge b-local"><Icon name="monitor" />Local</span>}
-                  {latestStorage.includes('cloud') && <span className="badge b-cloud"><Icon name="cloud" />Synced</span>}
+                  {latestStorage.includes('local') && <span className="badge b-local"><Icon name="monitor" />{t('Local')}</span>}
+                  {latestStorage.includes('cloud') && <span className="badge b-cloud"><Icon name="cloud" />{t('Synced')}</span>}
                 </div>
                 <div className="hero-sub">{latest.artist} · {trackCount(ctx.countUnique ? ctx.countUnique(latest.songs) : latest.songs.length)}</div>
                 <div className="hero-actions">
-                  <button className="btn-primary" onClick={() => onPlay(latest.songs[0], 0, latest.songs)}><Icon name="play" filled />Play album</button>
-                  <button className="icon-btn" title="Shuffle album" onClick={() => {
+                  <button className="btn-primary" onClick={() => onPlay(latest.songs[0], 0, latest.songs)}><Icon name="play" filled />{t('Play album')}</button>
+                  <button className="icon-btn" title={t('Shuffle album')} onClick={() => {
                     const shuffled = [...latest.songs].sort(() => Math.random() - 0.5);
                     onPlay(shuffled[0], 0, shuffled);
                   }}><Icon name="shuffle" /></button>
-                  <button className="icon-btn" title="Open album" onClick={() => openAlbum(latest)}><Icon name="disc" /></button>
+                  <button className="icon-btn" title={t('Open album')} onClick={() => openAlbum(latest)}><Icon name="disc" /></button>
                 </div>
               </div>
               <Cover file={latest.file} />
             </>
           ) : (
             <div className="content">
-              <div className="eyebrow">Your library is empty</div>
-              <div className="hero-title">Add a music folder</div>
-              <div className="hero-sub">Point TeleCloud at the folders holding your FLAC, DSD and other files.</div>
+              <div className="eyebrow">{t('Your library is empty')}</div>
+              <div className="hero-title">{t('Add a music folder')}</div>
+              <div className="hero-sub">{t('Point TeleCloud at the folders holding your FLAC, DSD and other files.')}</div>
               <div className="hero-actions">
-                <button className="btn-primary" onClick={() => onNavClick('settings')}><Icon name="folder" />Open settings</button>
+                <button className="btn-primary" onClick={() => onNavClick('settings')}><Icon name="folder" />{t('Open settings')}</button>
               </div>
             </div>
           )}
@@ -131,7 +132,7 @@ const Homepage = ({ musicFiles, recentPlayed = [], onPlay, onNavClick, setSelect
 
       {albums.length > 1 && (
         <>
-          <div className="section-head"><span>Recently added albums</span><button onClick={() => onNavClick('albums')}>See all</button></div>
+          <div className="section-head"><span>{t('Recently added albums')}</span><button onClick={() => onNavClick('albums')}>{t('See all')}</button></div>
           <div className="album-grid" ref={gridRef} style={{ '--cols': cols }}>
             {/* Newest first; one row of whatever fits, the rest is on the Albums page */}
             {albums.slice(0, cols).map(a => (
@@ -146,7 +147,7 @@ const Homepage = ({ musicFiles, recentPlayed = [], onPlay, onNavClick, setSelect
 
       {recentPlayed.length > 0 && (
         <>
-          <div className="section-head"><span>Recently played</span><button onClick={() => onNavClick('recent')}>See all</button></div>
+          <div className="section-head"><span>{t('Recently played')}</span><button onClick={() => onNavClick('recent')}>{t('See all')}</button></div>
           <div style={{ marginBottom: 28 }}>
             <SongList {...songListProps} musicFiles={recentPlayed.slice(0, 6)} />
           </div>
@@ -160,41 +161,41 @@ const Homepage = ({ musicFiles, recentPlayed = [], onPlay, onNavClick, setSelect
         <div className="card sync-card">
           <div className="sync-head">
             <span className={`live ${syncStatus?.isAuthenticated ? '' : 'off'}`} />
-            <h3>TeleCloud Sync</h3>
+            <h3>{t('TeleCloud Sync')}</h3>
           </div>
           {syncProgress ? (
             <>
-              <div className="sync-sub">Uploading {syncProgress.current} of {syncProgress.total} tracks</div>
+              <div className="sync-sub">{t('Uploading {current} of {total} tracks', { current: syncProgress.current, total: syncProgress.total })}</div>
               <div className="progress"><span style={{ width: `${Math.round(((syncProgress.current - 1 + (syncProgress.uploadProgress || 0) / 100) / Math.max(1, syncProgress.total)) * 100)}%` }} /></div>
               <div className="sync-sub" style={{ margin: '8px 0 0', fontSize: 12 }}>{syncProgress.currentFile}</div>
             </>
           ) : (
             <div className="sync-sub">
               {syncStatus?.isAuthenticated
-                ? `Connected${syncStatus.lastSync ? ` · last sync ${new Date(syncStatus.lastSync).toLocaleString()}` : ''}`
-                : 'Back up your library to a private Telegram channel and stream it anywhere.'}
+                ? t('Connected{value}', { value: syncStatus.lastSync ? t(' · last sync {value}', { value: new Date(syncStatus.lastSync).toLocaleString() }) : '' })
+                : t('Back up your library to a private Telegram channel and stream it anywhere.')}
             </div>
           )}
           <div className="sync-stats">
             {syncStatus?.isAuthenticated ? (
               <>
-                <div><b>{(syncStatus.syncedItems || 0).toLocaleString()}</b><span>tracks in cloud</span></div>
-                <div><b>{formatBytes(syncStatus.storageUsed)}</b><span>stored</span></div>
-                <div style={{ marginLeft: 'auto', alignSelf: 'center' }}><button className="btn-ghost" onClick={() => onNavClick('telecloud')}>Open</button></div>
+                <div><b>{(syncStatus.syncedItems || 0).toLocaleString()}</b><span>{t('tracks in cloud')}</span></div>
+                <div><b>{formatBytes(syncStatus.storageUsed)}</b><span>{t('stored')}</span></div>
+                <div style={{ marginLeft: 'auto', alignSelf: 'center' }}><button className="btn-ghost" onClick={() => onNavClick('telecloud')}>{t('Open')}</button></div>
               </>
             ) : (
-              <button className="btn-primary" onClick={() => onNavClick('settings')}><Icon name="cloud" />Set up TeleCloud</button>
+              <button className="btn-primary" onClick={() => onNavClick('settings')}><Icon name="cloud" />{t('Set up TeleCloud')}</button>
             )}
           </div>
         </div>
 
         <div className="stats">
-          <div className="section-head" style={{ margin: 0 }}><span>Library</span></div>
-          <div className="card stat"><div><small>Tracks</small><b>{stats.tracks.toLocaleString()}</b></div><Icon name="music" /></div>
-          <div className="card stat"><div><small>Hi-Res (&gt; 16-bit / 48 kHz)</small><b>{stats.hires.toLocaleString()}</b></div><span className="badge b-hires">{stats.hiresPct}%</span></div>
+          <div className="section-head" style={{ margin: 0 }}><span>{t('Library')}</span></div>
+          <div className="card stat"><div><small>{t('Tracks')}</small><b>{stats.tracks.toLocaleString()}</b></div><Icon name="music" /></div>
+          <div className="card stat"><div><small>{t('Hi-Res (> 16-bit / 48 kHz)')}</small><b>{stats.hires.toLocaleString()}</b></div><span className="badge b-hires">{stats.hiresPct}%</span></div>
           <div className="card stat">
             <div className="fmt-stat">
-              <small>Formats</small>
+              <small>{t('Formats')}</small>
               <div className="fmt-bar">
                 {stats.formats.map((f, i) => <i key={f.name} title={`${f.name} ${f.pct}%`} style={{ flex: `${Math.max(f.pct, 3)} 1 0`, background: FORMAT_COLORS[i % FORMAT_COLORS.length] }} />)}
               </div>

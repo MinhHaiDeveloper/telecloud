@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import Icon from './Icon';
 import { Dialog, SettingRow, confirmDialog } from './ui';
+import { t } from '../i18n';
 
-const plural = (n, one, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
 
 const Tracks = ({ title, note, rows }) => {
   if (!rows.length) return null;
@@ -10,8 +10,8 @@ const Tracks = ({ title, note, rows }) => {
     <div className="check-block">
       <b>{title} · {rows.length.toLocaleString()}</b>
       {note && <small>{note}</small>}
-      <ul>{rows.slice(0, 200).map(r => <li key={r.path}>{r.title}{r.cached ? ' (a copy is in the cache here)' : ''}</li>)}</ul>
-      {rows.length > 200 && <small>And {(rows.length - 200).toLocaleString()} more.</small>}
+      <ul>{rows.slice(0, 200).map(r => <li key={r.path}>{r.title}{r.cached ? t(' (a copy is in the cache here)') : ''}</li>)}</ul>
+      {rows.length > 200 && <small>{t('And {value} more.', { value: (rows.length - 200).toLocaleString() })}</small>}
     </div>
   );
 };
@@ -41,61 +41,60 @@ const BackupCheck = ({ disabled }) => {
     const r = await window.ipcRenderer.invoke('telecloud-sync:check-repair', { paths: fixable.map(x => x.path) });
     setFixing(false);
     setDone(r?.success ? [
-      r.queued ? `${plural(r.queued, 'track')} queued for backup again.` : '',
-      r.covers ? `${plural(r.covers, 'album cover')} put back in Telegram.` : '',
-      r.coversLeft ? `${plural(r.coversLeft, 'album cover')} could not be put back: this computer has no copy.` : '',
-      r.index ? 'The index was saved.' : '',
-      r.queued ? 'Run the check again when the backup finishes.' : '',
-    ].filter(Boolean).join(' ') : `Could not repair: ${r?.error}`);
+      r.queued ? t('{count|# track|# tracks} queued for backup again.', { count: r.queued }) : '',
+      r.covers ? t('{count|# album cover|# album covers} put back in Telegram.', { count: r.covers }) : '',
+      r.coversLeft ? t('{count|# album cover|# album covers} could not be put back: this computer has no copy.', { count: r.coversLeft }) : '',
+      r.index ? t('The index was saved.') : '',
+      r.queued ? t('Run the check again when the backup finishes.') : '',
+    ].filter(Boolean).join(' ') : t('Could not repair: {error}', { error: r?.error }));
     if (r?.success) setReport(x => ({ ...x, repaired: true }));
   };
   const forget = async () => {
-    if (!await confirmDialog({ title: 'Remove lost tracks?', message: `${plural(lost.length, 'track')} will leave your library. Telegram no longer has a whole copy of them, and this computer has none.`, confirmLabel: 'Remove', danger: true })) return;
+    if (!await confirmDialog({ title: t('Remove lost tracks?'), message: t('{count|# track|# tracks} will leave your library. Telegram no longer has a whole copy of them, and this computer has none.', { count: lost.length }), confirmLabel: t('Remove'), danger: true })) return;
     setFixing(true);
     const r = await window.ipcRenderer.invoke('telecloud-sync:remove-from-cloud', { paths: lost.map(x => x.path) });
     setFixing(false);
-    if (r?.success) run(); else setDone(`Could not remove them: ${r?.error}`);
+    if (r?.success) run(); else setDone(t('Could not remove them: {error}', { error: r?.error }));
   };
 
-  const t = report?.totals;
-  const clean = report?.success && !t.missing && !t.damaged && !t.unreadable && !staleIndex && !t.coversMissing;
+  const totals = report?.totals;
+  const clean = report?.success && !totals.missing && !totals.damaged && !totals.unreadable && !staleIndex && !totals.coversMissing;
 
   return (
     <>
-      <SettingRow icon="check" title="Check backup" desc="Compares your library and its index with the files really in Telegram, and reports what is missing or the wrong size. No music is downloaded and nothing is changed.">
-        <button className="btn-ghost" onClick={run} disabled={disabled || busy}>{busy ? 'Checking…' : 'Check now'}</button>
+      <SettingRow icon="check" title={t('Check backup')} desc={t('Compares your library and its index with the files really in Telegram, and reports what is missing or the wrong size. No music is downloaded and nothing is changed.')}>
+        <button className="btn-ghost" onClick={run} disabled={disabled || busy}>{busy ? t('Checking…') : t('Check now')}</button>
       </SettingRow>
       {report && (
         <Dialog
-          title={!report.success ? 'Could not check the backup' : clean ? 'Your backup looks complete' : 'The check found problems'}
+          title={!report.success ? t('Could not check the backup') : clean ? t('Your backup looks complete') : t('The check found problems')}
           icon={clean ? 'check' : 'info'}
           tone={!report.success ? 'danger' : undefined}
           width={600}
           onClose={() => setReport(null)}
           actions={(
             <>
-              {report.success && lost.length > 0 && !report.repaired && <button className="btn-ghost" onClick={forget} disabled={fixing}>Remove lost tracks</button>}
-              {report.success && (fixable.length > 0 || staleIndex || lostCovers) && !report.repaired && <button className="btn-primary" onClick={repair} disabled={fixing}>{fixing ? 'Working…' : fixable.length ? 'Back up again from this computer' : lostCovers ? 'Put covers back' : 'Save the index again'}</button>}
-              <button className={clean || report.repaired || !report.success ? 'btn-primary' : 'btn-ghost'} onClick={() => setReport(null)}>Close</button>
+              {report.success && lost.length > 0 && !report.repaired && <button className="btn-ghost" onClick={forget} disabled={fixing}>{t('Remove lost tracks')}</button>}
+              {report.success && (fixable.length > 0 || staleIndex || lostCovers) && !report.repaired && <button className="btn-primary" onClick={repair} disabled={fixing}>{fixing ? t('Working…') : fixable.length ? t('Back up again from this computer') : lostCovers ? t('Put covers back') : t('Save the index again')}</button>}
+              <button className={clean || report.repaired || !report.success ? 'btn-primary' : 'btn-ghost'} onClick={() => setReport(null)}>{t('Close')}</button>
             </>
           )}
         >
           {!report.success ? <p className="check-text">{report.error}</p> : (
             <div className="check-report">
               <p className="check-text">
-                Checked {plural(t.tracks, 'track')} in {plural(report.storages.length, 'storage')}: {t.ok.toLocaleString()} found with the right size.
-                {' '}The music itself was not downloaded, so a file with the right size but damaged inside can't be noticed here.
+               {t('Checked {text} in {text2}: {ok} found with the right size. The music itself was not downloaded, so a file with the right size but damaged inside can\'t be noticed here.', { text: t('{n|# track|# tracks}', { n: totals.tracks }), text2: t('{n|# storage|# storages}', { n: report.storages.length }), ok: totals.ok.toLocaleString() })}
               </p>
               {done && <p className="check-text"><Icon name="check" style={{ width: 14, height: 14, verticalAlign: -2 }} /> {done}</p>}
-              <Tracks title="Missing from Telegram, still on this computer" note="They can be backed up again." rows={all('missing').filter(r => r.hasLocal)} />
-              <Tracks title="Missing from Telegram, not on this computer" note="These copies are gone unless another storage or computer has them." rows={all('missing').filter(r => !r.hasLocal)} />
-              <Tracks title="Wrong size in Telegram, still on this computer" note="The copy in Telegram doesn't match. Backing up again replaces it." rows={all('damaged').filter(r => r.hasLocal)} />
-              <Tracks title="Wrong size in Telegram, not on this computer" note="This may not play correctly." rows={all('damaged').filter(r => !r.hasLocal)} />
-              {report.storages.filter(s => !s.manifestOk).map(s => <div className="check-block" key={s.id}><b>{s.title}: the library index is {s.manifestState}</b><small>Another computer would restore tracks without their full tags, lyrics and covers until it is saved again.</small></div>)}
-              {t.unreadable > 0 && <div className="check-block"><b>Can't be read: {t.unreadable.toLocaleString()}</b><small>Encrypted with a different recovery key than the one on this computer.</small></div>}
-              {t.coversMissing > 0 && <div className="check-block"><b>Album covers missing from Telegram: {t.coversMissing.toLocaleString()}</b><small>The music is safe. Other computers restore these albums without a cover until they are put back.</small></div>}
-              {t.extra > 0 && <div className="check-block"><b>In Telegram but not in this library: {t.extra.toLocaleString()}</b><small>Not a problem. They may come from another computer. Restore adds them here.</small></div>}
-              {t.indexOnly > 0 && <div className="check-block"><b>In the old index but gone from Telegram, not in this library: {t.indexOnly.toLocaleString()}</b><small>Saving the index again removes them from it.</small></div>}
+              <Tracks title={t('Missing from Telegram, still on this computer')} note={t('They can be backed up again.')} rows={all('missing').filter(r => r.hasLocal)} />
+              <Tracks title={t('Missing from Telegram, not on this computer')} note={t('These copies are gone unless another storage or computer has them.')} rows={all('missing').filter(r => !r.hasLocal)} />
+              <Tracks title={t('Wrong size in Telegram, still on this computer')} note={t('The copy in Telegram doesn\'t match. Backing up again replaces it.')} rows={all('damaged').filter(r => r.hasLocal)} />
+              <Tracks title={t('Wrong size in Telegram, not on this computer')} note={t('This may not play correctly.')} rows={all('damaged').filter(r => !r.hasLocal)} />
+              {report.storages.filter(s => !s.manifestOk).map(s => <div className="check-block" key={s.id}><b>{t('{title}: the library index is {manifestState}', { title: s.title, manifestState: s.manifestState })}</b><small>{t('Another computer would restore tracks without their full tags, lyrics and covers until it is saved again.')}</small></div>)}
+              {totals.unreadable > 0 && <div className="check-block"><b>{t('Can\'t be read: {unreadable}', { unreadable: totals.unreadable.toLocaleString() })}</b><small>{t('Encrypted with a different recovery key than the one on this computer.')}</small></div>}
+              {totals.coversMissing > 0 && <div className="check-block"><b>{t('Album covers missing from Telegram: {coversMissing}', { coversMissing: totals.coversMissing.toLocaleString() })}</b><small>{t('The music is safe. Other computers restore these albums without a cover until they are put back.')}</small></div>}
+              {totals.extra > 0 && <div className="check-block"><b>{t('In Telegram but not in this library: {extra}', { extra: totals.extra.toLocaleString() })}</b><small>{t('Not a problem. They may come from another computer. Restore adds them here.')}</small></div>}
+              {totals.indexOnly > 0 && <div className="check-block"><b>{t('In the old index but gone from Telegram, not in this library: {indexOnly}', { indexOnly: totals.indexOnly.toLocaleString() })}</b><small>{t('Saving the index again removes them from it.')}</small></div>}
             </div>
           )}
         </Dialog>

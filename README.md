@@ -252,7 +252,7 @@ Your backup can still be used on the computer where you made it. You can see the
 
 ## Feedback
 
-TeleCloud is in beta and made by a single developer. If something does not work as expected, or you have an idea, please open an issue on the [Issues](https://github.com/MinhHaiDeveloper/telecloud/issues) page.
+TeleCloud is in beta and made by a single developer. If something does not work as expected, or you have an idea, please open an issue on the [Issues](https://github.com/MinhHaiDeveloper/telecloud/issues) page. To help with code or translations, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 TeleCloud is not affiliated with Telegram.
 

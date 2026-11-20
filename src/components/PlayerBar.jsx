@@ -8,6 +8,7 @@ import LiquidCover from './LiquidCover';
 import SignalPathSteps from './SignalPathSteps';
 import QueueList from './QueueList';
 import { formatTime, mqaOf } from '../utils/audio';
+import { t } from '../i18n';
 
 // Closes a popover when clicking anywhere outside `ref`
 const useOutside = (open, ref, onClose) => {
@@ -71,19 +72,19 @@ const PlayerBar = ({
   return (
     <footer className="player">
       <div className="p-track">
-        <button className="cover-btn" onClick={onOpenNowPlaying} disabled={!currentFile} title="Open now playing" style={{ borderRadius: 8 }}>
+        <button className="cover-btn" onClick={onOpenNowPlaying} disabled={!currentFile} title={t('Open now playing')} style={{ borderRadius: 8 }}>
           <LiquidCover file={currentFile} className={currentFile ? 'clickable' : ''} coverKey={currentFile?.path + (currentFile?.cache_path || '')} />
         </button>
         <div className="meta">
-          <b>{currentFile?.metadata?.title || currentFile?.name || 'Nothing playing'}</b>
-          <span>{currentFile ? <MetaLinks file={currentFile} /> : 'Pick a track to start'}</span>
+          <b>{currentFile?.metadata?.title || currentFile?.name || t('Nothing playing')}</b>
+          <span>{currentFile ? <MetaLinks file={currentFile} /> : t('Pick a track to start')}</span>
         </div>
         {currentFile && (
           <button
             className={`icon-btn sm ${isFavorite ? 'on' : ''} ${favPop ? 'pop' : ''}`}
             key={favPop}
             onClick={() => { onToggleFavorite(currentFile); setFavPop(n => n + 1); }}
-            title={isFavorite ? 'Remove from favourites' : 'Add to favourites'}
+            title={isFavorite ? t('Remove from favourites') : t('Add to favourites')}
           >
             <Icon name="heart" filled={isFavorite} />
           </button>
@@ -92,13 +93,13 @@ const PlayerBar = ({
 
       <div className="p-center">
         <div className="p-controls">
-          <button className={`icon-btn ${isShuffle ? 'on' : ''}`} onClick={onToggleShuffle} title="Shuffle"><Icon name="shuffle" /></button>
-          <button className="icon-btn" onClick={onPrev} title="Previous" disabled={!currentFile}><Icon name="prev" /></button>
-          <button className="play-btn" onClick={onTogglePlay} title={isPlaying ? 'Pause' : 'Play'} disabled={!currentFile}>
+          <button className={`icon-btn ${isShuffle ? 'on' : ''}`} onClick={onToggleShuffle} title={t('Shuffle')}><Icon name="shuffle" /></button>
+          <button className="icon-btn" onClick={onPrev} title={t('Previous')} disabled={!currentFile}><Icon name="prev" /></button>
+          <button className="play-btn" onClick={onTogglePlay} title={isPlaying ? t('Pause') : t('Play')} disabled={!currentFile}>
             <Icon name={isPlaying ? 'pause' : 'play'} />
           </button>
-          <button className="icon-btn" onClick={onNext} title="Next" disabled={!currentFile}><Icon name="next" /></button>
-          <button className={`icon-btn ${loopMode !== 'none' ? 'on' : ''}`} onClick={onToggleLoop} title={`Repeat: ${loopMode}`}>
+          <button className="icon-btn" onClick={onNext} title={t('Next')} disabled={!currentFile}><Icon name="next" /></button>
+          <button className={`icon-btn ${loopMode !== 'none' ? 'on' : ''}`} onClick={onToggleLoop} title={t('Repeat: {loopMode}', { loopMode })}>
             <Icon name="repeat" />{loopMode === 'one' && <span className="one">1</span>}
           </button>
         </div>
@@ -116,7 +117,7 @@ const PlayerBar = ({
               onPointerCancel={() => { seeking.current = false; }}
               onChange={(e) => { e.target.parentElement?.style.setProperty('--pct', `${(parseFloat(e.target.value) / (duration || 1)) * 100}%`); if (onSeek) onSeek(Math.floor(parseFloat(e.target.value) * 10) / 10); }}
               disabled={!currentFile}
-              aria-label="Seek"
+              aria-label={t('Seek')}
             />
           </div>
           <span className="mono">{formatTime(duration)}</span>
@@ -128,37 +129,37 @@ const PlayerBar = ({
           <div className="card popover">
             <h4>{signal.verdict}</h4>
             <p>{signal.bitPerfect
-              ? 'Nothing between the file and your DAC changes the samples.'
-              : 'Orange steps alter or may alter the samples before they reach your DAC.'}</p>
+              ? t('Nothing between the file and your DAC changes the samples.')
+              : t('Orange steps alter or may alter the samples before they reach your DAC.')}</p>
             <SignalPathSteps signal={signal} eqEnabled={eqEnabled} setEqEnabled={setEqEnabled} onOpenEq={() => { setSignalOpen(false); onOpenEq(); }} />
           </div>
         )}
         {isQueueOpen && (
           <div className="card popover queue-pop">
-            <div className="q-head"><b>Up next</b><span className="badge b-lossy">{queueFiles.length}</span></div>
+            <div className="q-head"><b>{t('Up next')}</b><span className="badge b-lossy">{queueFiles.length}</span></div>
             <div className="q-list">
               {queueFiles.length
                 ? <QueueList files={queueFiles} onPlay={onPlayQueued} onMove={onMoveQueued} onRemove={onRemoveFromQueue} />
-                : <div className="empty">Queue is empty.</div>}
+                : <div className="empty">{t('Queue is empty.')}</div>}
             </div>
-            {queueFiles.length > 1 && <div className="q-hint">Click to play · drag to reorder</div>}
+            {queueFiles.length > 1 && <div className="q-hint">{t('Click to play · drag to reorder')}</div>}
             <div className="q-foot">
-              <button className="btn-ghost" onClick={onClearQueue}>Clear</button>
-              <button className="btn-primary" onClick={onSaveQueueAsPlaylist}>Save as playlist</button>
+              <button className="btn-ghost" onClick={onClearQueue}>{t('Clear')}</button>
+              <button className="btn-primary" onClick={onSaveQueueAsPlaylist}>{t('Save as playlist')}</button>
             </div>
           </div>
         )}
 
         {currentFile && signal && (
-          <button className={`fmt-pill ${signal.quality.tier === 'lossy' ? 'plain' : ''}`} onClick={() => { setSignalOpen(o => !o); if (isQueueOpen) onToggleQueue(); }} title="Signal path">
-            <span className={`bp ${signal.bitPerfect ? '' : 'off'} ${signal.clipping ? 'clip' : ''}`} title={signal.clipping ? 'Clipping: the sound goes over 0 dBFS' : undefined} />
+          <button className={`fmt-pill ${signal.quality.tier === 'lossy' ? 'plain' : ''}`} onClick={() => { setSignalOpen(o => !o); if (isQueueOpen) onToggleQueue(); }} title={t('Signal path')}>
+            <span className={`bp ${signal.bitPerfect ? '' : 'off'} ${signal.clipping ? 'clip' : ''}`} title={signal.clipping ? t('Clipping: the sound goes over 0 dBFS') : undefined} />
             <span className="mono">{signal.quality.label}</span>
-            {mqaOf(currentFile) && <span className={`fmt-mqa mono ${mqaOf(currentFile).studio ? 'studio' : ''}`} title={`${mqaOf(currentFile).label}${mqaOf(currentFile).rate ? `, ${Number((mqaOf(currentFile).rate / 1000).toFixed(1))} kHz original` : ''}`}>MQA</span>}
+            {mqaOf(currentFile) && <span className={`fmt-mqa mono ${mqaOf(currentFile).studio ? 'studio' : ''}`} title={`${mqaOf(currentFile).label}${mqaOf(currentFile).rate ? t(', {number} kHz original', { number: Number((mqaOf(currentFile).rate / 1000).toFixed(1)) }) : ''}`}>MQA</span>}
           </button>
         )}
         {onSetSleep && <SleepTimer label={sleepLabel} active={!!sleepLabel} hasTrack={!!currentFile} onSet={onSetSleep} />}
-        <button className={`icon-btn hide-sm np-hide ${eqEnabled ? 'on' : ''}`} onClick={onOpenEq} title="Equalizer"><Icon name="eq" /></button>
-        <button className={`icon-btn hide-sm ${muted ? 'on' : ''}`} onClick={onToggleMute} title={muted ? 'Unmute (M)' : 'Mute (M)'}>
+        <button className={`icon-btn hide-sm np-hide ${eqEnabled ? 'on' : ''}`} onClick={onOpenEq} title={t('Equalizer')}><Icon name="eq" /></button>
+        <button className={`icon-btn hide-sm ${muted ? 'on' : ''}`} onClick={onToggleMute} title={muted ? t('Unmute (M)') : t('Mute (M)')}>
           <Icon name={muted || (volume === 0 && !exclusive) ? 'mute' : 'volume'} />
         </button>
         <input
@@ -167,10 +168,10 @@ const PlayerBar = ({
           style={{ '--pct': `${exclusive ? 100 : volume}%` }}
           onChange={(e) => onVolumeChange(parseInt(e.target.value, 10))}
           disabled={exclusive}
-          title={exclusive ? 'Volume is bypassed in exclusive mode' : `Volume ${volume}%`}
-          aria-label="Volume"
+          title={exclusive ? t('Volume is bypassed in exclusive mode') : t('Volume {volume}%', { volume })}
+          aria-label={t('Volume')}
         />
-        <button className={`icon-btn np-hide ${isQueueOpen ? 'on' : ''}`} onClick={() => { onToggleQueue(); setSignalOpen(false); }} title="Queue"><Icon name="queue" /></button>
+        <button className={`icon-btn np-hide ${isQueueOpen ? 'on' : ''}`} onClick={() => { onToggleQueue(); setSignalOpen(false); }} title={t('Queue')}><Icon name="queue" /></button>
       </div>
     </footer>
   );

@@ -4,13 +4,14 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import Icon from '../components/Icon';
 import { browse, forget } from './api';
 import { Cover, Playing, Where } from './parts';
+import { t } from '../i18n';
 
 const SECTIONS = [
-  { v: 'albums', label: 'Albums', icon: 'disc', count: 'albums' },
-  { v: 'artists', label: 'Artists', icon: 'user', count: 'artists' },
-  { v: 'playlists', label: 'Playlists', icon: 'playlist', count: 'playlists' },
-  { v: 'favorites', label: 'Favourites', icon: 'heart', count: 'favorites' },
-  { v: 'recent', label: 'Recently played', icon: 'clock', count: 'recent' },
+  { v: 'albums', get label() { return t('Albums'); }, icon: 'disc', count: 'albums' },
+  { v: 'artists', get label() { return t('Artists'); }, icon: 'user', count: 'artists' },
+  { v: 'playlists', get label() { return t('Playlists'); }, icon: 'playlist', count: 'playlists' },
+  { v: 'favorites', get label() { return t('Favourites'); }, icon: 'heart', count: 'favorites' },
+  { v: 'recent', get label() { return t('Recently played'); }, icon: 'clock', count: 'recent' },
 ];
 const TITLES = Object.fromEntries(SECTIONS.map(s => [s.v, s.label]));
 const plural = (n, one) => `${(n || 0).toLocaleString()} ${one}${n === 1 ? '' : 's'}`;
@@ -100,22 +101,22 @@ export default function Library({ s, act }) {
   const [q, setQ] = useState('');
   const [query, setQuery] = useState('');
   const top = stack[stack.length - 1];
-  useEffect(() => { const t = setTimeout(() => setQuery(q.trim()), 250); return () => clearTimeout(t); }, [q]);
+  useEffect(() => { const timer = setTimeout(() => setQuery(q.trim()), 250); return () => clearTimeout(timer); }, [q]);
 
   const push = (page) => { setDir('in'); setStack(x => [...x, { ...page, id: nextId.current++ }]); };
   const back = () => { setDir('out'); setStack(x => (x.length > 1 ? x.slice(0, -1) : x)); };
   const playingId = s?.track?.id;
   const paused = !s?.playing;
 
-  const row = (t, i, source, { numbered = false } = {}) => (
-    <li key={`${t.id}-${i}`} style={{ '--i': Math.min(i, 14) }}>
-      <button className={`rm-row cmd ${t.id === playingId ? 'now' : ''}`} onClick={() => act.play(source, t)}>
-        {numbered ? <span className="rm-no mono">{t.id === playingId ? <Playing paused={paused} /> : i + 1}</span> : (
-          <span className="rm-thumb-wrap"><Cover id={t.id} className="rm-thumb" />{t.id === playingId && <span className="rm-thumb-now"><Playing paused={paused} /></span>}</span>
+  const row = (track, i, source, { numbered = false } = {}) => (
+    <li key={`${track.id}-${i}`} style={{ '--i': Math.min(i, 14) }}>
+      <button className={`rm-row cmd ${track.id === playingId ? 'now' : ''}`} onClick={() => act.play(source, track)}>
+        {numbered ? <span className="rm-no mono">{track.id === playingId ? <Playing paused={paused} /> : i + 1}</span> : (
+          <span className="rm-thumb-wrap"><Cover id={track.id} className="rm-thumb" />{track.id === playingId && <span className="rm-thumb-now"><Playing paused={paused} /></span>}</span>
         )}
-        <span className="rm-row-text"><b>{t.title}</b><small><Where t={t} />{[t.artist, numbered ? null : t.album].filter(Boolean).join(' · ')}</small></span>
+        <span className="rm-row-text"><b>{track.title}</b><small><Where t={track} />{[track.artist, numbered ? null : track.album].filter(Boolean).join(' · ')}</small></span>
       </button>
-      <button className="rm-icon sm" onClick={() => act.more(t, source)} aria-label={`More for ${t.title}`} title="More"><Icon name="more" /></button>
+      <button className="rm-icon sm" onClick={() => act.more(track, source)} aria-label={t('More for {title}', { title: track.title })} title={t('More')}><Icon name="more" /></button>
     </li>
   );
   const albumCard = (a, i) => (
@@ -130,9 +131,9 @@ export default function Library({ s, act }) {
       <div className="rm-hero-text">
         <b>{title}</b><small>{sub}</small>
         <div className="rm-hero-actions">
-          <button className="rm-btn primary cmd" onClick={() => act.play(source)}><Icon name="play" filled />Play</button>
-          <button className="rm-btn cmd" onClick={() => act.play(source, null, true)}><Icon name="shuffle" />Shuffle</button>
-          <button className="rm-icon sm cmd" onClick={() => act.moreList(title, source)} aria-label="More" title="Play next, add to the queue"><Icon name="more" /></button>
+          <button className="rm-btn primary cmd" onClick={() => act.play(source)}><Icon name="play" filled />{t('Play')}</button>
+          <button className="rm-btn cmd" onClick={() => act.play(source, null, true)}><Icon name="shuffle" />{t('Shuffle')}</button>
+          <button className="rm-icon sm cmd" onClick={() => act.moreList(title, source)} aria-label={t('More')} title={t('Play next, add to the queue')}><Icon name="more" /></button>
         </div>
       </div>
     </div>
@@ -149,21 +150,21 @@ export default function Library({ s, act }) {
     if (p.v === 'playlist') return <Playlist k={p.key} row={row} listHead={listHead} />;
     return null;
   };
-  const title = top.v === 'home' ? 'Library' : TITLES[top.v] || top.name || 'Library';
+  const title = top.v === 'home' ? t('Library') : TITLES[top.v] || top.name || t('Library');
 
   return (
     <section className="rm-library card">
       <div className="rm-lib-head">
         {stack.length > 1
-          ? <button className="rm-icon sm back" onClick={back} aria-label="Back" title="Back"><Icon name="chevron" /></button>
+          ? <button className="rm-icon sm back" onClick={back} aria-label={t('Back')} title={t('Back')}><Icon name="chevron" /></button>
           : <Icon name="library" className="rm-lib-ico" />}
         <b key={`${top.v}-${top.key || ''}`} className="rm-lib-title">{title}</b>
       </div>
       {top.v === 'home' && (
         <label className="rm-search">
           <Icon name="search" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search songs, albums, artists" enterKeyHint="search" aria-label="Search the library" />
-          {q && <button className="rm-icon sm" onClick={() => setQ('')} aria-label="Clear"><Icon name="close" /></button>}
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('Search songs, albums, artists')} enterKeyHint="search" aria-label={t('Search the library')} />
+          {q && <button className="rm-icon sm" onClick={() => setQ('')} aria-label={t('Clear')}><Icon name="close" /></button>}
         </label>
       )}
       <div className="rm-lib-body">
@@ -185,14 +186,14 @@ function Home({ query, push, row, albumCard }) {
     const none = !r.tracks.length && !r.albums.length && !r.artists.length;
     return (
       <div className="rm-results">
-        {none && <p className="rm-empty">Nothing matches “{query}”.</p>}
-        {r.tracks.length > 0 && (<><h4>Songs</h4><ol className="rm-list">{r.tracks.map((t, i) => row(t, i, { kind: 'search', key: query }))}</ol></>)}
-        {r.albums.length > 0 && (<><h4>Albums</h4><div className="rm-shelf">{r.albums.map(albumCard)}</div></>)}
+        {none && <p className="rm-empty">{t('Nothing matches “{query}', { query })}”.</p>}
+        {r.tracks.length > 0 && (<><h4>{t('Songs')}</h4><ol className="rm-list">{r.tracks.map((value, i) => row(value, i, { kind: 'search', key: query }))}</ol></>)}
+        {r.albums.length > 0 && (<><h4>{t('Albums')}</h4><div className="rm-shelf">{r.albums.map(albumCard)}</div></>)}
         {r.artists.length > 0 && (
-          <><h4>Artists</h4>
+          <><h4>{t('Artists')}</h4>
             <ol className="rm-list">{r.artists.map((a, i) => (
               <li key={a.name} style={{ '--i': i }}><button className="rm-row" onClick={() => push({ v: 'artist', key: a.name, name: a.name })}>
-                <Cover id={a.cover} pic={a.pic} className="rm-thumb" round /><span className="rm-row-text"><b>{a.name}</b><small>{plural(a.count, 'track')}</small></span><Icon name="chevron" className="go" />
+                <Cover id={a.cover} pic={a.pic} className="rm-thumb" round /><span className="rm-row-text"><b>{a.name}</b><small>{t('{n|# track|# tracks}', { n: a.count })}</small></span><Icon name="chevron" className="go" />
               </button></li>
             ))}</ol>
           </>
@@ -215,14 +216,15 @@ function Home({ query, push, row, albumCard }) {
           </li>
         ))}
       </ol>
-      {home.data && <p className="rm-foot">{plural(n.tracks, 'track')} on this computer</p>}
+      {home.data && <p className="rm-foot">{t('{n|# track|# tracks}', { n: n.tracks })} {t('on this computer')}</p>}
       <Problem text={home.error} />
     </>
   );
 }
 
-const SORTS = [['name', 'A–Z'], ['artist', 'Artist'], ['latest', 'Latest added'], ['oldest', 'Oldest added']];
-const savedSort = () => { try { const v = localStorage.getItem('rm-album-sort'); return SORTS.some(([k]) => k === v) ? v : 'name'; } catch { return 'name'; } };
+// made when drawn, so it follows the language
+const sorts = () => [['name', 'A–Z'], ['artist', t('Artist')], ['latest', t('Latest added')], ['oldest', t('Oldest added')]];
+const savedSort = () => { try { const v = localStorage.getItem('rm-album-sort'); return sorts().some(([k]) => k === v) ? v : 'name'; } catch { return 'name'; } };
 
 function Albums({ albumCard }) {
   // kept on this device, like the app keeps its own sort
@@ -232,7 +234,7 @@ function Albums({ albumCard }) {
   return (
     <>
       <div className="rm-sorts">
-        {SORTS.map(([v, l]) => (
+        {sorts().map(([v, l]) => (
           <button key={v} className={sort === v ? 'on' : ''} onClick={() => setSort(v)}>{l}</button>
         ))}
         {p.total != null && <span className="mono">{p.total.toLocaleString()}</span>}
@@ -253,7 +255,7 @@ function Artists({ push }) {
           <li key={a.name} style={{ '--i': Math.min(i % 60, 14) }}>
             <button className="rm-row" onClick={() => push({ v: 'artist', key: a.name, name: a.name })}>
               <Cover id={a.cover} pic={a.pic} className="rm-thumb" round />
-              <span className="rm-row-text"><b>{a.name}</b><small>{plural(a.count, 'track')}</small></span>
+              <span className="rm-row-text"><b>{a.name}</b><small>{t('{n|# track|# tracks}', { n: a.count })}</small></span>
               <Icon name="chevron" className="go" />
             </button>
           </li>
@@ -269,14 +271,14 @@ function Playlists({ push }) {
   const r = useAnswer({ kind: 'playlists' }, []);
   if (r.error) return <Problem text={r.error} />;
   if (!r.data) return <Loading />;
-  if (!r.data.items.length) return <p className="rm-empty">No playlists yet. Make one in TeleCloud.</p>;
+  if (!r.data.items.length) return <p className="rm-empty">{t('No playlists yet. Make one in TeleCloud.')}</p>;
   return (
     <ol className="rm-list">
       {r.data.items.map((p, i) => (
         <li key={p.key} style={{ '--i': i }}>
           <button className="rm-row" onClick={() => push({ v: 'playlist', key: p.key, name: p.name })}>
             <Cover id={p.cover} className="rm-thumb" />
-            <span className="rm-row-text"><b>{p.name}</b><small>{plural(p.count, 'track')}</small></span>
+            <span className="rm-row-text"><b>{p.name}</b><small>{t('{n|# track|# tracks}', { n: p.count })}</small></span>
             <Icon name="chevron" className="go" />
           </button>
         </li>
@@ -289,11 +291,11 @@ function Tracks({ kind, row, listHead }) {
   useEffect(() => forget([kind]), [kind]);
   const p = usePaged(kind);
   const source = { kind };
-  if (p.total === 0) return <p className="rm-empty">{kind === 'favorites' ? 'No favourites yet. Tap the heart on a track.' : 'Nothing played yet.'}</p>;
+  if (p.total === 0) return <p className="rm-empty">{kind === 'favorites' ? t('No favourites yet. Tap the heart on a track.') : t('Nothing played yet.')}</p>;
   return (
     <>
-      {p.total != null && listHead(TITLES[kind], plural(p.total, 'track'), source, p.items[0]?.id)}
-      <ol className="rm-list">{p.items.map((t, i) => row(t, i, source))}</ol>
+      {p.total != null && listHead(TITLES[kind], t('{n|# track|# tracks}', { n: p.total }), source, p.items[0]?.id)}
+      <ol className="rm-list">{p.items.map((value, i) => row(value, i, source))}</ol>
       <Problem text={p.error} />
       <Sentinel onSee={p.more} done={p.done || !!p.error} />
     </>
@@ -304,13 +306,13 @@ function Album({ k, row, listHead }) {
   const r = useAnswer({ kind: 'album', key: k }, [k]);
   if (r.error) return <Problem text={r.error} />;
   if (!r.data) return <Loading />;
-  if (r.data.missing) return <p className="rm-empty">This album is no longer in the library.</p>;
+  if (r.data.missing) return <p className="rm-empty">{t('This album is no longer in the library.')}</p>;
   const { album, tracks } = r.data;
   const source = { kind: 'album', key: album.key };
   return (
     <>
-      {listHead(album.name, [album.artist, album.year || null, plural(tracks.length, 'track')].filter(Boolean).join(' · '), source, album.cover)}
-      <ol className="rm-list">{tracks.map((t, i) => row(t, i, source, { numbered: true }))}</ol>
+      {listHead(album.name, [album.artist, album.year || null, t('{n|# track|# tracks}', { n: tracks.length })].filter(Boolean).join(' · '), source, album.cover)}
+      <ol className="rm-list">{tracks.map((value, i) => row(value, i, source, { numbered: true }))}</ol>
     </>
   );
 }
@@ -319,11 +321,11 @@ function Artist({ k, albumCard, listHead }) {
   const r = useAnswer({ kind: 'artist', key: k }, [k]);
   if (r.error) return <Problem text={r.error} />;
   if (!r.data) return <Loading />;
-  if (r.data.missing) return <p className="rm-empty">This artist is no longer in the library.</p>;
+  if (r.data.missing) return <p className="rm-empty">{t('This artist is no longer in the library.')}</p>;
   const { artist, albums } = r.data;
   return (
     <>
-      {listHead(artist.name, `${plural(albums.length, 'album')} · ${plural(artist.count, 'track')}`, { kind: 'artist', key: artist.name }, artist.cover, { round: true, pic: artist.pic })}
+      {listHead(artist.name, `${t('{n|# album|# albums}', { n: albums.length })} · ${t('{n|# track|# tracks}', { n: artist.count })}`, { kind: 'artist', key: artist.name }, artist.cover, { round: true, pic: artist.pic })}
       <div className="rm-cards">{albums.map(albumCard)}</div>
     </>
   );
@@ -333,14 +335,14 @@ function Playlist({ k, row, listHead }) {
   const r = useAnswer({ kind: 'playlist', key: k }, [k]);
   if (r.error) return <Problem text={r.error} />;
   if (!r.data) return <Loading />;
-  if (r.data.missing) return <p className="rm-empty">This playlist was deleted.</p>;
+  if (r.data.missing) return <p className="rm-empty">{t('This playlist was deleted.')}</p>;
   const { playlist, tracks } = r.data;
   const source = { kind: 'playlist', key: playlist.key };
   return (
     <>
-      {listHead(playlist.name, plural(tracks.length, 'track'), source, playlist.cover)}
-      {!tracks.length && <p className="rm-empty">This playlist is empty.</p>}
-      <ol className="rm-list">{tracks.map((t, i) => row(t, i, source))}</ol>
+      {listHead(playlist.name, t('{n|# track|# tracks}', { n: tracks.length }), source, playlist.cover)}
+      {!tracks.length && <p className="rm-empty">{t('This playlist is empty.')}</p>}
+      <ol className="rm-list">{tracks.map((value, i) => row(value, i, source))}</ol>
     </>
   );
 }

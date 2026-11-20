@@ -1,5 +1,6 @@
 import React, { useContext, useEffect, useState } from 'react';
 import SongActions from './songActions';
+import { t } from '../i18n';
 
 const LABEL = { lastfm: 'Last.fm', qq: 'QQ Music' };
 
@@ -29,24 +30,24 @@ const ArtistBio = ({ name, known }) => {
   return (
     <div className="card artist-bio" data-source={from}>
       <div className="bio-head">
-        <b>About {info.name}</b>
-        {lf && info.listeners ? <span>{info.listeners.toLocaleString()} listeners on Last.fm</span> : null}
-        {!lf && <span>From QQ Music, in Chinese</span>}
+        <b>{t('About {name}', { name: info.name })}</b>
+        {lf && info.listeners ? <span>{t('{listeners} listeners on Last.fm', { listeners: info.listeners.toLocaleString() })}</span> : null}
+        {!lf && <span>{t('From QQ Music, in Chinese')}</span>}
         {both && (
-          <div className="bio-switch" role="tablist" aria-label="Biography from">
+          <div className="bio-switch" role="tablist" aria-label={t('Biography from')}>
             {['lastfm', 'qq'].map(k => <button key={k} role="tab" aria-selected={from === k} className={from === k ? 'on' : ''} onClick={() => { setFrom(k); setMore(false); }}>{LABEL[k]}</button>)}
           </div>
         )}
       </div>
       <p className={more ? '' : 'clamp'} lang={info.lang || 'en'}>{text}</p>
       <div className="bio-foot">
-        {info.content && info.content.length > (info.summary || '').length + 20 && <button className="btn-ghost sm" onClick={() => setMore(m => !m)}>{more ? 'Less' : 'Read more'}</button>}
+        {info.content && info.content.length > (info.summary || '').length + 20 && <button className="btn-ghost sm" onClick={() => setMore(m => !m)}>{more ? t('Less') : t('Read more')}</button>}
         {lf && (info.tags || []).map(t => <span key={t} className="badge b-local">{t}</span>)}
         {info.url && <button className="bio-link" onClick={() => window.ipcRenderer.invoke('open-external', info.url)}>{LABEL[from]}</button>}
       </div>
       {lf && info.similar?.length > 0 && (
         <div className="bio-similar">
-          <span>Similar:</span>
+          <span>{t('Similar:')}</span>
           {info.similar.map(s => (known?.has(s)
             ? <span key={s} className="meta-link" role="link" tabIndex={0} onClick={() => openArtist?.(s)}>{s}</span>
             : <span key={s} className="muted">{s}</span>))}

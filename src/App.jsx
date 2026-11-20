@@ -45,6 +45,7 @@ import pkg from '../package.json';
 import CoverDialog from './components/CoverDialog';
 import { useUpdateStatus } from './components/UpdateStatus';
 import { ipcOn, ipcOff } from './utils/ipc';
+import { t, useLanguage, Relabel } from './i18n';
 
 // localStorage can throw (private mode, blocked storage); UI prefs are optional
 const readPref = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
@@ -61,6 +62,8 @@ const shuffleArray = (list) => {
 };
 
 function App() {
+  // a new language: App keeps its state (what plays, the queue, the page) and draws its views again (Relabel below)
+  useLanguage();
   const [isInfoModalOpen, setIsInfoModalOpen] = useState(false); // State for the new modal
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const handleTrackEndedRef = useRef(null); // Stable ref to handleTrackEnded to avoid stale closures
@@ -588,12 +591,12 @@ function App() {
         if (res.files) setMusicFiles(res.files);
         if (res.added || res.removed) {
           const parts = [];
-          if (res.added) parts.push(`${res.added} new ${res.added === 1 ? 'track' : 'tracks'}`);
-          if (res.removed) parts.push(`${res.removed} removed`);
-          showToast(`Library updated: ${parts.join(', ')}`, 'info');
+          if (res.added) parts.push(t('{added} new {added|track|tracks}', { added: res.added }));
+          if (res.removed) parts.push(t('{removed} removed', { removed: res.removed }));
+          showToast(t('Library updated: {parts}', { parts: parts.join(', ') }), 'info');
         }
         if (res.unavailable?.length) {
-          showToast(`Music folder not reachable: ${res.unavailable.join(', ')}. Its tracks are kept until it is back.`, 'info');
+          showToast(t('Music folder not reachable: {unavailable}. Its tracks are kept until it is back.', { unavailable: res.unavailable.join(', ') }), 'info');
         }
       }
     });
@@ -644,9 +647,9 @@ function App() {
     const handlePartial = (event, { files = [], removed = [], summary }) => {
       if (summary) {
         const parts = [];
-        if (summary.added) parts.push(`${summary.added.toLocaleString()} new ${summary.added === 1 ? 'track' : 'tracks'}`);
-        if (summary.removed) parts.push(`${summary.removed.toLocaleString()} removed`);
-        if (parts.length) showToast(`Library updated: ${parts.join(', ')}`, 'info');
+        if (summary.added) parts.push(t('{added} new {added2|track|tracks}', { added: summary.added.toLocaleString(), added2: summary.added }));
+        if (summary.removed) parts.push(t('{removed} removed', { removed: summary.removed.toLocaleString() }));
+        if (parts.length) showToast(t('Library updated: {parts}', { parts: parts.join(', ') }), 'info');
         return;
       }
       if (!files.length && !removed.length) return;
@@ -689,23 +692,23 @@ function App() {
 
   const handleRefreshFolder = async (isFullScan = false) => {
     if (isScanningRef.current) {
-      showToast('A scan is already running…', 'info');
+      showToast(t('A scan is already running…'), 'info');
       return;
     }
     isScanningRef.current = true;
     const type = isFullScan ? 'scanning' : 'refreshing';
-    setScanProgress({ type, status: 'inProgress', message: isFullScan ? 'Re-reading every file…' : 'Looking for changes…' });
+    setScanProgress({ type, status: 'inProgress', message: isFullScan ? t('Re-reading every file…') : t('Looking for changes…') });
     try {
       const res = await window.ipcRenderer.invoke('library:sync', { mode: isFullScan ? 'full' : 'refresh' });
       if (res?.busy) {
         setScanProgress(null);
-        showToast('A scan is already running…', 'info');
+        showToast(t('A scan is already running…'), 'info');
         return;
       }
       if (res.files) setMusicFiles(res.files);
     } catch (err) {
       console.error(err);
-      setScanProgress({ type, status: 'done', message: `Scan failed: ${err.message}` });
+      setScanProgress({ type, status: 'done', message: t('Scan failed: {message}', { message: err.message }) });
       setTimeout(() => setScanProgress(null), 4000);
     } finally {
       isScanningRef.current = false;
@@ -716,10 +719,10 @@ function App() {
     let newFavs;
     if (favorites.some(f => f.path === file.path)) {
       newFavs = favorites.filter(f => f.path !== file.path);
-      showToast('Removed from favorites');
+      showToast(t('Removed from favorites'));
     } else {
       newFavs = [...favorites, file];
-      showToast('Added to favorites');
+      showToast(t('Added to favorites'));
     }
     setFavorites(newFavs);
     window.ipcRenderer.invoke('save-store', 'favorites', newFavs);
@@ -728,7 +731,7 @@ function App() {
   // One track, or several (an album, a selection): the second argument is the full list
   const handleAddPlaylist = (file, files) => {
     if (!playlists.some(p => !p.smart)) {
-      showToast("Please create a playlist first in the Playlists tab.");
+      showToast(t('Please create a playlist first in the Playlists tab.'));
       return;
     }
     setPlaylistModalData(files && files.length ? files : [file]);
@@ -741,9 +744,9 @@ function App() {
       const newPlaylists = playlists.map(p => (p.id === target.id ? { ...p, songs: [...p.songs, ...fresh] } : p));
       setPlaylists(newPlaylists);
       window.ipcRenderer.invoke('save-store', 'playlists', newPlaylists);
-      showToast(fresh.length === 1 ? `Added to playlist: ${target.name}` : `Added ${fresh.length} tracks to ${target.name}`);
+      showToast(fresh.length === 1 ? t('Added to playlist: {name}', { name: target.name }) : t('Added {length} tracks to {name}', { length: fresh.length, name: target.name }));
     } else {
-      showToast(files.length === 1 ? 'Song is already in the playlist.' : 'All of them are already in the playlist.');
+      showToast(files.length === 1 ? t('Song is already in the playlist.') : t('All of them are already in the playlist.'));
     }
     setPlaylistModalData(null);
   };
@@ -754,19 +757,19 @@ function App() {
     if (!inCloud.length) return;
     const names = [...new Set(inCloud.map(f => storages.find(s => String(s.peerId) === String(f.telegram_channel_id))?.title || 'TeleCloud'))];
     const cloudOnly = inCloud.filter(f => (f.storage_type || 'local') === 'cloud' || f.path.startsWith('tc://')).length;
-    const what = inCloud.length === 1 ? `“${inCloud[0].metadata?.title || inCloud[0].name}”` : `${inCloud.length} tracks`;
+    const what = inCloud.length === 1 ? `“${inCloud[0].metadata?.title || inCloud[0].name}”` : t('{length} tracks', { length: inCloud.length });
     const ok = await confirmDialog({
-      title: `Remove ${what} from TeleCloud?`,
-      message: `Deleted from ${names.join(', ')} on Telegram. Other tracks there stay.`
-        + (inCloud.length - cloudOnly ? `\n${inCloud.length - cloudOnly} with a file on this computer stay in your library as local tracks.` : '')
-        + (cloudOnly ? `\n${cloudOnly} exist only in TeleCloud: they leave your library for good.` : ''),
-      confirmLabel: 'Remove from TeleCloud',
+      title: t('Remove {what} from TeleCloud?', { what }),
+      message: t('Deleted from {names} on Telegram. Other tracks there stay.', { names: names.join(', ') })
+        + (inCloud.length - cloudOnly ? t('\n{value} with a file on this computer stay in your library as local tracks.', { value: inCloud.length - cloudOnly }) : '')
+        + (cloudOnly ? t('\n{cloudOnly} exist only in TeleCloud: they leave your library for good.', { cloudOnly }) : ''),
+      confirmLabel: t('Remove from TeleCloud'),
       danger: true,
     });
     if (!ok) return;
     const r = await window.ipcRenderer.invoke('telecloud-sync:remove-from-cloud', { paths: inCloud.map(f => f.path) });
-    if (!r?.success) { showToast(`Could not remove: ${r?.error || 'unknown error'}`, 'error'); return; }
-    showToast(`Removed ${r.deleted} ${r.deleted === 1 ? 'track' : 'tracks'} from TeleCloud`, 'info');
+    if (!r?.success) { showToast(t('Could not remove: {value}', { value: r?.error || t('unknown error') }), 'error'); return; }
+    showToast(t('Removed {deleted|# track|# tracks} from TeleCloud', { deleted: r.deleted }), 'info');
     refreshStorages();
   };
 
@@ -782,7 +785,7 @@ function App() {
         if (p.error) return { ...cur, error: p.error };
         return { ...cur, ranges: p.ranges || cur.ranges, speed: p.speed ?? cur.speed, complete: !!p.complete };
       });
-      if (p.error && currentFileRef.current?.path === p.path) showToast(`TeleCloud: ${p.error}`, 'error');
+      if (p.error && currentFileRef.current?.path === p.path) showToast(t('TeleCloud: {error}', { error: p.error }), 'error');
     };
     ipcOn(window.ipcRenderer, 'telecloud-sync:stream', onStream);
     return () => ipcOff(window.ipcRenderer, 'telecloud-sync:stream', onStream);
@@ -822,7 +825,7 @@ function App() {
       } else {
         // the library row in the database knows best whether a TeleCloud copy exists
         const res = await ipcRenderer.invoke('telecloud-sync:stream-track', file.path);
-        if (!res?.success) throw new Error(/not in TeleCloud/.test(res?.error || '') ? 'This file is missing and has no TeleCloud copy' : (res?.error || 'Could not reach TeleCloud'));
+        if (!res?.success) throw new Error(/not in TeleCloud/.test(res?.error || '') ? t('This file is missing and has no TeleCloud copy') : (res?.error || t('Could not reach TeleCloud')));
         filePath = res.path;
         streaming = res.streaming;
         fromCloudCache = !res.streaming;
@@ -831,7 +834,7 @@ function App() {
 
       // --- Validate we have a valid path before playing ---
       if (!filePath) {
-        throw new Error('Could not determine file path - file not available locally, in cache, or on cloud');
+        throw new Error(t('Could not determine file path - file not available locally, in cache, or on cloud'));
       }
 
       if (token !== playTokenRef.current) return;
@@ -856,9 +859,9 @@ function App() {
     } catch (err) {
       console.error(err);
       if (token === playTokenRef.current) {
-        showToast(`Playback error: ${err.message}`, 'error');
+        showToast(t('Playback error: {message}', { message: err.message }), 'error');
         // remotes see it too (a cloud track that can't be streamed right now, a missing file)
-        setRemoteNotice({ text: `Couldn't play ${file.metadata?.title || file.name}: ${err.message}`, at: Date.now() });
+        setRemoteNotice({ text: t('Couldn\'t play {value}: {message}', { value: file.metadata?.title || file.name, message: err.message }), at: Date.now() });
       }
     }
   };
@@ -906,7 +909,7 @@ function App() {
     sleepFading.current = false;
     window.ipcRenderer.invoke('player:fade-cancel').catch(() => {});
     setSleepState(null);
-    if (why === 'paused') showToast('Sleep timer cancelled', 'info');
+    if (why === 'paused') showToast(t('Sleep timer cancelled'), 'info');
   };
   // after N tracks: count each new track
   useEffect(() => {
@@ -942,7 +945,7 @@ function App() {
     window.ipcRenderer.invoke('player:fade-out', seconds).then((r) => {
       if (!sleepFading.current) return;
       if (r?.done) finishSleep(atTrackEnd);
-      else { sleepFading.current = false; setSleepState(null); showToast('Sleep timer cancelled', 'info'); }
+      else { sleepFading.current = false; setSleepState(null); showToast(t('Sleep timer cancelled'), 'info'); }
     }).catch(() => { sleepFading.current = false; });
   };
   // in N minutes: fade over the last 10 seconds
@@ -970,9 +973,9 @@ function App() {
   isPlayingRef.current = isPlaying;
   const sleepLabel = !sleep ? null
     : sleep.kind === 'time' ? (() => { const sec = Math.max(0, Math.round((sleep.endsAt - sleepNow) / 1000)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; })()
-      : sleep.kind === 'track' ? 'End of track'
-        : sleep.kind === 'album' ? 'End of album'
-          : `${sleep.left} ${sleep.left === 1 ? 'track' : 'tracks'}`;
+      : sleep.kind === 'track' ? t('End of track')
+        : sleep.kind === 'album' ? t('End of album')
+          : t('{left|# track|# tracks}', { left: sleep.left });
   // the tray and the remotes show it too
   useEffect(() => { window.ipcRenderer.invoke('sleep:set', sleep ? { label: sleepLabel, kind: sleep.kind } : null).catch(() => {}); }, [sleep, sleep && sleepLabel]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1045,7 +1048,7 @@ function App() {
     if (isShuffle) list = shuffleArray(list);
     setPlayQueue(q => [...q, ...list]);
     if (unshuffledQueueRef.current) unshuffledQueueRef.current = [...unshuffledQueueRef.current, ...list];
-    showToast(`Up next: ${next.name} · ${next.artist}`, 'info');
+    showToast(t('Up next: {name} · {artist}', { name: next.name, artist: next.artist }), 'info');
   }, [autoContinue, currentFile?.path, currentIndex, playQueue.length, loopMode, musicFiles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tell mpv which file comes next so the switch is gapless. A cloud-only track is opened as a
@@ -1111,7 +1114,7 @@ function App() {
     state: ({ paused, stopped }) => setIsPlaying(!paused && !stopped && !!currentFile),
     error: ({ error }) => {
       setIsPlaying(false);
-      showToast(`Playback error: ${error}`, 'error');
+      showToast(t('Playback error: {error}', { error }), 'error');
     },
   };
 
@@ -1141,7 +1144,7 @@ function App() {
     lostDeviceRef.current = null;
     const res = await window.ipcRenderer.invoke('set-audio-device', deviceId);
     if (res && res.success === false) {
-      showToast(`Could not switch output: ${res.error}`, 'error');
+      showToast(t('Could not switch output: {error}', { error: res.error }), 'error');
       return;
     }
     setSelectedDevice(deviceId);
@@ -1155,7 +1158,7 @@ function App() {
   applyDevicesRef.current = async (list) => {
     if (!Array.isArray(list)) return;
     const has = (id) => list.some(d => (d.deviceId || d.id) === id);
-    const label = (d) => (d?.name || 'That output').replace(/ \(WASAPI\)$/, '');
+    const label = (d) => (d?.name || t('That output')).replace(/ \(WASAPI\)$/, '');
     const was = devices;
     setDevices(list);
     if (selectedDevice !== '-1' && !has(selectedDevice)) {
@@ -1163,11 +1166,11 @@ function App() {
       await handleDeviceChange('-1');
       lostDeviceRef.current = gone;
       writePref('tc-device', gone); // still the one to use when it is there at the next start
-      showToast(`${label(was.find(d => (d.deviceId || d.id) === gone))} is gone. Playing through System default.`, 'info');
+      showToast(t('{label} is gone. Playing through System default.', { label: label(was.find(d => (d.deviceId || d.id) === gone)) }), 'info');
     } else if (selectedDevice === '-1' && lostDeviceRef.current && has(lostDeviceRef.current)) {
       const back = list.find(d => (d.deviceId || d.id) === lostDeviceRef.current);
       await handleDeviceChange(lostDeviceRef.current);
-      showToast(`${label(back)} is back.`, 'info');
+      showToast(t('{label} is back.', { label: label(back) }), 'info');
     }
   };
 
@@ -1181,8 +1184,8 @@ function App() {
     playPause: handleTogglePlay,
     next: handleNext,
     previous: () => { if (currentTime > 3) handleSeek(0); else handlePrev(); },
-    volumeUp: () => (selectedDevice !== '-1' ? showToast('Volume stays at 100% in exclusive mode (bit-perfect). Use Mute or your DAC.', 'info') : handleVolumeChange(volume + 5)),
-    volumeDown: () => (selectedDevice !== '-1' ? showToast('Volume stays at 100% in exclusive mode (bit-perfect). Use Mute or your DAC.', 'info') : handleVolumeChange(volume - 5)),
+    volumeUp: () => (selectedDevice !== '-1' ? showToast(t('Volume stays at 100% in exclusive mode (bit-perfect). Use Mute or your DAC.'), 'info') : handleVolumeChange(volume + 5)),
+    volumeDown: () => (selectedDevice !== '-1' ? showToast(t('Volume stays at 100% in exclusive mode (bit-perfect). Use Mute or your DAC.'), 'info') : handleVolumeChange(volume - 5)),
     seekForward: () => currentFile && handleSeek(currentTime + 5),
     seekBackward: () => currentFile && handleSeek(currentTime - 5),
     toggleMute: handleToggleMute,
@@ -1191,9 +1194,9 @@ function App() {
 
   const handleDeleteSong = async (file, skipConfirm = false) => {
     if (skipConfirm || await confirmDialog({
-      title: 'Delete this track?',
-      message: `"${file.metadata?.title || file.name}" will be removed from your library and the file is moved to the Recycle Bin.`,
-      confirmLabel: 'Delete track',
+      title: t('Delete this track?'),
+      message: t('"{value}" will be removed from your library and the file is moved to the Recycle Bin.', { value: file.metadata?.title || file.name }),
+      confirmLabel: t('Delete track'),
       danger: true,
     })) {
       const ipcRenderer = window.ipcRenderer;
@@ -1229,18 +1232,18 @@ function App() {
           return updated;
         });
 
-        if (!skipConfirm) showToast('Moved to the Recycle Bin', 'success');
+        if (!skipConfirm) showToast(t('Moved to the Recycle Bin'), 'success');
       } else {
-        showToast(`Could not delete: ${result?.error || 'unknown error'}`, 'error');
+        showToast(t('Could not delete: {value}', { value: result?.error || t('unknown error') }), 'error');
       }
     }
   };
 
   const handleDeleteAlbum = async (album) => {
     if (await confirmDialog({
-      title: 'Delete this album?',
-      message: `All ${album.songs.length} tracks of "${album.name}" will be removed from your library and their files moved to the Recycle Bin.`,
-      confirmLabel: 'Delete album',
+      title: t('Delete this album?'),
+      message: t('All {length} tracks of "{name}" will be removed from your library and their files moved to the Recycle Bin.', { length: album.songs.length, name: album.name }),
+      confirmLabel: t('Delete album'),
       danger: true,
     })) {
       const songsToDelete = [...album.songs]; // copy array
@@ -1255,18 +1258,17 @@ function App() {
   const handleDeleteMany = async (files) => {
     const local = files.filter(f => (f.storage_type || 'local') !== 'cloud' && !f.path.startsWith('tc://'));
     const cloudOnly = files.length - local.length;
-    if (!local.length) { showToast('These tracks are only in TeleCloud. Use “Remove from TeleCloud” instead.', 'info'); return; }
+    if (!local.length) { showToast(t('These tracks are only in TeleCloud. Use “Remove from TeleCloud” instead.'), 'info'); return; }
     const ok = await confirmDialog({
-      title: `Delete ${local.length === 1 ? 'this track' : `${local.length} tracks`}?`,
-      message: `${local.length === 1 ? 'It is' : 'They are'} removed from your library and the ${local.length === 1 ? 'file is' : 'files are'} moved to the Recycle Bin.`
-        + (cloudOnly ? `
-${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud and ${cloudOnly === 1 ? 'is' : 'are'} skipped.` : ''),
-      confirmLabel: local.length === 1 ? 'Delete track' : `Delete ${local.length} tracks`,
+      title: t('Delete {value}?', { value: local.length === 1 ? t('this track') : t('{length} tracks', { length: local.length }) }),
+      message: t('{length|It is|They are} removed from your library and the {length|file is|files are} moved to the Recycle Bin.', { length: local.length })
+        + (cloudOnly ? t('\n{cloudOnly|# track is|# tracks are} only in TeleCloud and {cloudOnly|is|are} skipped.', { cloudOnly }) : ''),
+      confirmLabel: local.length === 1 ? t('Delete track') : t('Delete {length} tracks', { length: local.length }),
       danger: true,
     });
     if (!ok) return;
     for (const f of local) await handleDeleteSong(f, true);
-    showToast(`Moved ${local.length} ${local.length === 1 ? 'file' : 'files'} to the Recycle Bin`, 'success');
+    showToast(t('Moved {length|# file|# files} to the Recycle Bin', { length: local.length }), 'success');
   };
 
   const handleFavoriteMany = (files, add) => {
@@ -1275,7 +1277,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     const newFavs = add ? [...favorites, ...files.filter(f => !have.has(f.path))] : favorites.filter(f => !paths.has(f.path));
     setFavorites(newFavs);
     window.ipcRenderer.invoke('save-store', 'favorites', newFavs);
-    showToast(add ? `Added ${files.length} to favourites` : `Removed ${files.length} from favourites`);
+    showToast(add ? t('Added {length} to favourites', { length: files.length }) : t('Removed {length} from favourites', { length: files.length }));
   };
 
   // Append to the end of Up next (or just play them when nothing is playing)
@@ -1283,9 +1285,9 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     if (!currentFile || currentIndex < 0) { playMusic(files[0], 0, files); return; }
     const queued = new Set(playQueue.slice(currentIndex).map(f => f.path));
     const fresh = (skipDuplicates ? dedupeTracks(files) : files).filter(f => !queued.has(f.path));
-    if (!fresh.length) { showToast('Already in the queue'); return; }
+    if (!fresh.length) { showToast(t('Already in the queue')); return; }
     setPlayQueue([...playQueue, ...fresh]);
-    showToast(fresh.length === 1 ? 'Added to the queue' : `Added ${fresh.length} tracks to the queue`);
+    showToast(fresh.length === 1 ? t('Added to the queue') : t('Added {length} tracks to the queue', { length: fresh.length }));
   };
 
   // "Play next": right after the current track, but after what was already put there with Play next while it
@@ -1303,7 +1305,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     if (!fresh.length) return;
     setPlayQueue([...playQueue.slice(0, currentIndex + 1), ...before, ...fresh, ...after]);
     playNextRef.current = { key, count: before.length + fresh.length };
-    showToast(fresh.length === 1 ? 'Playing next' : `Playing ${fresh.length} tracks next`);
+    showToast(fresh.length === 1 ? t('Playing next') : t('Playing {length} tracks next', { length: fresh.length }));
   };
   // A track played N times in a row: the one playing now repeats straight after itself; another track goes
   // where Play next would put it
@@ -1312,7 +1314,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     if (!currentFile || currentIndex < 0) {
       const list = Array.from({ length: n }, () => file);
       playMusic(file, 0, list);
-      showToast(`Playing ${n} times`);
+      showToast(t('Playing {n} times', { n }));
       return;
     }
     const isCurrent = file.path === currentFile.path;
@@ -1323,13 +1325,13 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     const upcoming = playQueue.slice(currentIndex + 1);
     setPlayQueue([...playQueue.slice(0, currentIndex + 1), ...upcoming.slice(0, anchor), ...copies, ...upcoming.slice(anchor)]);
     playNextRef.current = { key, count: had + copies.length };
-    showToast(isCurrent ? `This track plays ${n} times` : `Playing next, ${n} times`);
+    showToast(isCurrent ? t('This track plays {n} times', { n }) : t('Playing next, {n} times', { n }));
   };
 
   const hasDownloadFolder = async () => {
     const settings = await window.ipcRenderer.invoke('load-store', 'settings');
     if (settings?.downloadFolder) return true;
-    await alertDialog({ title: 'Choose a download folder', message: 'Set a default download location in Settings → Downloads first.', tone: 'info', icon: 'folder' });
+    await alertDialog({ title: t('Choose a download folder'), message: t('Set a default download location in Settings → Downloads first.'), tone: 'info', icon: 'folder' });
     setCurrentView('settings');
     return false;
   };
@@ -1346,7 +1348,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
       try {
         if ((file.storage_type || 'local') === 'cloud' || file.path.startsWith('tc://')) {
           const cached = await ipcRenderer.invoke('telecloud-sync:cache-track', file.path);
-          if (!cached?.success) throw new Error(cached?.error || 'TeleCloud download failed');
+          if (!cached?.success) throw new Error(cached?.error || t('TeleCloud download failed'));
         }
         const r = await ipcRenderer.invoke('download-song', file);
         if (!r?.success) throw new Error(r?.error || 'unknown error');
@@ -1354,7 +1356,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
       } catch (err) { failed++; lastError = err.message; }
       setDownloadToasts(prev => prev.map(t => (t.id === toastId ? { ...t, progress: Math.round(((i + 1) / songs.length) * 100) } : t)));
     }
-    if (failed) showToast(`${failed} of ${songs.length} tracks could not be downloaded: ${lastError}`, 'error');
+    if (failed) showToast(t('{failed} of {length} tracks could not be downloaded: {lastError}', { failed, length: songs.length, lastError }), 'error');
     setTimeout(() => {
       setDownloadToasts(prev => prev.map(t => (t.id === toastId ? { ...t, leaving: true } : t)));
       setTimeout(() => setDownloadToasts(prev => prev.filter(t => t.id !== toastId)), 300);
@@ -1376,7 +1378,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
       if (storageType === 'cloud' || file.path.startsWith('tc://')) {
         ipcOn(ipcRenderer, 'telecloud-sync:download-progress', onProgress);
         const cached = await ipcRenderer.invoke('telecloud-sync:cache-track', file.path);
-        if (!cached?.success) throw new Error(cached?.error || 'TeleCloud download failed');
+        if (!cached?.success) throw new Error(cached?.error || t('TeleCloud download failed'));
       }
       result = await ipcRenderer.invoke('download-song', file);
     } catch (err) {
@@ -1390,7 +1392,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
       if (result.file) setMusicFiles(prev => prev.map(f => (f.path === (result.replaced || file.path) ? result.file : f)));
     } else {
       setDownloadToasts(prev => prev.filter(t => t.id !== toastId));
-      showToast(`Download failed: ${result?.error || 'unknown error'}`, 'error');
+      showToast(t('Download failed: {value}', { value: result?.error || t('unknown error') }), 'error');
     }
     setTimeout(() => {
       setDownloadToasts(prev => prev.map(t => (t.id === toastId ? { ...t, leaving: true } : t)));
@@ -1574,7 +1576,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     steps: (signal?.steps || []).slice(0, 14).map(x => ({ label: x.label, value: x.value, state: x.state, clip: !!x.clip })),
     track: currentLive ? { ...remoteTrackOut(currentLive), fav: favorites.some(f => f.path === currentLive.path) } : null, playing: isPlaying, volume, muted: isMuted, shuffle: isShuffle, repeat: loopMode,
     queue: queueFiles.slice(0, 200).map(remoteTrack), exclusive: selectedDevice !== '-1',
-    outputs: [{ id: '-1', name: 'System default' }, ...visibleDevices.map(d => ({ id: d.deviceId || d.id, name: (d.name || '').replace(/ \(WASAPI\)$/, '') }))],
+    outputs: [{ id: '-1', name: t('System default') }, ...visibleDevices.map(d => ({ id: d.deviceId || d.id, name: (d.name || '').replace(/ \(WASAPI\)$/, '') }))],
     output: selectedDevice, eq: !!eqEnabled, verdict: signal?.verdict, bitPerfect: !!signal?.bitPerfect, theme, sleep: sleepLabel,
   } : null;
   const isScanning = scanProgress?.status === 'inProgress';
@@ -1620,7 +1622,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
 
   const handleClearQueue = () => {
     setPlayQueue(playQueue.slice(0, currentIndex + 1));
-    showToast("Queue cleared.");
+    showToast(t('Queue cleared.'));
   };
 
   // Queue actions take an index into the tracks after the current one
@@ -1709,10 +1711,10 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
   const handleImportPlaylist = async () => {
     const r = await window.ipcRenderer.invoke('playlists:import');
     if (!r || r.canceled) return;
-    if (!r.success) { showToast(`Could not read that playlist: ${r.error}`, 'error'); return; }
+    if (!r.success) { showToast(t('Could not read that playlist: {error}', { error: r.error }), 'error'); return; }
     const songs = r.paths.map(p => libraryByPath.get(p)).filter(Boolean);
     const taken = new Set(playlists.map(p => p.name));
-    let name = r.name || 'Imported playlist';
+    let name = r.name || t('Imported playlist');
     for (let n = 2; taken.has(name); n++) name = `${r.name} (${n})`;
     const p = { id: Date.now().toString(), name, songs };
     const next = [...playlists, p];
@@ -1722,31 +1724,31 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     if (r.missing.length) {
       const shown = r.missing.slice(0, 12).map(m => `• ${m}`).join('\n');
       await alertDialog({
-        title: `${songs.length} of ${r.total} tracks found`,
-        message: `“${name}” has the tracks that are in your library. ${r.missing.length === 1 ? 'This one is' : `These ${r.missing.length} are`} not, so ${r.missing.length === 1 ? 'it was' : 'they were'} left out:\n\n${shown}${r.missing.length > 12 ? `\n…and ${r.missing.length - 12} more` : ''}`,
+        title: t('{length} of {total} tracks found', { length: songs.length, total: r.total }),
+        message: t('“{name}” has the tracks that are in your library. {value} not, so {length|it was|they were} left out:\n\n{shown}{value2}', { name, value: r.missing.length === 1 ? t('This one is') : t('These {length} are', { length: r.missing.length }), length: r.missing.length, shown, value2: r.missing.length > 12 ? t('\n…and {value} more', { value: r.missing.length - 12 }) : '' }),
         tone: 'info', icon: 'playlist',
       });
     } else {
-      showToast(`Imported “${name}”: ${songs.length} ${songs.length === 1 ? 'track' : 'tracks'}`, 'success');
+      showToast(t('Imported “{name}”: {length|# track|# tracks}', { name, length: songs.length }), 'success');
     }
   };
   const handleExportPlaylist = async (playlist) => {
     const r = await window.ipcRenderer.invoke('playlists:export', { name: playlist.name, paths: playlist.songs.map(f => f.path) });
     if (!r || r.canceled) return;
-    if (!r.success) { showToast(`Could not save the playlist: ${r.error}`, 'error'); return; }
-    showToast(`Saved ${r.written} ${r.written === 1 ? 'track' : 'tracks'}${r.cloudOnly ? `; ${r.cloudOnly} only in TeleCloud ${r.cloudOnly === 1 ? 'has' : 'have'} no file and ${r.cloudOnly === 1 ? 'was' : 'were'} left out` : ''}`, r.cloudOnly ? 'info' : 'success');
+    if (!r.success) { showToast(t('Could not save the playlist: {error}', { error: r.error }), 'error'); return; }
+    showToast(t('Saved {written|# track|# tracks}{value}', { written: r.written, value: r.cloudOnly ? t('; {cloudOnly} only in TeleCloud {cloudOnly|has|have} no file and {cloudOnly|was|were} left out', { cloudOnly: r.cloudOnly }) : '' }), r.cloudOnly ? 'info' : 'success');
   };
 
   const handleSaveQueueAsPlaylist = () => {
     if (queueFiles.length === 0) {
-      showToast("Queue is empty.");
+      showToast(t('Queue is empty.'));
       return;
     }
     const newPlaylist = { id: Date.now().toString(), name: `Queue Playlist`, songs: queueFiles };
     const newPlaylists = [...playlists, newPlaylist];
     setPlaylists(newPlaylists);
     window.ipcRenderer.invoke('save-store', 'playlists', newPlaylists);
-    showToast(`Saved as Queue Playlist`);
+    showToast(t('Saved as Queue Playlist'));
   };
 
   const storageNames = new Map(storages.map(s => [String(s.peerId), s.title]));
@@ -1761,7 +1763,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
   };
   const handleOpenLocation = async (file) => {
     const r = await window.ipcRenderer.invoke('show-in-folder', file.path);
-    if (!r?.success) showToast(r?.error || 'Could not open that folder', 'error');
+    if (!r?.success) showToast(r?.error || t('Could not open that folder'), 'error');
   };
   const songActions = {
     onOpenLocation: handleOpenLocation,
@@ -1782,12 +1784,12 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
     onSaveCoverFound: async () => {
       if (!coverFound) return;
       const r = await window.ipcRenderer.invoke('covers:save', { paths: coverFound.paths, image: coverFound.image });
-      showToast(r?.success ? 'Cover saved' : `Could not save the cover: ${r?.error}`, r?.success ? 'success' : 'error');
+      showToast(r?.success ? t('Cover saved') : t('Could not save the cover: {error}', { error: r?.error }), r?.success ? 'success' : 'error');
     },
     onSaveFound: async () => {
       if (!lyricsFound) return;
       const r = await window.ipcRenderer.invoke('lyrics:save', { path: lyricsFound.path, lyrics: lyricsFound.lyrics });
-      showToast(r?.success ? 'Lyrics saved' : `Could not save lyrics: ${r?.error}`, r?.success ? 'success' : 'error');
+      showToast(r?.success ? t('Lyrics saved') : t('Could not save lyrics: {error}', { error: r?.error }), r?.success ? 'success' : 'error');
     },
   };
   // the playing track with lyrics found online filled in (until they are saved)
@@ -1839,7 +1841,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
             <EqSettingsView
               onBack={closeEq}
               eq={eq}
-              deviceName={selectedDevice === '-1' ? 'System default' : (devices.find(d => (d.deviceId || d.id) === selectedDevice)?.name || 'this output')}
+              deviceName={selectedDevice === '-1' ? t('System default') : (devices.find(d => (d.deviceId || d.id) === selectedDevice)?.name || 'this output')}
             />
           </div>
         );
@@ -1863,8 +1865,8 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
           <div className="view">
             <SongList
               {...songListProps}
-              title="Duplicates"
-              subtitle={`${duplicates.size.toLocaleString()} extra ${duplicates.size === 1 ? 'copy' : 'copies'}: the better copy of each track stays in your library`}
+              title={t('Duplicates')}
+              subtitle={t('{size} extra {size2|copy|copies}: the better copy of each track stays in your library', { size: duplicates.size.toLocaleString(), size2: duplicates.size })}
               musicFiles={musicFiles.filter(f => duplicates.has(f.path))}
             />
           </div>
@@ -1914,13 +1916,13 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
               musicFiles={tcStorageFilter === 'all' ? cloudFiles : cloudFiles.filter(f => String(f.telegram_channel_id) === String(tcStorageFilter))}
               title="TeleCloud"
               subtitle={syncStatus?.isAuthenticated
-                ? `${cloudFiles.length.toLocaleString()} tracks backed up to Telegram`
+                ? t('{length} tracks backed up to Telegram', { length: cloudFiles.length.toLocaleString() })
                 : syncStatus?.sessionEnded
-                  ? 'Telegram signed TeleCloud out. Your backups are kept: sign in again in Settings > TeleCloud Sync'
-                  : 'Not connected — set up TeleCloud Sync in Settings'}
+                  ? t('Telegram signed TeleCloud out. Your backups are kept: sign in again in Settings > TeleCloud Sync')
+                  : t('Not connected — set up TeleCloud Sync in Settings')}
               toolbar={storages.length > 1 && (
-                <div className="storage-filter" role="tablist" aria-label="Storage">
-                  <button className={tcStorageFilter === 'all' ? 'on' : ''} onClick={() => setTcStorageFilter('all')}>All<span className="n">{cloudFiles.length.toLocaleString()}</span></button>
+                <div className="storage-filter" role="tablist" aria-label={t('Storage')}>
+                  <button className={tcStorageFilter === 'all' ? 'on' : ''} onClick={() => setTcStorageFilter('all')}>{t('All')}<span className="n">{cloudFiles.length.toLocaleString()}</span></button>
                   {storages.map(s => (
                     <button key={s.id} className={String(tcStorageFilter) === String(s.peerId) ? 'on' : ''} onClick={() => setTcStorageFilter(String(s.peerId))}>
                       <Icon name={s.kind === 'self' ? 'heart' : 'cloud'} />{s.title}<span className="n">{cloudFiles.filter(f => String(f.telegram_channel_id) === String(s.peerId)).length.toLocaleString()}</span>
@@ -1940,7 +1942,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
             <SongList
               {...songListProps}
               musicFiles={filteredMusicFiles}
-              title="Library"
+              title={t('Library')}
               onInfoClick={() => setIsInfoModalOpen(true)}
               showSort
               prefKey="library"
@@ -1952,6 +1954,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
 
   return (
     <SongActions.Provider value={songActions}>
+    <Relabel>
     {showFps && <FpsMeter />}
     <TitleBar subtitle={currentLive ? `${currentLive.metadata?.title || currentLive.name}${currentLive.metadata?.artist ? ` · ${currentLive.metadata.artist}` : ''}` : null} />
     <div className={`app ${isSidebarCollapsed ? 'side-collapsed' : ''} ${wideView ? 'no-right' : rightHidden ? 'right-hidden' : ''} ${nowPlaying && currentFile && !nowPlaying.closing ? 'np-mode' : ''}`}>
@@ -2084,7 +2087,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
         />
       )}
 
-      <Modal isOpen={isInfoModalOpen} onClose={() => setIsInfoModalOpen(false)} title="What the badges mean">
+      <Modal isOpen={isInfoModalOpen} onClose={() => setIsInfoModalOpen(false)} title={t('What the badges mean')}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '4px 2px' }}>
           {[...SOURCE_HELP, ...QUALITY_HELP].map((b, i) => (
             <div key={i} style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
@@ -2105,18 +2108,18 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
       {playlistModalData && (
         <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setPlaylistModalData(null); }}>
           <div className="card modal-card">
-            <h3>{playlistModalData.length > 1 ? `Add ${playlistModalData.length} tracks to playlist` : 'Add to playlist'}</h3>
+            <h3>{playlistModalData.length > 1 ? t('Add {length} tracks to playlist', { length: playlistModalData.length }) : t('Add to playlist')}</h3>
             <div className="list">
               {playlists.some(p => !p.smart) ? playlists.filter(p => !p.smart).map(p => (
                 <button key={p.id} className="menu-item" onClick={() => confirmAddPlaylist(p.id, playlistModalData)}>
                   <Icon name="playlist" />{p.name}
                   <span style={{ marginLeft: 'auto', color: 'var(--text-3)', fontSize: 12 }}>{p.songs?.length || 0}</span>
                 </button>
-              )) : <div className="empty">No playlists yet.</div>}
+              )) : <div className="empty">{t('No playlists yet.')}</div>}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn-ghost" style={{ flex: 1 }} onClick={() => { setPlaylistModalData(null); navigate('playlists'); setCreatePlaylistSignal(n => n + 1); }}>New playlist</button>
-              <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setPlaylistModalData(null)}>Cancel</button>
+              <button className="btn-ghost" style={{ flex: 1 }} onClick={() => { setPlaylistModalData(null); navigate('playlists'); setCreatePlaylistSignal(n => n + 1); }}>{t('New playlist')}</button>
+              <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setPlaylistModalData(null)}>{t('Cancel')}</button>
             </div>
           </div>
         </div>
@@ -2129,13 +2132,13 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
           files={metaFiles}
           onClose={() => setMetaFiles(null)}
           onDone={(r) => {
-            if (!r?.success) { showToast(`Could not save tags: ${r?.error || 'unknown error'}`, 'error'); return; }
-            if (r.coverOnly) { showToast('Cover saved'); return; }
+            if (!r?.success) { showToast(t('Could not save tags: {value}', { value: r?.error || t('unknown error') }), 'error'); return; }
+            if (r.coverOnly) { showToast(t('Cover saved')); return; }
             const byPath = new Map((r.files || []).filter(Boolean).map(f => [f.path, f]));
             setMusicFiles(prev => prev.map(f => byPath.get(f.path) || f));
             setCurrentFile(f => (f && byPath.has(f.path) ? byPath.get(f.path) : f));
-            if (r.errors?.length) showToast(`${r.errors.length} ${r.errors.length === 1 ? 'file' : 'files'} could not be changed: ${r.errors[0].error}`, 'error');
-            else showToast(byPath.size === 1 ? 'Track info saved' : `Saved ${byPath.size} tracks`);
+            if (r.errors?.length) showToast(t('{length|# file|# files} could not be changed: {error}', { length: r.errors.length, error: r.errors[0].error }), 'error');
+            else showToast(byPath.size === 1 ? t('Track info saved') : t('Saved {size} tracks', { size: byPath.size }));
           }}
         />
       )}
@@ -2146,7 +2149,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
         <CoverDialog
           files={coverFiles}
           onClose={() => setCoverFiles(null)}
-          onSaved={(r) => showToast(r.errors?.length ? `Cover saved, but ${r.errors.length} ${r.errors.length === 1 ? 'file' : 'files'} could not be changed` : 'Cover saved', r.errors?.length ? 'error' : 'success')}
+          onSaved={(r) => showToast(r.errors?.length ? t('Cover saved, but {length|# file|# files} could not be changed', { length: r.errors.length }) : t('Cover saved'), r.errors?.length ? 'error' : 'success')}
         />
       )}
 
@@ -2159,7 +2162,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
           onPlayFile={(f) => playMusic(f, 0, [f])}
           onTogglePlay={handleTogglePlay}
           onSeek={handleSeek}
-          onSaved={(r) => showToast(r.error ? `Could not save lyrics: ${r.error}` : r.cloudOnly ? 'Lyrics saved to your library' : `Lyrics saved${r.saved?.length ? ` (${r.saved.join(' + ').replace('lrc', '.lrc file')})` : ''}`, r.error ? 'error' : 'success')}
+          onSaved={(r) => showToast(r.error ? t('Could not save lyrics: {error}', { error: r.error }) : r.cloudOnly ? t('Lyrics saved to your library') : t('Lyrics saved{value}', { value: r.saved?.length ? ` (${r.saved.join(' + ').replace('lrc', '.lrc file')})` : '' }), r.error ? 'error' : 'success')}
         />
       )}
 
@@ -2173,13 +2176,13 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
             <div className="row">
               <Icon name="download" style={{ color: 'var(--accent)' }} />
               <div style={{ minWidth: 0, flex: 1 }}>
-                <b>TeleCloud {update.next} is ready</b>
-                <small>Installs when you restart, or the next time you quit.</small>
+                <b>TeleCloud {t('{next} is ready', { next: update.next })}</b>
+                <small>{t('Installs when you restart, or the next time you quit.')}</small>
               </div>
             </div>
             <div className="row" style={{ marginTop: 10, justifyContent: 'flex-end' }}>
-              <button className="btn-ghost" style={{ padding: '5px 12px' }} onClick={() => setUpdateDismissed(true)}>Later</button>
-              <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 13 }} onClick={() => window.ipcRenderer.invoke('update:install')}>Restart now</button>
+              <button className="btn-ghost" style={{ padding: '5px 12px' }} onClick={() => setUpdateDismissed(true)}>{t('Later')}</button>
+              <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 13 }} onClick={() => window.ipcRenderer.invoke('update:install')}>{t('Restart now')}</button>
             </div>
           </div>
         </Presence>
@@ -2190,13 +2193,13 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
               {scanProgress.status === 'inProgress' ? <span className="ring" /> : <Icon name="check" style={{ color: 'var(--ok)' }} />}
               <div style={{ minWidth: 0 }}>
                 <b>{scanProgress.status === 'inProgress'
-                  ? (scanProgress.type === 'scanning' ? 'Scanning…' : 'Refreshing…')
-                  : (scanProgress.type === 'scanning' ? 'Scan complete' : 'Refresh complete')}</b>
+                  ? (scanProgress.type === 'scanning' ? t('Scanning…') : t('Refreshing…'))
+                  : (scanProgress.type === 'scanning' ? t('Scan complete') : t('Refresh complete'))}</b>
                 <small>{scanProgress.message}</small>
               </div>
               {scanProgress.status === 'inProgress' && (
-                <button className="btn-ghost" style={{ marginLeft: 'auto', padding: '5px 12px' }} onClick={() => window.ipcRenderer.invoke('library:cancel')} title="Stop scanning; tracks read so far are kept">
-                  Stop
+                <button className="btn-ghost" style={{ marginLeft: 'auto', padding: '5px 12px' }} onClick={() => window.ipcRenderer.invoke('library:cancel')} title={t('Stop scanning; tracks read so far are kept')}>
+                  {t('Stop')}
                 </button>
               )}
             </div>
@@ -2211,7 +2214,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
             <div className="row" style={{ marginBottom: 8 }}>
               {toast.progress === 100 ? <Icon name="check" style={{ color: 'var(--ok)' }} /> : <Icon name="download" />}
               <div style={{ minWidth: 0, flex: 1 }}>
-                <b>{toast.progress === 100 ? 'Download complete' : 'Downloading…'}</b>
+                <b>{toast.progress === 100 ? t('Download complete') : t('Downloading…')}</b>
                 <small>{toast.name}</small>
               </div>
               <span className="mono" style={{ fontSize: 12, color: 'var(--text-3)' }}>{toast.progress}%</span>
@@ -2221,6 +2224,7 @@ ${cloudOnly} ${cloudOnly === 1 ? 'track is' : 'tracks are'} only in TeleCloud an
         ))}
       </div>
     </div>
+    </Relabel>
     </SongActions.Provider>
   );
 }

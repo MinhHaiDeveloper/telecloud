@@ -1,6 +1,7 @@
 import React, { useMemo, useEffect, useRef } from 'react';
 
 import { parseLyrics, wordEnd } from '../utils/lyrics';
+import { t } from '../i18n';
 
 // LRC, Enhanced LRC (a time per word) and TTML are read in utils/lyrics.js
 export { parseLyrics };
@@ -89,7 +90,7 @@ const LyricsView = ({ lyrics, currentTime, onSeek, className = 'lyrics-scroll', 
   useEffect(() => () => cancelAnimationFrame(moving.current), []);
 
   if (!parsed.lines.length) {
-    return <div className="lyrics-empty">No lyrics for this track yet.</div>;
+    return <div className="lyrics-empty">{t('No lyrics for this track yet.')}</div>;
   }
 
   return (

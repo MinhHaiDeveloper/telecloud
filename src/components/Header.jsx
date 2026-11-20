@@ -1,10 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import Icon from './Icon';
 import useSlidingIndicator from '../hooks/useSlidingIndicator';
+import { t } from '../i18n';
 
 const SOURCES = [
-  { id: 'all', label: 'All' },
-  { id: 'local', label: 'Local' },
+  { id: 'all', get label() { return t('All'); } },
+  { id: 'local', get label() { return t('Local'); } },
   { id: 'cloud', label: 'TeleCloud' },
 ];
 
@@ -31,14 +32,14 @@ const Header = ({ searchQuery, onSearchChange, source, onSourceChange, onRefresh
         <Icon name="search" />
         <input
           ref={inputRef}
-          placeholder="Search by artists, songs or albums"
+          placeholder={t('Search by artists, songs or albums')}
           value={searchQuery || ''}
           onChange={(e) => onSearchChange(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Escape') { onSearchChange(''); e.currentTarget.blur(); } }}
         />
         {searchQuery
-          ? <button className="icon-btn sm" onClick={() => onSearchChange('')} aria-label="Clear search"><Icon name="close" /></button>
-          : <span className="kbd">Ctrl K</span>}
+          ? <button className="icon-btn sm" onClick={() => onSearchChange('')} aria-label={t('Clear search')}><Icon name="close" /></button>
+          : <span className="kbd">{t('Ctrl K')}</span>}
       </label>
 
       <div className="source-tabs slider-host" role="tablist" ref={tabsRef}>
@@ -52,15 +53,15 @@ const Header = ({ searchQuery, onSearchChange, source, onSourceChange, onRefresh
 
       <div className="top-actions">
         <button className="btn-outline" onClick={onRefresh} disabled={isScanning}>
-          <Icon name="refresh" className={isScanning ? 'spinning' : ''} />{isScanning ? 'Scanning…' : 'Scan library'}
+          <Icon name="refresh" className={isScanning ? 'spinning' : ''} />{isScanning ? t('Scanning…') : t('Scan library')}
         </button>
-        <button className="icon-btn" onClick={onToggleTheme} title={theme === 'dark' ? 'Light theme' : 'Dark theme'} aria-label="Toggle theme">
+        <button className="icon-btn" onClick={onToggleTheme} title={theme === 'dark' ? t('Light theme') : t('Dark theme')} aria-label={t('Toggle theme')}>
           <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
         </button>
         {panel !== null && panel !== undefined && (
-          <button className={`icon-btn panel-toggle ${panel ? 'on' : ''}`} onClick={onTogglePanel} title={panel ? 'Hide the side panel' : 'Show the side panel'} aria-label="Side panel" aria-pressed={panel}><Icon name="panel" /></button>
+          <button className={`icon-btn panel-toggle ${panel ? 'on' : ''}`} onClick={onTogglePanel} title={panel ? t('Hide the side panel') : t('Show the side panel')} aria-label={t('Side panel')} aria-pressed={panel}><Icon name="panel" /></button>
         )}
-        <button className="icon-btn" onClick={onOpenSettings} title="Settings" aria-label="Settings"><Icon name="settings" /></button>
+        <button className="icon-btn" onClick={onOpenSettings} title={t('Settings')} aria-label={t('Settings')}><Icon name="settings" /></button>
       </div>
     </header>
   );

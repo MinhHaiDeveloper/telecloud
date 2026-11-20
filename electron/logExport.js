@@ -7,6 +7,7 @@ const zlib = require('zlib');
 const { promisify } = require('util');
 const logger = require('./logger');
 const { getLibraryRoots, readSettings } = require('./paths');
+const { tx } = require('./i18n');
 
 const deflate = promisify(zlib.deflateRaw);
 const AUDIO = 'flac|wav|aiff?|aifc|alac|m4a|m4b|ape|wv|tta|dsf|dff|mp3|ogg|opus|aac|wma|mka|mpc|lrc|jpe?g|png|cue';
@@ -259,7 +260,7 @@ async function buildZip({ days, from, to, includeNames }) {
   logger.flush();
   const end = to ? new Date(`${to}T23:59:59.999`).getTime() : Date.now();
   const start = typeof days === 'number' ? Date.now() - days * 86400000 : new Date(`${from}T00:00:00`).getTime();
-  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) throw new Error('Choose a start date before the end date');
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) throw new Error(tx('Choose a start date before the end date'));
   const hide = includeNames ? (l) => l : nameHider();
   // redacted when written, redacted again here: this is the last check before it leaves the app
   const clean = (l) => hide(logger.redact(l));
@@ -314,9 +315,9 @@ ipcMain.handle('logs:export', async (e, opts = {}) => {
     const win = BrowserWindow.fromWebContents(e.sender);
     const stampName = new Date().toISOString().slice(0, 10);
     const r = await dialog.showSaveDialog(win, {
-      title: 'Save the log',
+      title: tx('Save the log'),
       defaultPath: path.join(app.getPath('downloads'), `TeleCloud-log-${stampName}.zip`),
-      filters: [{ name: 'Zip archive', extensions: ['zip'] }],
+      filters: [{ name: tx('Zip archive'), extensions: ['zip'] }],
     });
     if (r.canceled || !r.filePath) return { success: false, canceled: true };
     const built = await buildZip(opts);

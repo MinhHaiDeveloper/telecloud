@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { t } from '../i18n';
 
 /** Small frame-rate readout (Settings → General → Performance), to check how smoothly the app draws */
 const FpsMeter = () => {
@@ -24,7 +25,7 @@ const FpsMeter = () => {
   }, []);
   return (
     <div className="fps-meter mono" aria-hidden="true">
-      <b>{v.fps}</b> fps <span>· slowest {v.worst} ms</span>
+      <b>{v.fps}</b> {t('fps')} <span>{t('· slowest {worst}', { worst: v.worst })} ms</span>
     </div>
   );
 };

@@ -11,11 +11,12 @@ import SongActions from './songActions';
 import { formatDuration, sortAlbumTracks } from '../utils/audio';
 import { albumIndex, artistLabel, artistsOf, trackCount, UNKNOWN_ARTIST, VARIOUS_ARTISTS } from '../utils/albums';
 import { ipcOn, ipcOff } from '../utils/ipc';
+import { t } from '../i18n';
 
 const SORTS = [
-  { value: 'name', label: 'Name A → Z' },
-  { value: 'name-desc', label: 'Name Z → A' },
-  { value: 'tracks', label: 'Most tracks' },
+  { value: 'name', get label() { return t('Name A → Z'); } },
+  { value: 'name-desc', get label() { return t('Name Z → A'); } },
+  { value: 'tracks', get label() { return t('Most tracks'); } },
 ];
 
 const noThe = (s) => s.toLowerCase().replace(/^the /, '');
@@ -137,10 +138,10 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
       <div key={album.key} className="tile pressable" role="button" tabIndex={0} onClick={() => ctx.openAlbum?.(album, selected.name)} onKeyDown={(e) => e.key === 'Enter' && ctx.openAlbum?.(album, selected.name)}>
         <div className="cover-wrap">
           <Cover file={album.file} />
-          <button className="play-fab" title="Play album" onClick={(e) => { e.stopPropagation(); onPlay(album.songs[0], 0, album.songs); }}><Icon name="play" /></button>
+          <button className="play-fab" title={t('Play album')} onClick={(e) => { e.stopPropagation(); onPlay(album.songs[0], 0, album.songs); }}><Icon name="play" /></button>
         </div>
         <b>{album.name}</b>
-        <span>{album.year ? `${album.year} · ` : ''}{album.songs.length} {album.songs.length === 1 ? 'track' : 'tracks'}</span>
+        <span>{album.year ? `${album.year} · ` : ''}{album.songs.length} {album.songs.length === 1 ? t('track') : t('tracks')}</span>
       </div>
     );
     // a label is about its albums; which tab it is on has no bearing on the real artists
@@ -149,31 +150,31 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
     return (
       <>
         <div className="page-head detail-nav">
-          <BackButton onClick={() => setSelectedName(null)} label="All artists" />
-          <span className="sub">Artists</span>
+          <BackButton onClick={() => setSelectedName(null)} label={t('All artists')} />
+          <span className="sub">{t('Artists')}</span>
         </div>
         <div className="detail-head">
           {selected.label ? <LabelPicture albums={selected.albums} className="round" /> : <ArtistPicture name={selected.name} file={selected.file} preview={found?.thumb} animated className="round" />}
           <div className="info">
-            <span className="eyebrow">{!selected.label ? 'Artist' : selected.name === VARIOUS_ARTISTS ? 'Albums by many artists' : 'Albums without an artist'}</span>
+            <span className="eyebrow">{!selected.label ? t('Artist') : selected.name === VARIOUS_ARTISTS ? t('Albums by many artists') : t('Albums without an artist')}</span>
             <h2>{selected.name}</h2>
-            <div className="meta">{albumCount} {albumCount === 1 ? 'album' : 'albums'} · {trackCount(songs.length)} · {formatDuration(total)}</div>
+            <div className="meta">{albumCount} {albumCount === 1 ? t('album') : t('albums')} · {trackCount(songs.length)} · {formatDuration(total)}</div>
             <div className="btn-row">
-              <button className="btn-primary" onClick={() => onPlay(songs[0], 0, songs)}><Icon name="play" filled />Play</button>
-              <button className="btn-ghost" onClick={() => { const s = [...songs].sort(() => Math.random() - 0.5); onPlay(s[0], 0, s); }}><Icon name="shuffle" />Shuffle</button>
-              {!selected.label && <button className="btn-ghost" onClick={() => setPictureOpen(true)}><Icon name="image" />Artist picture…</button>}
+              <button className="btn-primary" onClick={() => onPlay(songs[0], 0, songs)}><Icon name="play" filled />{t('Play')}</button>
+              <button className="btn-ghost" onClick={() => { const s = [...songs].sort(() => Math.random() - 0.5); onPlay(s[0], 0, s); }}><Icon name="shuffle" />{t('Shuffle')}</button>
+              {!selected.label && <button className="btn-ghost" onClick={() => setPictureOpen(true)}><Icon name="image" />{t('Artist picture…')}</button>}
             </div>
             {work && work.name === selected.name && !pictureOpen && (
               <div className="lyrics-note found artist-note">
-                <span>Saving the picture · {work.done.toLocaleString()} of {work.total.toLocaleString()} tracks</span>
-                <button className="btn-ghost sm" onClick={() => window.ipcRenderer.invoke('artists:stop')}>Stop</button>
+                <span>{t('Saving the picture · {done} of {total} tracks', { done: work.done.toLocaleString(), total: work.total.toLocaleString() })}</span>
+                <button className="btn-ghost sm" onClick={() => window.ipcRenderer.invoke('artists:stop')}>{t('Stop')}</button>
               </div>
             )}
             {found && !(work && work.name === selected.name) && (
               <div className="lyrics-note found artist-note">
-                <span>Picture from {found.label} · not saved</span>
-                <button className="btn-ghost sm" onClick={saveFound}><Icon name="check" />Save</button>
-                <button className="btn-ghost sm" onClick={() => setPictureOpen(true)}><Icon name="search" />Other results</button>
+                <span>{t('Picture from {label} · not saved', { label: found.label })}</span>
+                <button className="btn-ghost sm" onClick={saveFound}><Icon name="check" />{t('Save')}</button>
+                <button className="btn-ghost sm" onClick={() => setPictureOpen(true)}><Icon name="search" />{t('Other results')}</button>
               </div>
             )}
           </div>
@@ -189,14 +190,14 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
         )}
         {!selected.label && <ArtistBio name={selected.name} known={new Set(artists.map(a => a.name))} />}
         <div className="artist-tabs">
-          <Segmented value={tab} onChange={selected.label ? setLabelTab : setArtistTab} options={[{ value: 'songs', label: `Songs · ${songs.length.toLocaleString()}` }, { value: 'albums', label: `Albums · ${albumCount}` }]} />
+          <Segmented value={tab} onChange={selected.label ? setLabelTab : setArtistTab} options={[{ value: 'songs', label: t('Songs · {length}', { length: songs.length.toLocaleString() }) }, { value: 'albums', label: t('Albums · {albumCount}', { albumCount }) }]} />
         </div>
         {tab === 'albums' ? (
           <>
             {ownAlbums.length > 0 && <div className="tile-grid">{ownAlbums.map(tile)}</div>}
             {appearsOn.length > 0 && (
               <>
-                <div className="section-head artist-appears"><span>Appears on</span></div>
+                <div className="section-head artist-appears"><span>{t('Appears on')}</span></div>
                 <div className="tile-grid">{appearsOn.map(tile)}</div>
               </>
             )}
@@ -224,24 +225,24 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
   return (
     <>
       <div className="page-head">
-        <h2>Artists</h2>
-        <span className="sub">{(() => { const n = shown.filter(a => !a.label).length; return `${n.toLocaleString()} ${n === 1 ? 'artist' : 'artists'}`; })()}</span>
+        <h2>{t('Artists')}</h2>
+        <span className="sub">{(() => { const n = shown.filter(a => !a.label).length; return t('{n|# artist|# artists}', { n }); })()}</span>
         <div className="end">
           <Segmented
             size="sm"
             value={ctx.artistFilter === 'all' ? 'all' : 'album'}
             onChange={(v) => { ctx.setArtistFilter?.(v); const view = document.querySelector('.view'); if (view) view.scrollTop = 0; }}
-            options={[{ value: 'album', label: 'Album artists' }, { value: 'all', label: 'All artists' }]}
+            options={[{ value: 'album', label: t('Album artists') }, { value: 'all', label: t('All artists') }]}
           />
           <Select variant="ghost" icon="sort" align="right" value={sortBy} options={SORTS} onChange={setSortBy} />
         </div>
       </div>
       {shown.every(a => a.label) && (shown.length === 0 || artists.length > shown.length) && (
         <div className="empty">
-          {artists.length === 0 ? 'No artists in your library yet.' : (
+          {artists.length === 0 ? t('No artists in your library yet.') : (
             <>
-              <div>No album artists here yet. The artists in your library are only on compilations.</div>
-              <button className="btn-ghost" style={{ marginTop: 12 }} onClick={() => ctx.setArtistFilter?.('all')}>Show all artists</button>
+              <div>{t('No album artists here yet. The artists in your library are only on compilations.')}</div>
+              <button className="btn-ghost" style={{ marginTop: 12 }} onClick={() => ctx.setArtistFilter?.('all')}>{t('Show all artists')}</button>
             </>
           )}
         </div>
@@ -252,7 +253,7 @@ const ArtistsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavor
             <div key={artist.name} className="tile round pressable artist-label" role="button" tabIndex={0} onClick={() => setSelectedName(artist.name)} onKeyDown={(e) => e.key === 'Enter' && setSelectedName(artist.name)}>
               <div className="cover-wrap" style={{ width: '100%' }}><LabelPicture albums={artist.albums} /></div>
               <b>{artist.name}</b>
-              <span>{artist.albums.length.toLocaleString()} {artist.albums.length === 1 ? 'album' : 'albums'}</span>
+              <span>{artist.albums.length.toLocaleString()} {artist.albums.length === 1 ? t('album') : t('albums')}</span>
             </div>
           ) : (
             <div key={artist.name} className="tile round pressable" role="button" tabIndex={0} onClick={() => setSelectedName(artist.name)} onKeyDown={(e) => e.key === 'Enter' && setSelectedName(artist.name)}>

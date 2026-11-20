@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { fileURLToPath } = require('url');
 const database = require('./database');
+const { tx } = require('./i18n');
 
 const key = (p) => path.resolve(p).replace(/\//g, '\\').toLowerCase(); // Windows paths ignore case
 
@@ -46,8 +47,8 @@ function parse(text, dir) {
 
 async function importFile(win) {
   const r = await dialog.showOpenDialog(win, {
-    title: 'Import a playlist',
-    filters: [{ name: 'Playlists', extensions: ['m3u8', 'm3u'] }],
+    title: tx('Import a playlist'),
+    filters: [{ name: tx('Playlists'), extensions: ['m3u8', 'm3u'] }],
     properties: ['openFile'],
   });
   if (r.canceled || !r.filePaths[0]) return { canceled: true };
@@ -69,9 +70,9 @@ async function importFile(win) {
 async function exportFile(win, { name, paths }) {
   const safe = String(name || 'Playlist').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || 'Playlist';
   const r = await dialog.showSaveDialog(win, {
-    title: 'Export the playlist',
+    title: tx('Export the playlist'),
     defaultPath: `${safe}.m3u8`,
-    filters: [{ name: 'Playlist (UTF-8)', extensions: ['m3u8'] }, { name: 'Playlist', extensions: ['m3u'] }],
+    filters: [{ name: tx('Playlist (UTF-8)'), extensions: ['m3u8'] }, { name: tx('Playlist'), extensions: ['m3u'] }],
   });
   if (r.canceled || !r.filePath) return { canceled: true };
   const dir = path.dirname(r.filePath);

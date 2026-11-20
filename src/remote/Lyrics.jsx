@@ -1,6 +1,7 @@
 // Lyrics on a remote: the host's lyrics for the track that plays, following the music
 import React, { useEffect, useRef, useState } from 'react';
 import { browse } from './api';
+import { t } from '../i18n';
 
 export default function Lyrics({ trackId, rev, pos, onSeek }) {
   const [st, setSt] = useState({ id: null, lines: [], synced: false, loading: true, error: '' });
@@ -31,10 +32,10 @@ export default function Lyrics({ trackId, rev, pos, onSeek }) {
 
   const mine = st.id === trackId;
   let body;
-  if (!trackId) body = <p className="rm-lyr-note">Nothing playing.</p>;
+  if (!trackId) body = <p className="rm-lyr-note">{t('Nothing playing.')}</p>;
   else if (st.loading && !mine) body = <p className="rm-lyr-note"><span className="rm-ring sm" /></p>;
   else if (st.error) body = <p className="rm-lyr-note">{st.error}</p>;
-  else if (!st.lines.length) body = <p className="rm-lyr-note">No lyrics for this track yet. Find them in TeleCloud: Lyrics, then Search.</p>;
+  else if (!st.lines.length) body = <p className="rm-lyr-note">{t('No lyrics for this track yet. Find them in TeleCloud: Lyrics, then Search.')}</p>;
   else {
     body = st.lines.map((l, i) => (
       <p key={`${trackId}-${i}`} data-i={i}

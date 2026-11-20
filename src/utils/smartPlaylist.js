@@ -2,57 +2,58 @@
 // library each time it is shown, so it keeps itself up to date: a new album, a play, a favourite, and it
 // changes by itself. Stored with the other playlists as { id, name, smart: { match, rules, sort, limit }, songs: [] }.
 import { qualityOf, storageOf } from './audio';
+import { t } from '../i18n';
 
 const DAY = 86400000;
 const lc = (s) => String(s ?? '').trim().toLowerCase();
 
 const TEXT_OPS = [
-  { value: 'contains', label: 'contains' },
-  { value: 'not-contains', label: 'does not contain' },
-  { value: 'is', label: 'is' },
-  { value: 'is-not', label: 'is not' },
-  { value: 'starts', label: 'starts with' },
+  { value: 'contains', get label() { return t('contains'); } },
+  { value: 'not-contains', get label() { return t('does not contain'); } },
+  { value: 'is', get label() { return t('is'); } },
+  { value: 'is-not', get label() { return t('is not'); } },
+  { value: 'starts', get label() { return t('starts with'); } },
 ];
 const NUM_OPS = [
-  { value: 'gte', label: 'is at least' },
-  { value: 'lte', label: 'is at most' },
-  { value: 'is', label: 'is' },
-  { value: 'between', label: 'is between' },
+  { value: 'gte', get label() { return t('is at least'); } },
+  { value: 'lte', get label() { return t('is at most'); } },
+  { value: 'is', get label() { return t('is'); } },
+  { value: 'between', get label() { return t('is between'); } },
 ];
 const DATE_OPS = [
-  { value: 'in-last', label: 'in the last' },
-  { value: 'not-in-last', label: 'not in the last' },
+  { value: 'in-last', get label() { return t('in the last'); } },
+  { value: 'not-in-last', get label() { return t('not in the last'); } },
 ];
 const CHOICE_OPS = [
-  { value: 'is', label: 'is' },
-  { value: 'is-not', label: 'is not' },
+  { value: 'is', get label() { return t('is'); } },
+  { value: 'is-not', get label() { return t('is not'); } },
 ];
 
 /** Every field a rule can look at: how to read it from a track, and what it can be compared with */
 export const FIELDS = [
-  { value: 'artist', label: 'Artist', kind: 'text', get: (f) => f.metadata?.artist },
-  { value: 'albumArtist', label: 'Album artist', kind: 'text', get: (f) => f.metadata?.albumArtist || f.metadata?.artist },
-  { value: 'album', label: 'Album', kind: 'text', get: (f) => f.metadata?.album },
-  { value: 'title', label: 'Title', kind: 'text', get: (f) => f.metadata?.title || f.name },
-  { value: 'genre', label: 'Genre', kind: 'text', get: (f) => f.metadata?.genre },
-  { value: 'year', label: 'Year', kind: 'number', get: (f) => Number(f.metadata?.year) || null },
-  { value: 'plays', label: 'Plays', kind: 'number', get: (f, c) => c.playCounts?.[f.path] || 0 },
-  { value: 'lastPlayed', label: 'Last played', kind: 'date', get: (f, c) => c.lastPlayed?.[f.path] || null, never: true },
-  { value: 'added', label: 'Date added', kind: 'date', get: (f) => (f.added_at ? new Date(f.added_at).getTime() : null) },
-  { value: 'favourite', label: 'Favourite', kind: 'choice', choices: [{ value: 'yes', label: 'yes' }, { value: 'no', label: 'no' }], get: (f, c) => (c.favorites?.has(f.path) ? 'yes' : 'no') },
-  { value: 'quality', label: 'Quality', kind: 'choice', choices: [{ value: 'hires', label: 'Hi-Res' }, { value: 'lossless', label: 'Lossless (CD)' }, { value: 'lossy', label: 'Lossy' }], get: (f) => qualityOf(f).tier },
-  { value: 'format', label: 'Format', kind: 'choice', choices: ['flac', 'wav', 'aiff', 'alac', 'dsd', 'mp3', 'aac', 'ogg', 'opus'].map(v => ({ value: v, label: v === 'dsd' ? 'DSD' : v.toUpperCase() })), get: (f) => formatOf(f) },
-  { value: 'bitDepth', label: 'Bit depth', kind: 'number', unit: 'bit', get: (f) => Number(f.metadata?.bitsPerSample) || null },
-  { value: 'sampleRate', label: 'Sample rate', kind: 'number', unit: 'kHz', get: (f) => (f.metadata?.sampleRate ? f.metadata.sampleRate / 1000 : null) },
-  { value: 'mqa', label: 'MQA', kind: 'choice', choices: [{ value: 'yes', label: 'yes' }, { value: 'studio', label: 'MQA Studio' }, { value: 'no', label: 'no' }], get: (f) => (f.mqa === 2 ? 'studio' : f.mqa > 0 ? 'yes' : 'no') },
-  { value: 'source', label: 'Where', kind: 'choice', choices: [{ value: 'local', label: 'On this computer' }, { value: 'cloud', label: 'Only in TeleCloud' }, { value: 'backed', label: 'Backed up to TeleCloud' }], get: (f) => sourceOf(f) },
+  { value: 'artist', get label() { return t('Artist'); }, kind: 'text', get: (f) => f.metadata?.artist },
+  { value: 'albumArtist', get label() { return t('Album artist'); }, kind: 'text', get: (f) => f.metadata?.albumArtist || f.metadata?.artist },
+  { value: 'album', get label() { return t('Album'); }, kind: 'text', get: (f) => f.metadata?.album },
+  { value: 'title', get label() { return t('Title'); }, kind: 'text', get: (f) => f.metadata?.title || f.name },
+  { value: 'genre', get label() { return t('Genre'); }, kind: 'text', get: (f) => f.metadata?.genre },
+  { value: 'year', get label() { return t('Year'); }, kind: 'number', get: (f) => Number(f.metadata?.year) || null },
+  { value: 'plays', get label() { return t('Plays'); }, kind: 'number', get: (f, c) => c.playCounts?.[f.path] || 0 },
+  { value: 'lastPlayed', get label() { return t('Last played'); }, kind: 'date', get: (f, c) => c.lastPlayed?.[f.path] || null, never: true },
+  { value: 'added', get label() { return t('Date added'); }, kind: 'date', get: (f) => (f.added_at ? new Date(f.added_at).getTime() : null) },
+  { value: 'favourite', get label() { return t('Favourite'); }, kind: 'choice', choices: [{ value: 'yes', get label() { return t('yes'); } }, { value: 'no', get label() { return t('no'); } }], get: (f, c) => (c.favorites?.has(f.path) ? 'yes' : 'no') },
+  { value: 'quality', get label() { return t('Quality'); }, kind: 'choice', choices: [{ value: 'hires', get label() { return t('Hi-Res'); } }, { value: 'lossless', get label() { return t('Lossless (CD)'); } }, { value: 'lossy', get label() { return t('Lossy'); } }], get: (f) => qualityOf(f).tier },
+  { value: 'format', get label() { return t('Format'); }, kind: 'choice', choices: ['flac', 'wav', 'aiff', 'alac', 'dsd', 'mp3', 'aac', 'ogg', 'opus'].map(v => ({ value: v, label: v === 'dsd' ? 'DSD' : v.toUpperCase() })), get: (f) => formatOf(f) },
+  { value: 'bitDepth', get label() { return t('Bit depth'); }, kind: 'number', unit: 'bit', get: (f) => Number(f.metadata?.bitsPerSample) || null },
+  { value: 'sampleRate', get label() { return t('Sample rate'); }, kind: 'number', unit: 'kHz', get: (f) => (f.metadata?.sampleRate ? f.metadata.sampleRate / 1000 : null) },
+  { value: 'mqa', label: 'MQA', kind: 'choice', choices: [{ value: 'yes', get label() { return t('yes'); } }, { value: 'studio', get label() { return t('MQA Studio'); } }, { value: 'no', get label() { return t('no'); } }], get: (f) => (f.mqa === 2 ? 'studio' : f.mqa > 0 ? 'yes' : 'no') },
+  { value: 'source', get label() { return t('Where'); }, kind: 'choice', choices: [{ value: 'local', get label() { return t('On this computer'); } }, { value: 'cloud', get label() { return t('Only in TeleCloud'); } }, { value: 'backed', get label() { return t('Backed up to TeleCloud'); } }], get: (f) => sourceOf(f) },
 ];
 export const FIELD = Object.fromEntries(FIELDS.map(f => [f.value, f]));
 export const opsFor = (field) => {
   const f = FIELD[field];
   if (!f) return TEXT_OPS;
   if (f.kind === 'number') return NUM_OPS;
-  if (f.kind === 'date') return f.never ? [...DATE_OPS, { value: 'never', label: 'never' }] : DATE_OPS;
+  if (f.kind === 'date') return f.never ? [...DATE_OPS, { value: 'never', label: t('never') }] : DATE_OPS;
   if (f.kind === 'choice') return CHOICE_OPS;
   return TEXT_OPS;
 };
@@ -125,13 +126,13 @@ function passes(file, rule, ctx) {
 }
 
 export const SORTS = [
-  { value: 'artist', label: 'Artist, album, track' },
-  { value: 'title', label: 'Title' },
-  { value: 'added', label: 'Newest added' },
-  { value: 'year', label: 'Newest year' },
-  { value: 'plays', label: 'Most played' },
-  { value: 'lastPlayed', label: 'Last played' },
-  { value: 'random', label: 'Random' },
+  { value: 'artist', get label() { return t('Artist, album, track'); } },
+  { value: 'title', get label() { return t('Title'); } },
+  { value: 'added', get label() { return t('Newest added'); } },
+  { value: 'year', get label() { return t('Newest year'); } },
+  { value: 'plays', get label() { return t('Most played'); } },
+  { value: 'lastPlayed', get label() { return t('Last played'); } },
+  { value: 'random', get label() { return t('Random'); } },
 ];
 
 // a mixed-up order that stays the same while the playlist shows (and changes only when it is reshuffled)
@@ -164,19 +165,19 @@ export function smartTracks(smart, files, ctx = {}) {
 /** The rules in words, for under the playlist's name */
 export function describe(smart) {
   const rules = smart?.rules || [];
-  if (!rules.length) return 'No rules yet';
+  if (!rules.length) return t('No rules yet');
   const one = (r) => {
     const f = FIELD[r.field];
     if (!f) return '';
     const op = opsFor(r.field).find(o => o.value === r.op)?.label || r.op;
-    if (r.op === 'never') return `${f.label} never`;
-    if (f.kind === 'date') return `${f.label} ${op} ${r.value} days`;
+    if (r.op === 'never') return t('{label} never', { label: f.label });
+    if (f.kind === 'date') return t('{label} {op} {value} days', { label: f.label, op, value: r.value });
     if (f.kind === 'choice') return `${f.label} ${op} ${f.choices.find(c => c.value === r.value)?.label || r.value}`;
-    if (r.op === 'between') return `${f.label} ${op} ${r.value} and ${r.value2}${f.unit ? ` ${f.unit}` : ''}`;
+    if (r.op === 'between') return t('{label} {op} {value} and {value2}{value3}', { label: f.label, op, value: r.value, value2: r.value2, value3: f.unit ? ` ${f.unit}` : '' });
     return `${f.label} ${op} ${f.kind === 'text' ? `“${r.value}”` : `${r.value}${f.unit ? ` ${f.unit}` : ''}`}`;
   };
   const text = rules.map(one).filter(Boolean).join(smart.match === 'any' ? ', or ' : ', and ');
-  const limit = Number(smart.limit) > 0 ? ` · up to ${smart.limit} tracks` : '';
+  const limit = Number(smart.limit) > 0 ? t(' · up to {limit} tracks', { limit: smart.limit }) : '';
   return `${text}${limit}`;
 }
 

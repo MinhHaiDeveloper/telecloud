@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Icon from './Icon';
 import { SettingRow, Toggle, Segmented } from './ui';
 import CadenceModels from './CadenceModels';
+import { t } from '../i18n';
 
 /** The ordered list of sources: tick to use one, arrows to change the order */
 export const SourceOrder = ({ o, set }) => {
@@ -15,7 +16,7 @@ export const SourceOrder = ({ o, set }) => {
   const toggleSource = (id) => set({ disabled: o.disabled.includes(id) ? o.disabled.filter(x => x !== id) : [...o.disabled, id] });
   return (
     <div className="set-sub">
-      <div className="src-order-head"><b>Sources</b><span>Searched from top to bottom; the first good match wins.</span></div>
+      <div className="src-order-head"><b>{t('Sources')}</b><span>{t('Searched from top to bottom; the first good match wins.')}</span></div>
       <ol className="src-order">
         {o.order.map((id, i) => {
           const src = o.sources[id] || { label: id };
@@ -26,11 +27,11 @@ export const SourceOrder = ({ o, set }) => {
               <label className="src-name">
                 <input type="checkbox" checked={on} onChange={() => toggleSource(id)} />
                 <b>{src.label}</b>
-                {src.online ? <span className="badge b-cloud">Online</span> : <span className="badge b-local">On this computer</span>}
+                {src.online ? <span className="badge b-cloud">{t('Online')}</span> : <span className="badge b-local">{t('On this computer')}</span>}
                 {src.note && <small>{src.note}</small>}
               </label>
-              <button className="icon-btn sm" onClick={() => move(i, -1)} disabled={i === 0} title="Move up"><Icon name="chevron" style={{ transform: 'rotate(180deg)' }} /></button>
-              <button className="icon-btn sm" onClick={() => move(i, 1)} disabled={i === o.order.length - 1} title="Move down"><Icon name="chevron" /></button>
+              <button className="icon-btn sm" onClick={() => move(i, -1)} disabled={i === 0} title={t('Move up')}><Icon name="chevron" style={{ transform: 'rotate(180deg)' }} /></button>
+              <button className="icon-btn sm" onClick={() => move(i, 1)} disabled={i === o.order.length - 1} title={t('Move down')}><Icon name="chevron" /></button>
             </li>
           );
         })}
@@ -53,19 +54,19 @@ const LyricsSettings = () => {
 
   return (
     <section className="set-section">
-      <h3>Lyrics</h3>
+      <h3>{t('Lyrics')}</h3>
       <div className="card set-card">
-        <SettingRow icon="search" title="Search online for missing lyrics" desc="When a track without lyrics plays, ask the sources below. Off: only the file's tags and .lrc files are used.">
+        <SettingRow icon="search" title={t('Search online for missing lyrics')} desc={t('When a track without lyrics plays, ask the sources below. Off: only the file\'s tags and .lrc files are used.')}>
           <Toggle checked={o.search} onChange={(v) => set({ search: v })} />
         </SettingRow>
-        <SettingRow icon="lyrics" title="Word by word when available" desc="Ask NetEase, QQ Music and Kugou for lyrics timed word by word, and prefer them: each word lights up as it is sung. Songs without them keep line-synced lyrics.">
+        <SettingRow icon="lyrics" title={t('Word by word when available')} desc={t('Ask NetEase, QQ Music and Kugou for lyrics timed word by word, and prefer them: each word lights up as it is sung. Songs without them keep line-synced lyrics.')}>
           <Toggle checked={o.wordByWord !== false} onChange={(v) => set({ wordByWord: v })} disabled={!o.search} />
         </SettingRow>
-        <SettingRow icon="check" title="Save found lyrics automatically" desc="Off: found lyrics are shown first and saved only when you press Save.">
+        <SettingRow icon="check" title={t('Save found lyrics automatically')} desc={t('Off: found lyrics are shown first and saved only when you press Save.')}>
           <Toggle checked={o.autoSave} onChange={(v) => set({ autoSave: v })} disabled={!o.search} />
         </SettingRow>
-        <SettingRow icon="lyrics" title="Save lyrics to" desc="Tag: inside the file (LYRICS). .lrc: a file with the same name next to the track, read by most players.">
-          <Segmented value={o.saveTo} onChange={(v) => set({ saveTo: v })} size="sm" options={[{ value: 'tag', label: 'Tag' }, { value: 'lrc', label: '.lrc file' }, { value: 'both', label: 'Both' }]} />
+        <SettingRow icon="lyrics" title={t('Save lyrics to')} desc={t('Tag: inside the file (LYRICS). .lrc: a file with the same name next to the track, read by most players.')}>
+          <Segmented value={o.saveTo} onChange={(v) => set({ saveTo: v })} size="sm" options={[{ value: 'tag', label: t('Tag') }, { value: 'lrc', label: t('.lrc file') }, { value: 'both', label: t('Both') }]} />
         </SettingRow>
         <SourceOrder o={o} set={set} />
         <CadenceModels />

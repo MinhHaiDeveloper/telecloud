@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const net = require('net');
 const { assertPlayable } = require('./paths');
+const { tx } = require('./i18n');
 
 // TeleCloud streams: only URLs of our own local stream server (secret token in the prefix)
 let streamPrefix = null;
@@ -575,7 +576,7 @@ function connect(retries = 40) {
       });
       s.once('error', () => {
         if (left > 0 && proc) setTimeout(() => attempt(left - 1), 100);
-        else reject(new Error('Could not connect to mpv'));
+        else reject(new Error(tx('Could not connect to mpv')));
       });
     };
     attempt(retries);

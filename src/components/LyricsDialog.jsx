@@ -3,19 +3,20 @@ import { enhancedJsonToLrc, looksLikeJson, isTtml } from '../utils/lyrics';
 import Icon from './Icon';
 import { Dialog, Segmented, Toggle } from './ui';
 import WordLyricsEditor from './WordLyricsEditor';
+import { t } from '../i18n';
 
 const readSide = () => { try { return localStorage.getItem('lyrics-side') !== '0'; } catch { return true; } };
 const readFollow = () => { try { return localStorage.getItem('lyrics-follow') !== '0'; } catch { return true; } };
 
 const TABS = [
-  { value: 'sync', label: 'Sync' },
-  { value: 'words', label: 'Word by word' },
+  { value: 'sync', get label() { return t('Sync'); } },
+  { value: 'words', get label() { return t('Word by word'); } },
 ];
 const hasWordTimes = (t) => /<\d{1,3}:\d{2}/.test(t || '') || isTtml(t);
 const SAVE_TO = [
-  { value: 'tag', label: 'Tag' },
-  { value: 'lrc', label: '.lrc file' },
-  { value: 'both', label: 'Both' },
+  { value: 'tag', get label() { return t('Tag'); } },
+  { value: 'lrc', get label() { return t('.lrc file'); } },
+  { value: 'both', get label() { return t('Both'); } },
 ];
 // ---- LRC timestamp helpers (for syncing by hand)
 const STAMP = /^\s*((?:\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\])+)/;
@@ -214,36 +215,36 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
     setSaving(true);
     const r = await window.ipcRenderer.invoke('lyrics:save', { path: file.path, lyrics: text, to: saveTo });
     setSaving(false);
-    if (r?.success) { onSaved?.(r); onClose(); } else onSaved?.({ error: r?.error || 'Could not save' });
+    if (r?.success) { onSaved?.(r); onClose(); } else onSaved?.({ error: r?.error || t('Could not save') });
   };
 
   return (
     <Dialog
-      title="Lyrics"
+      title={t('Lyrics')}
       icon="lyrics"
       width={1220}
       onClose={onClose}
       actions={(
         <>
           {!cloudOnly && <Segmented value={saveTo} onChange={setSaveTo} options={SAVE_TO} size="sm" />}
-          {cloudOnly && <span className="cap muted" style={{ marginRight: 'auto' }}>Cloud-only track: lyrics are kept in your library and TeleCloud index.</span>}
+          {cloudOnly && <span className="cap muted" style={{ marginRight: 'auto' }}>{t('Cloud-only track: lyrics are kept in your library and TeleCloud index.')}</span>}
           <span style={{ flex: 1 }} />
-          <button className="btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : text.trim() ? 'Save lyrics' : 'Remove lyrics'}</button>
+          <button className="btn-ghost" onClick={onClose}>{t('Cancel')}</button>
+          <button className="btn-primary" onClick={save} disabled={saving}>{saving ? t('Saving…') : text.trim() ? t('Save lyrics') : t('Remove lyrics')}</button>
         </>
       )}
     >
       <div className={`lyr ${side ? '' : 'folded'}`} onKeyDown={onKeys}>
         <div className="lyr-side" inert={!side} aria-hidden={!side}>
           <form className="lyr-query" onSubmit={(e) => { e.preventDefault(); run(); }}>
-            <input className="input sm" value={title} onChange={e => setTitle(e.target.value)} placeholder="Title" aria-label="Title" />
-            <input className="input sm" value={artist} onChange={e => setArtist(e.target.value)} placeholder="Artist" aria-label="Artist" />
-            <button className="btn-ghost sm" type="submit" disabled={busy}><Icon name="search" />{busy ? 'Searching…' : 'Search'}</button>
+            <input className="input sm" value={title} onChange={e => setTitle(e.target.value)} placeholder={t('Title')} aria-label={t('Title')} />
+            <input className="input sm" value={artist} onChange={e => setArtist(e.target.value)} placeholder={t('Artist')} aria-label={t('Artist')} />
+            <button className="btn-ghost sm" type="submit" disabled={busy}><Icon name="search" />{busy ? t('Searching…') : t('Search')}</button>
           </form>
           <div className="lyr-results">
             {m.lyrics && (
               <button className={`lyr-item ${pick === -1 ? 'on' : ''}`} onClick={() => { setPick(-1); setText(m.lyrics); }}>
-                <div className="lyr-top"><b>Current lyrics</b><span className="badge b-local mono">{/^\s*\[\d/m.test(m.lyrics) ? 'Synced' : 'Plain'}</span></div>
+                <div className="lyr-top"><b>{t('Current lyrics')}</b><span className="badge b-local mono">{/^\s*\[\d/m.test(m.lyrics) ? t('Synced') : t('Plain')}</span></div>
                 {firstLines(m.lyrics).map((l, i) => <small key={i}>{l}</small>)}
               </button>
             )}
@@ -251,66 +252,66 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
               <button key={i} className={`lyr-item ${pick === i ? 'on' : ''}`} onClick={() => { if (r.lyrics !== text) { history.current.push(text); future.current = []; } setPick(i); setText(r.lyrics); }}>
                 <div className="lyr-top">
                   <b>{label(r.source)}</b>
-                  <span className={`badge mono ${r.words ? 'b-hires' : r.synced ? 'b-lossless' : 'b-local'}`}>{r.words ? 'Word by word' : r.synced ? 'Synced' : 'Plain'}</span>
-                  {r.score < 0.8 && <span className="badge b-cached mono" title="Title, artist or length differ a little">Close match</span>}
+                  <span className={`badge mono ${r.words ? 'b-hires' : r.synced ? 'b-lossless' : 'b-local'}`}>{r.words ? t('Word by word') : r.synced ? t('Synced') : t('Plain')}</span>
+                  {r.score < 0.8 && <span className="badge b-cached mono" title={t('Title, artist or length differ a little')}>{t('Close match')}</span>}
                 </div>
                 <small className="lyr-match">{r.title} · {r.artist}{r.album ? ` · ${r.album}` : ''}</small>
                 {firstLines(r.lyrics).map((l, j) => <small key={j}>{l}</small>)}
               </button>
             ))}
-            {!busy && !results.length && <div className="lyr-empty">No lyrics found. Try a shorter title, or type them in.</div>}
-            {busy && <div className="lyr-empty"><span className="ring" />Asking {opts ? opts.order.filter(id => !opts.disabled.includes(id)).map(label).join(', ') : 'the sources'}…</div>}
+            {!busy && !results.length && <div className="lyr-empty">{t('No lyrics found. Try a shorter title, or type them in.')}</div>}
+            {busy && <div className="lyr-empty"><span className="ring" />{t('Asking {value}', { value: opts ? opts.order.filter(id => !opts.disabled.includes(id)).map(label).join(', ') : t('the sources') })}…</div>}
             {failed.length > 0 && <div className="lyr-errors">{failed.map(([id, e]) => <div key={id}>{label(id)}: {e}</div>)}</div>}
           </div>
         </div>
         <div className="lyr-edit">
           <div className="lyr-tabbar">
-            <button className={`icon-btn sm lyr-sidebtn ${side ? 'on' : ''}`} onClick={() => setSide(!side)} title={side ? 'Hide the search and results' : 'Show the search and results'} aria-pressed={side}><Icon name="panel" /></button>
+            <button className={`icon-btn sm lyr-sidebtn ${side ? 'on' : ''}`} onClick={() => setSide(!side)} title={side ? t('Hide the search and results') : t('Show the search and results')} aria-pressed={side}><Icon name="panel" /></button>
             <Segmented value={tab} onChange={setTab} options={TABS} />
-            <span className="lyr-kind">{isTtml(text) ? 'TTML: lines and words follow the music' : /<\d{1,3}:\d{2}/.test(text) ? 'Word by word (Enhanced LRC)' : /^\s*\[\d/m.test(text) ? 'Synced lines (LRC)' : text.trim() ? 'Plain text' : 'No lyrics yet'}</span>
+            <span className="lyr-kind">{isTtml(text) ? t('TTML: lines and words follow the music') : /<\d{1,3}:\d{2}/.test(text) ? t('Word by word (Enhanced LRC)') : /^\s*\[\d/m.test(text) ? t('Synced lines (LRC)') : text.trim() ? t('Plain text') : t('No lyrics yet')}</span>
           </div>
           <div className={`lyr-sync ${tab === 'words' ? 'compact' : ''}`}>
             <div className="lyr-transport">
-              <button className="icon-btn sm" onClick={() => onSeek?.(Math.max(0, (pos || 0) - 5))} disabled={!isThis} title="Back 5 s"><Icon name="prev" /></button>
-              <button className="icon-btn sm play" onClick={() => (isThis ? onTogglePlay?.() : onPlayFile?.(file))} title={isThis && isPlaying ? 'Pause' : 'Play this track'}>
+              <button className="icon-btn sm" onClick={() => onSeek?.(Math.max(0, (pos || 0) - 5))} disabled={!isThis} title={t('Back 5 s')}><Icon name="prev" /></button>
+              <button className="icon-btn sm play" onClick={() => (isThis ? onTogglePlay?.() : onPlayFile?.(file))} title={isThis && isPlaying ? t('Pause') : t('Play this track')}>
                 <Icon name={isThis && isPlaying ? 'pause' : 'play'} filled />
               </button>
-              <button className="icon-btn sm" onClick={() => onSeek?.((pos || 0) + 5)} disabled={!isThis} title="Forward 5 s"><Icon name="next" /></button>
-              <span className="mono lyr-clock">{isThis ? fmtClock(shownPos) : 'Not playing'}</span>
+              <button className="icon-btn sm" onClick={() => onSeek?.((pos || 0) + 5)} disabled={!isThis} title={t('Forward 5 s')}><Icon name="next" /></button>
+              <span className="mono lyr-clock">{isThis ? fmtClock(shownPos) : t('Not playing')}</span>
             </div>
             <div className="lyr-seek">
               <div className="lyr-marks" aria-hidden="true">{marks.map((t, i) => <i key={i} style={{ left: `${(t / duration) * 100}%` }} />)}</div>
-              <input type="range" className="range full" min="0" max={duration || 1} step="0.01" value={shownPos} disabled={!isThis || !duration} aria-label="Position"
+              <input type="range" className="range full" min="0" max={duration || 1} step="0.01" value={shownPos} disabled={!isThis || !duration} aria-label={t('Position')}
                 style={{ '--pct': `${duration ? Math.min(100, (shownPos / duration) * 100) : 0}%` }}
                 onChange={(e) => setSeekDraft(Number(e.target.value))} onPointerUp={commitSeek} onKeyUp={commitSeek} onBlur={commitSeek} />
               <span className="mono lyr-dur">{duration ? fmtClock(duration).replace(/\.\d+$/, '') : ''}</span>
             </div>
-            {tab === 'sync' && <button className="btn-primary lyr-syncbtn" onClick={syncLine} disabled={!isThis} title="Put the current time on the line with the cursor, then go to the next line (Ctrl+Enter)">
-              Sync line <kbd>Ctrl+Enter</kbd>
+            {tab === 'sync' && <button className="btn-primary lyr-syncbtn" onClick={syncLine} disabled={!isThis} title={t('Put the current time on the line with the cursor, then go to the next line (Ctrl+Enter)')}>
+              {t('Sync line')} <kbd>{t('Ctrl+Enter')}</kbd>
             </button>}
-            {tab === 'sync' && <div className="lyr-current" title="The line with the cursor: Sync line puts the time on it">
-              <span className="mono">Line {caretNo + 1}</span>
-              <b>{currentLine || (lines[caretNo]?.trim() ? lines[caretNo].trim() : 'Empty line')}</b>
-              <span className="lyr-follow" title="A green band follows the music, line by line, from the timestamps"><Toggle checked={follow} onChange={setFollow} label="Follow the music" /></span>
+            {tab === 'sync' && <div className="lyr-current" title={t('The line with the cursor: Sync line puts the time on it')}>
+              <span className="mono">{t('Line {value}', { value: caretNo + 1 })}</span>
+              <b>{currentLine || (lines[caretNo]?.trim() ? lines[caretNo].trim() : t('Empty line'))}</b>
+              <span className="lyr-follow" title={t('A green band follows the music, line by line, from the timestamps')}><Toggle checked={follow} onChange={setFollow} label={t('Follow the music')} /></span>
             </div>}
             <div className="lyr-tools">
               {tab === 'sync' && (
               <>
-              <span>Line</span>
-              <button className="btn-ghost sm" onClick={() => nudgeLine(-0.1)} title="Line 0.1 s earlier">−0.1s</button>
-              <button className="btn-ghost sm" onClick={() => nudgeLine(0.1)} title="Line 0.1 s later">+0.1s</button>
-              <button className="btn-ghost sm" onClick={playLine} title="Play from this line">Play line</button>
-              <span>All</span>
-              <button className="btn-ghost sm" onClick={() => offsetAll(-0.25)} title="Every line 0.25 s earlier">−0.25s</button>
-              <button className="btn-ghost sm" onClick={() => offsetAll(0.25)} title="Every line 0.25 s later">+0.25s</button>
+              <span>{t('Line')}</span>
+              <button className="btn-ghost sm" onClick={() => nudgeLine(-0.1)} title={t('Line 0.1 s earlier')}>−0.1s</button>
+              <button className="btn-ghost sm" onClick={() => nudgeLine(0.1)} title={t('Line 0.1 s later')}>+0.1s</button>
+              <button className="btn-ghost sm" onClick={playLine} title={t('Play from this line')}>{t('Play line')}</button>
+              <span>{t('All')}</span>
+              <button className="btn-ghost sm" onClick={() => offsetAll(-0.25)} title={t('Every line 0.25 s earlier')}>−0.25s</button>
+              <button className="btn-ghost sm" onClick={() => offsetAll(0.25)} title={t('Every line 0.25 s later')}>+0.25s</button>
               </>
               )}
               <span className="lyr-sp" />
-              <button className="btn-ghost sm" onClick={undo} title="Undo the last change (Ctrl+Z)">Undo</button>
-              <button className="btn-ghost sm" onClick={redo} title="Redo what Undo took back (Ctrl+Y)">Redo</button>
-              <button className="btn-ghost sm" onClick={reset} title="Back to the lyrics the track had">Reset</button>
-              <label className="btn-ghost sm pressable" title="LRC, Enhanced LRC, TTML, or word timings as JSON">
-                Open file…
+              <button className="btn-ghost sm" onClick={undo} title={t('Undo the last change (Ctrl+Z)')}>{t('Undo')}</button>
+              <button className="btn-ghost sm" onClick={redo} title={t('Redo what Undo took back (Ctrl+Y)')}>{t('Redo')}</button>
+              <button className="btn-ghost sm" onClick={reset} title={t('Back to the lyrics the track had')}>{t('Reset')}</button>
+              <label className="btn-ghost sm pressable" title={t('LRC, Enhanced LRC, TTML, or word timings as JSON')}>
+                {t('Open file…')}
                 <input type="file" accept=".lrc,.ttml,.xml,.json,.txt,.md" hidden onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; history.current.push(text); future.current = []; setText(fromWordJson(await f.text())); setPick(null); }} />
               </label>
             </div>
@@ -341,12 +342,12 @@ const LyricsDialog = ({ file, onClose, onSaved, playingPath, isPlaying, onPlayFi
                 future.current = [];
                 setText(fromWordJson(e.target.value)); setPick(null); followCaret();
               }}
-              placeholder={'Type or paste lyrics. Synced lines look like:\n[00:12.40]First line\n[00:16.10]Second line'}
+              placeholder={t('Type or paste lyrics. Synced lines look like:\n[00:12.40]First line\n[00:16.10]Second line')}
               spellCheck={false}
             />
           </div>
           )}
-          {converted && <small className="muted">Word timings (JSON) turned into Enhanced LRC: each word lights up as it is sung.</small>}
+          {converted && <small className="muted">{t('Word timings (JSON) turned into Enhanced LRC: each word lights up as it is sung.')}</small>}
         </div>
       </div>
     </Dialog>

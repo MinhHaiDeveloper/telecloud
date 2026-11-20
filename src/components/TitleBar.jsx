@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Icon from './Icon';
 import { ipcOn, ipcOff } from '../utils/ipc';
+import { t } from '../i18n';
 
 /**
  * The window's own title bar (the window is frameless): drag anywhere on it to move the window,
@@ -28,15 +29,15 @@ const TitleBar = ({ subtitle }) => {
         {subtitle && <><Icon name="music" /><span className="tb-sub">{subtitle}</span></>}
       </div>
       <div className="tb-buttons">
-        <button className="tb-btn" onClick={() => ipc.invoke('window:minimize')} title="Minimize" aria-label="Minimize">
+        <button className="tb-btn" onClick={() => ipc.invoke('window:minimize')} title={t('Minimize')} aria-label={t('Minimize')}>
           <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5.5h10" /></svg>
         </button>
-        <button className="tb-btn" onClick={() => ipc.invoke('window:toggle-maximize')} title={state.maximized ? 'Restore' : 'Maximize'} aria-label={state.maximized ? 'Restore' : 'Maximize'}>
+        <button className="tb-btn" onClick={() => ipc.invoke('window:toggle-maximize')} title={state.maximized ? t('Restore') : t('Maximize')} aria-label={state.maximized ? t('Restore') : t('Maximize')}>
           {state.maximized
             ? <svg viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="2.5" width="7" height="7" rx="1.2" /><path d="M2.5 2.5V1.7c0-.66.54-1.2 1.2-1.2h4.6c.66 0 1.2.54 1.2 1.2v4.6c0 .66-.54 1.2-1.2 1.2h-.8" /></svg>
             : <svg viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" rx="1.4" /></svg>}
         </button>
-        <button className="tb-btn close" onClick={() => ipc.invoke('window:close')} title="Close" aria-label="Close">
+        <button className="tb-btn close" onClick={() => ipc.invoke('window:close')} title={t('Close')} aria-label={t('Close')}>
           <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9" /></svg>
         </button>
       </div>

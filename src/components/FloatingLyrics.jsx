@@ -3,6 +3,7 @@ import Icon from './Icon';
 import { WordLine } from './LyricsView';
 import { parseLyrics } from '../utils/lyrics';
 import { ipcOn, ipcOff } from '../utils/ipc';
+import { t } from '../i18n';
 
 /**
  * The floating lyrics window's page: the line being sung, word by word when the lyrics have word times,
@@ -28,14 +29,14 @@ export default function FloatingLyrics() {
   if (parsed.isSynced) for (let i = 0; i < parsed.lines.length; i++) { if (st.time >= parsed.lines[i].time - 0.3) active = i; else break; }
   const line = active >= 0 ? parsed.lines[active] : null;
   const next = parsed.isSynced ? parsed.lines[active + 1] : null;
-  const empty = !parsed.lines.length ? (st.title ? 'No lyrics for this track' : 'Nothing playing') : !parsed.isSynced ? 'These lyrics have no times' : null;
+  const empty = !parsed.lines.length ? (st.title ? t('No lyrics for this track') : t('Nothing playing')) : !parsed.isSynced ? t('These lyrics have no times') : null;
 
   return (
     <div className={`fl ${locked ? 'locked' : ''}`}>
       <div className="fl-bar">
         <span className="fl-title">{st.title}{st.artist ? ` · ${st.artist}` : ''}</span>
-        <button className="fl-btn" onClick={() => window.ipcRenderer.invoke('lyrics-float:lock', true)} title="Lock: clicks go through. Unlock from the tray or the lyrics card."><Icon name="eye" /></button>
-        <button className="fl-btn" onClick={() => window.ipcRenderer.invoke('lyrics-float:toggle', false)} title="Close"><Icon name="close" /></button>
+        <button className="fl-btn" onClick={() => window.ipcRenderer.invoke('lyrics-float:lock', true)} title={t('Lock: clicks go through. Unlock from the tray or the lyrics card.')}><Icon name="eye" /></button>
+        <button className="fl-btn" onClick={() => window.ipcRenderer.invoke('lyrics-float:toggle', false)} title={t('Close')}><Icon name="close" /></button>
       </div>
       <div className="fl-lines">
         {empty ? <p className="fl-now fl-note">{empty}</p> : (

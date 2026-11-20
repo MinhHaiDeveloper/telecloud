@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { SettingRow, Toggle } from './ui';
+import { t } from '../i18n';
 
 const readFps = () => { try { return localStorage.getItem('show-fps') === '1'; } catch { return false; } };
 
@@ -30,20 +31,20 @@ const PerformanceSettings = () => {
   };
   return (
     <section className="set-section">
-      <h3>Performance</h3>
+      <h3>{t('Performance')}</h3>
       <div className="card set-card">
-        <SettingRow icon="monitor" title="Use the high-performance graphics card" desc="For laptops with two GPUs: smoother animations on 144–240 Hz screens, at some battery cost. Takes effect after a restart.">
-          {gpu !== startGpu && <button className="btn-ghost" onClick={() => ipc.invoke('app:relaunch')}>Restart now</button>}
+        <SettingRow icon="monitor" title={t('Use the high-performance graphics card')} desc={t('For laptops with two GPUs: smoother animations on 144–240 Hz screens, at some battery cost. Takes effect after a restart.')}>
+          {gpu !== startGpu && <button className="btn-ghost" onClick={() => ipc.invoke('app:relaunch')}>{t('Restart now')}</button>}
           <Toggle checked={gpu} onChange={setGpuPref} disabled={low} />
         </SettingRow>
-        <SettingRow icon="monitor" title="Low memory mode" desc="Draws the interface without the graphics card. Uses much less memory, but animations can be less smooth. Sound is not affected. Takes effect after a restart.">
-          {low !== startLow && <button className="btn-ghost" onClick={() => ipc.invoke('app:relaunch')}>Restart now</button>}
+        <SettingRow icon="monitor" title={t('Low memory mode')} desc={t('Draws the interface without the graphics card. Uses much less memory, but animations can be less smooth. Sound is not affected. Takes effect after a restart.')}>
+          {low !== startLow && <button className="btn-ghost" onClick={() => ipc.invoke('app:relaunch')}>{t('Restart now')}</button>}
           <Toggle checked={low} onChange={setLowPref} />
         </SettingRow>
-        <SettingRow icon="monitor" title="Keep running in the tray when closed" desc="The close button hides the window and music keeps playing. Quit from the tray icon.">
+        <SettingRow icon="monitor" title={t('Keep running in the tray when closed')} desc={t('The close button hides the window and music keeps playing. Quit from the tray icon.')}>
           <Toggle checked={tray} onChange={setTrayPref} />
         </SettingRow>
-        <SettingRow icon="chart" title="Show frame rate" desc="A small counter in the corner: frames per second and the slowest frame. Useful to check a high-refresh screen.">
+        <SettingRow icon="chart" title={t('Show frame rate')} desc={t('A small counter in the corner: frames per second and the slowest frame. Useful to check a high-refresh screen.')}>
           <Toggle checked={fps} onChange={setFpsPref} />
         </SettingRow>
       </div>

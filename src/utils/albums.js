@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // Which tracks form one album, and who it belongs to. Every page uses this, so they all agree.
 //  - Same name and overlapping album artists: one album, however many guests the tracks have.
 //  - Same name, different album artists: two albums (two "Greatest Hits").
@@ -148,7 +149,7 @@ export const arrivals = (files, albums) => {
   return (a, b) => (at.get(a)[0] - at.get(b)[0]) || (at.get(a)[1] - at.get(b)[1]);
 };
 
-export const trackCount = (n) => `${n.toLocaleString()} ${n === 1 ? 'track' : 'tracks'}`;
+export const trackCount = (n) => t('{n|# track|# tracks}', { n });
 
 const cache = new WeakMap();
 /** The albums of a list of tracks: { list, byKey, byPath }. The same list is only worked out once. */

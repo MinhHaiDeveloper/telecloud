@@ -1,4 +1,5 @@
 import { albumIndex, albumArtistsOf, splitArtists, UNKNOWN_ALBUM } from './albums';
+import { t } from '../i18n';
 // Shared helpers for presenting tracks: time, quality labels, storage badges, signal path
 
 export const formatTime = (sec) => {
@@ -13,8 +14,8 @@ export const formatDuration = (sec) => {
   const s = Math.floor(sec || 0);
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
-  if (!h && !m) return `${s} sec`;
-  return h ? `${h} h ${m} min` : `${m} min`;
+  if (!h && !m) return t('{s} sec', { s });
+  return h ? t('{h} h {m} min', { h, m }) : t('{m} min', { m });
 };
 
 export const formatBytes = (bytes) => {
@@ -139,7 +140,7 @@ export const mqaOf = (file) => {
   if (!v) return null;
   const studio = v === 2;
   const rate = file.mqaRate || null;
-  return { studio, rate, cls: studio ? 'b-mqa-studio' : 'b-mqa', label: studio ? 'MQA Studio' : 'MQA', short: `${studio ? 'MQA Studio' : 'MQA'}${rate ? ` ${khz(rate)}` : ''}` };
+  return { studio, rate, cls: studio ? 'b-mqa-studio' : 'b-mqa', label: studio ? t('MQA Studio') : 'MQA', short: `${studio ? 'MQA Studio' : 'MQA'}${rate ? ` ${khz(rate)}` : ''}` };
 };
 
 export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnabled, volume, audioSettings = {}, audioOut = null, stream = null, dsd = null, output = null, sound = null, clipping = false, released = false }) => {
@@ -147,7 +148,7 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
   const exclusive = selectedDevice && selectedDevice !== '-1';
   const chosen = exclusive ? devices.find(d => d.id === selectedDevice) : null;
   // "System default" names the device Windows really uses, when it could be found
-  const deviceName = exclusive ? (chosen?.name || 'Output device') : output?.name ? `System default: ${output.name}` : 'System default';
+  const deviceName = exclusive ? (chosen?.name || t('Output device')) : output?.name ? t('System default: {name}', { name: output.name }) : t('System default');
   const bluetooth = exclusive ? !!chosen?.bluetooth : !!output?.bluetooth;
   const rg = audioSettings.replayGain && audioSettings.replayGain !== 'no';
   const crossfade = audioSettings.crossfade > 0;
@@ -163,7 +164,7 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
   const soundOn = !!sound && !mqaIntact;
   const eqOn = !!eqEnabled && !mqaIntact && !sound?.ab; // A/B: the original, without the EQ
   const rgOn = rg && !mqaIntact;
-  const SKIPPED = 'Skipped'; // the MQA step above says why
+  const SKIPPED = t('Skipped'); // the MQA step above says why
 
   // Prefer what mpv actually sends to the device; fall back to what the settings imply
   let outRate, outBits, resampled;
@@ -182,9 +183,9 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
   const floatOut = audioOut && /^(float|double)/.test(String(audioOut.format));
   // say why the rate or depth changed: Windows' mixer, the output limit, or a device that can't take it
   const resampleWhy = () => {
-    if (!exclusive) return `Windows mixes everything in shared mode at the device's ${outBits && outRate ? `${outBits}-bit ${khz(outRate)} kHz` : 'own format'}`;
-    if ((capRate && q.rate > capRate) || (capBits && q.bits > capBits)) return 'Your output limit';
-    return 'The device doesn\'t take this format';
+    if (!exclusive) return t('Windows mixes everything in shared mode at the device\'s {value}', { value: outBits && outRate ? t('{outBits}-bit {khz} kHz', { outBits, khz: khz(outRate) }) : t('own format') });
+    if ((capRate && q.rate > capRate) || (capBits && q.bits > capBits)) return t('Your output limit');
+    return t('The device doesn\'t take this format');
   };
   const sentence = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
   const isDsd = q.label.startsWith('DSD');
@@ -194,42 +195,42 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
     : (outBits && outRate ? `${floatOut ? 'f32' : outBits}/${khz(outRate)}` : '');
 
   const steps = [
-    { label: `${q.ext}${file?.metadata?.bitrate ? ` · ${Math.round(file.metadata.bitrate / 1000)} kbps` : ''}`, value: q.label.replace(q.ext, '').trim() || '—', state: q.lossless ? 'ok' : 'warn' },
+    { label: `${q.ext}${file?.metadata?.bitrate ? t(' · {round} kbps', { round: Math.round(file.metadata.bitrate / 1000) }) : ''}`, value: q.label.replace(q.ext, '').trim() || '—', state: q.lossless ? 'ok' : 'warn' },
     // streaming hands mpv the original bytes, so it doesn't change the samples
-    ...(stream ? [{ label: stream.complete ? 'TeleCloud cache' : 'TeleCloud stream', value: stream.complete ? 'On disk' : stream.speed ? `${(stream.speed / 1048576).toFixed(1)} MB/s` : 'Buffering…', state: 'ok' }] : []),
+    ...(stream ? [{ label: stream.complete ? t('TeleCloud cache') : t('TeleCloud stream'), value: stream.complete ? t('On disk') : stream.speed ? `${(stream.speed / 1048576).toFixed(1)} MB/s` : t('Buffering…'), state: 'ok' }] : []),
     ...(mqa ? [mqaIntact
-      ? { label: mqa.label, detail: `${exclusive ? 'For an MQA DAC to unfold' : 'Needs WASAPI Exclusive to reach the DAC untouched'}${mqa.rate ? ` · ${khz(mqa.rate)} kHz original` : ''}`, value: 'Untouched', state: exclusive && volFull ? 'ok' : 'warn' }
-      : { label: mqa.label, detail: audioSettings.mqaMode === 'decoder' ? 'Untouched once the track is on this computer' : 'Played as plain PCM', value: q.label.replace(q.ext, '').trim() || '—', state: 'off' }] : []),
-    { label: 'Parametric EQ', value: eqEnabled && mqaIntact ? SKIPPED : eqOn ? 'On' : 'Off', state: eqOn ? 'warn' : 'off', key: 'eq', clip: clipping && eqOn && !soundOn },
+      ? { label: mqa.label, detail: `${exclusive ? t('For an MQA DAC to unfold') : t('Needs WASAPI Exclusive to reach the DAC untouched')}${mqa.rate ? t(' · {khz} kHz original', { khz: khz(mqa.rate) }) : ''}`, value: 'Untouched', state: exclusive && volFull ? 'ok' : 'warn' }
+      : { label: mqa.label, detail: audioSettings.mqaMode === 'decoder' ? t('Untouched once the track is on this computer') : t('Played as plain PCM'), value: q.label.replace(q.ext, '').trim() || '—', state: 'off' }] : []),
+    { label: t('Parametric EQ'), value: eqEnabled && mqaIntact ? SKIPPED : eqOn ? 'On' : t('Off'), state: eqOn ? 'warn' : 'off', key: 'eq', clip: clipping && eqOn && !soundOn },
     // Settings > Sound; its light blinks red while the sound goes over 0 dBFS
-    ...(sound ? [{ label: sound.ab ? 'A/B: original' : 'Sound', detail: mqaIntact ? null : sound.summary.join(' · ') || null, value: mqaIntact ? SKIPPED : 'On', state: soundOn ? 'warn' : 'off', key: 'sound', clip: clipping && soundOn }] : []),
-    { label: 'ReplayGain', value: rg && mqaIntact ? SKIPPED : !rg ? 'Off' : audioSettings.replayGain === 'auto' ? `Auto · ${audioSettings.autoGain || 'track'}` : audioSettings.replayGain, state: rgOn ? 'warn' : 'off' },
-    ...(Number(audioSettings.balance) ? [{ label: 'Channel balance', value: mqaIntact ? SKIPPED : `${bal < 0 ? 'Left' : 'Right'} +${Math.abs(bal).toFixed(1)} dB`, state: bal ? 'warn' : 'off' }] : []),
-    ...(audioSettings.crossfeed && audioSettings.crossfeed !== 'off' ? [{ label: 'Headphone crossfeed', value: mqaIntact ? SKIPPED : xfeed[0].toUpperCase() + xfeed.slice(1), state: xfeed ? 'warn' : 'off' }] : []),
-    ...(audioSettings.skipSilence ? [{ label: 'Skip silence', detail: mqaIntact ? null : 'Silences of 2 s and more shrink to 0.5 s', value: mqaIntact ? SKIPPED : 'On', state: silence ? 'warn' : 'off' }] : []),
-    ...(crossfade ? [{ label: 'Crossfade', value: `${audioSettings.crossfade}s`, state: 'warn' }] : []),
-    ...(nativeDsd ? [{ label: 'Native DSD through ASIO', value: `${(dsd.rate / 1e6).toFixed(4)} MHz`, state: 'ok' }]
-      : dop ? [{ label: 'DSD over PCM (DoP)', detail: dsd?.nativeWhy ? `Native not used: ${dsd.nativeWhy}` : null, value: `${q.label} in ${khz(dsd.rate)}`, state: 'ok' }]
-      : isDsd ? [{ label: 'DSD to PCM', detail: sentence([dsd?.nativeWhy && `native not used: ${dsd.nativeWhy}`, dsd?.reason].filter(Boolean).join(' · ')) || null, value: outSpec || 'PCM', state: 'warn' }]
-        : resampled ? [{ label: 'Resampling', detail: resampleWhy(), value: outSpec, state: 'warn' }] : []),
-    { label: 'Software volume', value: exclusive || nativeDsd ? 'Bypassed' : `${volume}%`, state: volFull || nativeDsd ? 'ok' : 'warn' },
+    ...(sound ? [{ label: sound.ab ? t('A/B: original') : t('Sound'), detail: mqaIntact ? null : sound.summary.join(' · ') || null, value: mqaIntact ? SKIPPED : 'On', state: soundOn ? 'warn' : 'off', key: 'sound', clip: clipping && soundOn }] : []),
+    { label: t('ReplayGain'), value: rg && mqaIntact ? SKIPPED : !rg ? t('Off') : audioSettings.replayGain === 'auto' ? `Auto · ${audioSettings.autoGain || 'track'}` : audioSettings.replayGain, state: rgOn ? 'warn' : 'off' },
+    ...(Number(audioSettings.balance) ? [{ label: t('Channel balance'), value: mqaIntact ? SKIPPED : `${bal < 0 ? 'Left' : t('Right')} +${Math.abs(bal).toFixed(1)} dB`, state: bal ? 'warn' : 'off' }] : []),
+    ...(audioSettings.crossfeed && audioSettings.crossfeed !== 'off' ? [{ label: t('Headphone crossfeed'), value: mqaIntact ? SKIPPED : xfeed[0].toUpperCase() + xfeed.slice(1), state: xfeed ? 'warn' : 'off' }] : []),
+    ...(audioSettings.skipSilence ? [{ label: t('Skip silence'), detail: mqaIntact ? null : t('Silences of 2 s and more shrink to 0.5 s'), value: mqaIntact ? SKIPPED : 'On', state: silence ? 'warn' : 'off' }] : []),
+    ...(crossfade ? [{ label: t('Crossfade'), value: `${audioSettings.crossfade}s`, state: 'warn' }] : []),
+    ...(nativeDsd ? [{ label: t('Native DSD through ASIO'), value: `${(dsd.rate / 1e6).toFixed(4)} MHz`, state: 'ok' }]
+      : dop ? [{ label: t('DSD over PCM (DoP)'), detail: dsd?.nativeWhy ? t('Native not used: {nativeWhy}', { nativeWhy: dsd.nativeWhy }) : null, value: `${q.label} in ${khz(dsd.rate)}`, state: 'ok' }]
+      : isDsd ? [{ label: t('DSD to PCM'), detail: sentence([dsd?.nativeWhy && t('native not used: {nativeWhy}', { nativeWhy: dsd.nativeWhy }), dsd?.reason].filter(Boolean).join(' · ')) || null, value: outSpec || 'PCM', state: 'warn' }]
+        : resampled ? [{ label: t('Resampling'), detail: resampleWhy(), value: outSpec, state: 'warn' }] : []),
+    { label: t('Software volume'), value: exclusive || nativeDsd ? t('Bypassed') : `${volume}%`, state: volFull || nativeDsd ? 'ok' : 'warn' },
     // Bluetooth sends no PCM: the headphones' codec (SBC, AAC, aptX, LDAC) compresses it again
-    ...(bluetooth && !nativeDsd ? [{ label: 'Bluetooth', detail: 'Compressed again by the headphones\' codec', value: 'Lossy', state: 'warn' }] : []),
-    nativeDsd ? { label: dsd.driver, detail: released ? 'ASIO · free for other apps while paused' : 'ASIO', value: q.label, state: 'ok' }
-      : exclusive ? { label: deviceName.replace(/ \(WASAPI\)$/, ''), detail: released ? 'WASAPI Exclusive · free for other apps while paused' : 'WASAPI Exclusive', value: outSpec, state: 'ok' }
-        : { label: 'System default', detail: `${output?.name ? `${output.name} · ` : ''}Shared mode, mixed by Windows`, value: outSpec, state: 'warn' },
+    ...(bluetooth && !nativeDsd ? [{ label: t('Bluetooth'), detail: t('Compressed again by the headphones\' codec'), value: 'Lossy', state: 'warn' }] : []),
+    nativeDsd ? { label: dsd.driver, detail: released ? t('ASIO · free for other apps while paused') : 'ASIO', value: q.label, state: 'ok' }
+      : exclusive ? { label: deviceName.replace(/ \(WASAPI\)$/, ''), detail: released ? t('WASAPI Exclusive · free for other apps while paused') : t('WASAPI Exclusive'), value: outSpec, state: 'ok' }
+        : { label: t('System default'), detail: t('{value}Shared mode, mixed by Windows', { value: output?.name ? `${output.name} · ` : '' }), value: outSpec, state: 'warn' },
   ];
 
   // DSD is turned into PCM before it leaves the app, so it is never the original bits
   const filtered = eqOn || rgOn || !!bal || !!xfeed || soundOn || silence;
   const bitPerfect = !!file && nativeDsd && !filtered ? true : !!file && !bluetooth && (!isDsd || dop) && q.lossless && exclusive && !filtered && !crossfade && !resampled && volFull;
-  let verdict = 'Idle';
+  let verdict = t('Idle');
   if (file) {
-    if (bitPerfect) verdict = 'Bit-perfect';
-    else if (!q.lossless) verdict = 'Lossy source';
-    else if (bluetooth) verdict = 'Bluetooth';
-    else if (!exclusive) verdict = 'Shared mode';
-    else verdict = 'Processed';
+    if (bitPerfect) verdict = 'Bit-perfect'; // a term, kept as it is in every language
+    else if (!q.lossless) verdict = t('Lossy source');
+    else if (bluetooth) verdict = t('Bluetooth');
+    else if (!exclusive) verdict = t('Shared mode');
+    else verdict = t('Processed');
   }
   return { steps, bitPerfect, verdict, quality: q, deviceName, exclusive, outSpec, bluetooth, clipping: !!clipping && (eqOn || soundOn || !!bal || !!xfeed) };
 };

@@ -1,6 +1,7 @@
 import React, { memo, useEffect, useRef, useState } from 'react';
 import { Segmented } from './ui';
 import { ipcOn, ipcOff } from '../utils/ipc';
+import { t } from '../i18n';
 
 // Two analogue-style VU meters for Now Playing (the VU panel). The levels come from a silent second mpv
 // (electron/liveSpectrum.js, `levels`), 30 times a second, only while this panel is on screen and the
@@ -28,10 +29,10 @@ const REFS = [
 // Classic and Blue are backlit faces; Theme takes the colours of the theme chosen in Settings > Appearance
 // (and follows it); Backdrop has no face at all: the scale and needles over Now Playing's own background
 const STYLES = [
-  { value: 'classic', label: 'Classic' },
-  { value: 'blue', label: 'Blue' },
-  { value: 'theme', label: 'Theme' },
-  { value: 'backdrop', label: 'Backdrop' },
+  { value: 'classic', get label() { return t('Classic'); } },
+  { value: 'blue', get label() { return t('Blue'); } },
+  { value: 'theme', get label() { return t('Theme'); } },
+  { value: 'backdrop', get label() { return t('Backdrop'); } },
 ];
 
 function arc(r, a0, a1) {
@@ -159,7 +160,7 @@ const VuMeters = ({ active = true, label }) => {
   return (
     <div className={`vu vu-${style}`}>
       <div className="vu-meters">
-        {['Left', 'Right'].map((side, c) => (
+        {['Left', t('Right')].map((side, c) => (
           <div key={side} className="vu-meter">
             <div className="vu-glass">
               <Face side={side === 'Left' ? 'L' : 'R'} />
@@ -170,11 +171,11 @@ const VuMeters = ({ active = true, label }) => {
           </div>
         ))}
       </div>
-      {why && <div className="vu-note">{why === 'native' ? 'The VU meters do not run with native DSD: they show again with PCM.' : 'The VU meters need the track on this computer: they show once a TeleCloud track is cached.'}</div>}
+      {why && <div className="vu-note">{why === 'native' ? t('The VU meters do not run with native DSD: they show again with PCM.') : t('The VU meters need the track on this computer: they show once a TeleCloud track is cached.')}</div>}
       <div className="vu-foot">
         {label && <span className="mono vu-format">{label}</span>}
         <span className="vu-sp" />
-        <span className="vu-reflabel" title="Which level, in dBFS (RMS), puts the needle on 0 VU. Loud modern masters read better at −10.">0 VU =</span>
+        <span className="vu-reflabel" title={t('Which level, in dBFS (RMS), puts the needle on 0 VU. Loud modern masters read better at −10.')}>0 VU =</span>
         <Segmented value={ref} onChange={setRef} options={REFS} size="sm" />
         <span className="vu-reflabel">dBFS</span>
         <Segmented value={style} onChange={setStyle} options={STYLES} size="sm" />

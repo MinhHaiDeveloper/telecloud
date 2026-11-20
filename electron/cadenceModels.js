@@ -15,6 +15,7 @@ const { app, ipcMain, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { tx } = require('./i18n');
 
 const MANIFEST = require('./cadence/manifest.json');
 const dir = () => process.env.TELECLOUD_CADENCE_MODELS || path.join(app.getPath('userData'), 'models', 'cadence');
@@ -117,7 +118,7 @@ async function fetchFile(f, signal) {
   current.done += have;
   if (have < f.size) {
     const res = await fetch(MANIFEST.base + encodeURIComponent(f.name), { signal, redirect: 'follow', headers: have ? { Range: `bytes=${have}-` } : {} });
-    if (!res.ok) throw new Error(`GitHub answered ${res.status} for ${f.name}`);
+    if (!res.ok) throw new Error(tx('GitHub answered {status} for {name}', { status: res.status, name: f.name }));
     let restart = false;
     if (have && res.status !== 206) { restart = true; current.done -= have; have = 0; } // the server sent the whole file
     const fh = await fs.promises.open(part, restart || !have ? 'w' : 'a');
@@ -160,7 +161,7 @@ function dropStale() {
 
 async function download(id) {
   const p = MANIFEST.packs[id];
-  if (!p) return { ok: false, error: 'No such pack' };
+  if (!p) return { ok: false, error: tx('No such pack') };
   if (current) return { ok: false, error: current.pack === id ? 'Already downloading' : 'Another pack is downloading' };
   fs.mkdirSync(dir(), { recursive: true });
   const abort = new AbortController();
@@ -189,10 +190,10 @@ async function download(id) {
 }
 
 function remove(which) {
-  if (isTiming()) return { ok: false, error: 'A song is being timed; try again when it is done' };
+  if (isTiming()) return { ok: false, error: tx('A song is being timed; try again when it is done') };
   const ids = which === 'all' ? Object.keys(MANIFEST.packs) : [which];
-  if (ids.some(id => !MANIFEST.packs[id])) return { ok: false, error: 'No such pack' };
-  if (current && ids.includes(current.pack)) return { ok: false, error: 'That pack is downloading; cancel it first' };
+  if (ids.some(id => !MANIFEST.packs[id])) return { ok: false, error: tx('No such pack') };
+  if (current && ids.includes(current.pack)) return { ok: false, error: tx('That pack is downloading; cancel it first') };
   let freed = 0;
   for (const id of ids) {
     for (const f of MANIFEST.packs[id].files) {

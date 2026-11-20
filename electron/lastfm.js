@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const stats = require('./stats');
+const { tx } = require('./i18n');
 
 const API = process.env.LASTFM_API_URL || 'https://ws.audioscrobbler.com/2.0/';
 const AUTH_URL = process.env.LASTFM_AUTH_URL || 'https://www.last.fm/api/auth/';
@@ -39,7 +40,7 @@ function saveAccount(a) {
 const sign = (params, secret) => crypto.createHash('md5').update(Object.keys(params).filter(k => k !== 'format' && k !== 'callback').sort().map(k => k + params[k]).join('') + secret, 'utf8').digest('hex');
 async function call(method, params = {}, { signed = false, post = false } = {}) {
   const key = appKey();
-  if (!key) throw new Error('Last.fm is not set up in this build');
+  if (!key) throw new Error(tx('Last.fm is not set up in this build'));
   const p = { method, api_key: key.apiKey, ...params };
   Object.keys(p).forEach(k => (p[k] === undefined || p[k] === null || p[k] === '') && delete p[k]);
   if (signed) p.api_sig = sign(p, key.secret);
@@ -60,9 +61,9 @@ async function call(method, params = {}, { signed = false, post = false } = {}) 
       // what came back, for the log (no key or session is in an answer)
       console.warn(`[Last.fm] ${p.method}: HTTP ${r.status} ${r.statusText || ''}, ${r.headers.get('content-type') || 'no type'}, ${text.length} bytes: ${text.replace(/\s+/g, ' ').slice(0, 160)}`);
       // 600 and up is no HTTP status: something between this PC and Last.fm answered (a proxy, VPN, DNS filter or security app)
-      if (r.status >= 600 || r.status < 100) throw new Error(`Last.fm couldn't be reached: the network answered with code ${r.status} instead. A VPN, proxy or security app may be in the way; try again later`);
-      if (r.status >= 500) throw new Error(`Last.fm is having trouble (HTTP ${r.status}). Try again later`);
-      throw new Error(`Last.fm answered HTTP ${r.status}`);
+      if (r.status >= 600 || r.status < 100) throw new Error(tx('Last.fm couldn\'t be reached: the network answered with code {status} instead. A VPN, proxy or security app may be in the way; try again later', { status: r.status }));
+      if (r.status >= 500) throw new Error(tx('Last.fm is having trouble (HTTP {status}). Try again later', { status: r.status }));
+      throw new Error(tx('Last.fm answered HTTP {status}', { status: r.status }));
     }
     return j;
   } finally { clearTimeout(t); }
@@ -77,7 +78,7 @@ async function connectStart() {
   return { token: pendingToken };
 }
 async function connectFinish() {
-  if (!pendingToken) throw new Error('Start connecting first');
+  if (!pendingToken) throw new Error(tx('Start connecting first'));
   const r = await call('auth.getSession', { token: pendingToken }, { signed: true });
   pendingToken = null;
   saveAccount({ user: r.session.name, sk: r.session.key, connectedAt: Date.now(), scrobble: true });

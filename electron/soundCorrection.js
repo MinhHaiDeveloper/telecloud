@@ -5,13 +5,14 @@
 const { ipcMain, dialog, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { tx } = require('./i18n');
 
 const POINTS = 160;
 const MAX_TAPS = 1 << 17;
 
 /** A WAV file's samples, all channels averaged: { rate, samples } */
 function readWav(buf) {
-  if (buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') throw new Error('That is not a WAV file');
+  if (buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') throw new Error(tx('That is not a WAV file'));
   let off = 12, fmt = null, data = null;
   while (off + 8 <= buf.length) {
     const id = buf.toString('ascii', off, off + 4);
@@ -29,10 +30,10 @@ function readWav(buf) {
     }
     off = body + size + (size % 2);
   }
-  if (!fmt || !data) throw new Error('The WAV file has no audio in it');
+  if (!fmt || !data) throw new Error(tx('The WAV file has no audio in it'));
   const { format, channels, rate, bits } = fmt;
   const bytes = bits / 8;
-  if (!channels || !rate || ![16, 24, 32, 64].includes(bits) || ![1, 3].includes(format)) throw new Error('Use a 16, 24 or 32-bit WAV');
+  if (!channels || !rate || ![16, 24, 32, 64].includes(bits) || ![1, 3].includes(format)) throw new Error(tx('Use a 16, 24 or 32-bit WAV'));
   const frames = Math.min(MAX_TAPS, Math.floor(data.length / (bytes * channels)));
   const read = (o) => {
     if (format === 3) return bits === 64 ? data.readDoubleLE(o) : data.readFloatLE(o);
@@ -83,7 +84,7 @@ function centred(points) {
 
 /** An impulse response's magnitude, smoothed to 1/12 octave, on the grid */
 function responseOfIr({ rate, samples }) {
-  if (samples.length < 16) throw new Error('The impulse response is too short');
+  if (samples.length < 16) throw new Error(tx('The impulse response is too short'));
   let n = 1;
   while (n < Math.max(samples.length, 8192)) n <<= 1;
   const re = new Float64Array(n), im = new Float64Array(n);
@@ -108,7 +109,7 @@ function responseOfText(text) {
     if (m) raw.push([Number(m[1]), Number(m[2])]);
   }
   const ok = raw.filter(([f, g]) => f > 0 && Number.isFinite(g)).sort((a, b) => a[0] - b[0]);
-  if (ok.length < 2) throw new Error('No "frequency gain" lines in that file');
+  if (ok.length < 2) throw new Error(tx('No "frequency gain" lines in that file'));
   const at = (f) => {
     if (f <= ok[0][0]) return ok[0][1];
     if (f >= ok[ok.length - 1][0]) return ok[ok.length - 1][1];
@@ -122,7 +123,7 @@ function responseOfText(text) {
 function load(file) {
   const ext = path.extname(file).toLowerCase();
   const buf = fs.readFileSync(file);
-  if (buf.length > 64 * 1024 * 1024) throw new Error('That file is too large');
+  if (buf.length > 64 * 1024 * 1024) throw new Error(tx('That file is too large'));
   if (ext === '.wav') {
     const wav = readWav(buf);
     return { name: path.basename(file), kind: 'ir', rate: wav.rate, taps: wav.samples.length, points: responseOfIr(wav) };
@@ -133,9 +134,9 @@ function load(file) {
 ipcMain.handle('sound:load-correction', async (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   const r = await dialog.showOpenDialog(win, {
-    title: 'Room or headphone correction',
+    title: tx('Room or headphone correction'),
     properties: ['openFile'],
-    filters: [{ name: 'Impulse response or curve', extensions: ['wav', 'txt', 'csv'] }],
+    filters: [{ name: tx('Impulse response or curve'), extensions: ['wav', 'txt', 'csv'] }],
   });
   if (r.canceled || !r.filePaths[0]) return null;
   try {

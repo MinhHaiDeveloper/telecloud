@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import Icon from '../components/Icon';
 import useSlidingIndicator from '../hooks/useSlidingIndicator';
+import { t } from '../i18n';
 
 /** Bumped by TeleCloud when a cover or an artist picture changes: every picture address changes with it */
 export const ArtRev = createContext(0);
@@ -34,8 +35,8 @@ export const Cover = ({ id, pic, motion = false, className = '', round = false }
 };
 
 const WHERE = {
-  cloud: { label: 'Cloud', help: 'Only in TeleCloud: streams from Telegram when it plays' },
-  cached: { label: 'Cached', help: 'Only in TeleCloud, already in the cache on the computer: plays at once' },
+  cloud: { get label() { return t('Cloud'); }, get help() { return t('Only in TeleCloud: streams from Telegram when it plays'); } },
+  cached: { get label() { return t('Cached'); }, get help() { return t('Only in TeleCloud, already in the cache on the computer: plays at once'); } },
 };
 /** A small cloud for tracks that aren't on the computer itself */
 export const Where = ({ t }) => (t?.where ? <Icon name="cloud" className={`rm-where ${t.where}`} role="img" aria-label={WHERE[t.where].help} /> : null);
@@ -64,7 +65,7 @@ export const Pill = ({ value, options, onChange, className = '' }) => {
 };
 
 /** Three moving bars on the track that plays. */
-export const Playing = ({ paused }) => <span className={`rm-bars ${paused ? 'paused' : ''}`} aria-label="Playing"><i /><i /><i /></span>;
+export const Playing = ({ paused }) => <span className={`rm-bars ${paused ? 'paused' : ''}`} aria-label={t('Playing')}><i /><i /><i /></span>;
 
 /** A sheet from the bottom (phone) or a small card (wider screens) with a few actions. */
 export const Sheet = ({ open, title, sub, actions, onClose }) => {
@@ -90,7 +91,7 @@ export const Sheet = ({ open, title, sub, actions, onClose }) => {
             <Icon name={a.icon} filled={a.filled} />{a.label}
           </button>
         ))}
-        <button className="rm-sheet-item cancel" onClick={onClose}>Cancel</button>
+        <button className="rm-sheet-item cancel" onClick={onClose}>{t('Cancel')}</button>
       </div>
     </div>
   );

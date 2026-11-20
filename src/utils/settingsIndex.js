@@ -1,3 +1,4 @@
+import { t, tKnown } from '../i18n';
 // Every setting the Settings page has, for its search box and topic filters (SettingsView.jsx).
 //   title: what the row (SettingRow), section heading (<h3>) or block heading says, word for word: the jump
 //          finds it by that text. `section: true` marks a heading.
@@ -7,17 +8,18 @@
 // Rows that only show a state (a device, a storage, "Connected as ...") are not settings and stay out (IGNORED).
 
 export const TOPICS = [
-  { id: 'bitperfect', label: 'Bit-perfect' },
+  { id: 'bitperfect', label: 'Bit-perfect' }, // a term, kept as it is in every language
   { id: 'dsd', label: 'DSD' },
-  { id: 'hires', label: 'Lossless & hi-res' },
-  { id: 'sound', label: 'Sound shaping' },
-  { id: 'lyrics', label: 'Lyrics' },
-  { id: 'cloud', label: 'Cloud & backup' },
-  { id: 'online', label: 'Online services' },
-  { id: 'look', label: 'Look & motion' },
+  { id: 'hires', get label() { return t('Lossless & hi-res'); } },
+  { id: 'sound', get label() { return t('Sound shaping'); } },
+  { id: 'lyrics', get label() { return t('Lyrics'); } },
+  { id: 'cloud', get label() { return t('Cloud & backup'); } },
+  { id: 'online', get label() { return t('Online services'); } },
+  { id: 'look', get label() { return t('Look & motion'); } },
 ];
 
-const e = (tab, title, words = '', topics = [], section = false) => ({ tab, title, words, topics, section });
+// the title shows in the app's language (the row's own t() text); the English one stays searchable too
+const e = (tab, title, words = '', topics = [], section = false) => ({ tab, title: tKnown(title), en: title, words, topics, section });
 const s = (tab, title, words = '', topics = []) => e(tab, title, words, topics, true);
 
 export const SETTINGS = [
@@ -166,22 +168,24 @@ export const IGNORED = [
   'Click a shortcut, then press the new keys',
   'Not available in this build',
   'Scrobble to Last.fm',
+  // shows only once there is a translation: move it to SETTINGS (appearance, look) with the first one
+  'Language of the app',
 ];
 
-const norm = (t) => String(t).toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '');
+const norm = (text) => String(text).toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '');
 
 /** Matches for what was typed and the chips picked: every word typed must appear somewhere in the entry */
-export function searchSettings(query, topics = [], tabLabel = (t) => t) {
+export function searchSettings(query, topics = [], tabLabel = (id) => id) {
   const words = norm(query).split(/\s+/).filter(Boolean);
   return SETTINGS.filter((it) => {
-    if (topics.length && !topics.some(t => it.topics.includes(t))) return false;
+    if (topics.length && !topics.some(id => it.topics.includes(id))) return false;
     if (!words.length) return true;
-    const hay = norm(`${it.title} ${it.words} ${tabLabel(it.tab)} ${it.topics.map(t => TOPICS.find(x => x.id === t)?.label).join(' ')}`);
+    const hay = norm(`${it.title} ${it.en} ${it.words} ${tabLabel(it.tab)} ${it.topics.map(id => TOPICS.find(x => x.id === id)?.label).join(' ')}`);
     return words.every(w => hay.includes(w));
   }).map((it) => {
     // titles that start with what was typed first, then rows before headings
-    const t = norm(it.title);
-    const rank = (words.length && t.startsWith(words[0]) ? 0 : words.length && t.includes(words[0]) ? 1 : 2) * 2 + (it.section ? 1 : 0);
+    const title = norm(it.title);
+    const rank = (words.length && title.startsWith(words[0]) ? 0 : words.length && title.includes(words[0]) ? 1 : 2) * 2 + (it.section ? 1 : 0);
     return { ...it, rank };
   }).sort((a, b) => a.rank - b.rank);
 }

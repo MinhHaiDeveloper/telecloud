@@ -1,0 +1,4 @@
+{
+  "_": "Terms that stay as they are in every language. The build checks that each translation keeps them where the English has them.",
+  "terms": ["Bit-perfect", "TeleCloud", "WASAPI", "ASIO", "DoP", "DSD", "MQA", "ReplayGain", "AutoEQ", "Cadence"]
+}

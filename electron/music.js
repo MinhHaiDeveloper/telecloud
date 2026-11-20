@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const database = require('./database');
 const { AUDIO_EXTENSIONS, getLibraryRoots, getDownloadFolder, isInLibrary, isInAppStorage, safeFileName } = require('./paths');
+const { tx } = require('./i18n');
 
 // ---------- metadata ----------
 
@@ -414,10 +415,10 @@ ipcMain.handle('save-store', async (event, storeName, data) => {
 ipcMain.handle('delete-song', async (event, file) => {
   try {
     const row = file && typeof file.path === 'string' ? database.getFileByPath(file.path) : null;
-    if (!row) return { success: false, error: 'Track is not in the library' };
+    if (!row) return { success: false, error: tx('Track is not in the library') };
 
     if (row.storage_type !== 'cloud' && fs.existsSync(row.path)) {
-      if (!isInLibrary(row.path)) return { success: false, error: 'File is outside your music folders' };
+      if (!isInLibrary(row.path)) return { success: false, error: tx('File is outside your music folders') };
       await shell.trashItem(row.path);
     }
     if (row.cache_path && isInAppStorage(row.cache_path) && fs.existsSync(row.cache_path)) {
@@ -442,12 +443,12 @@ function albumFolder(album) {
 ipcMain.handle('download-song', async (event, file) => {
   try {
     const dest = getDownloadFolder();
-    if (!dest) return { success: false, error: 'No download folder set' };
+    if (!dest) return { success: false, error: tx('No download folder set') };
     const row = file && typeof file.path === 'string' ? database.getFileByPath(file.path) : null;
-    if (!row) return { success: false, error: 'Track is not in the library' };
+    if (!row) return { success: false, error: tx('Track is not in the library') };
     const source = fs.existsSync(row.path) && isInLibrary(row.path) ? row.path
       : (row.cache_path && isInAppStorage(row.cache_path) && fs.existsSync(row.cache_path) ? row.cache_path : null);
-    if (!source) return { success: false, error: 'No local copy of this track' };
+    if (!source) return { success: false, error: tx('No local copy of this track') };
 
     const name = safeFileName(row.name || path.basename(row.path));
     const ext = path.extname(name);
@@ -478,7 +479,7 @@ ipcMain.handle('download-song', async (event, file) => {
 // Track menu: show the track's own file. Cloud-only and cached tracks have none to show.
 ipcMain.handle('show-in-folder', async (event, filePath) => {
   const row = typeof filePath === 'string' ? database.getFileByPath(filePath) : null;
-  if (!row || !isInLibrary(row.path) || !fs.existsSync(row.path)) return { success: false, error: 'The file is no longer there' };
+  if (!row || !isInLibrary(row.path) || !fs.existsSync(row.path)) return { success: false, error: tx('The file is no longer there') };
   shell.showItemInFolder(row.path);
   return { success: true };
 });

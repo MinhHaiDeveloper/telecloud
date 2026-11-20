@@ -6,6 +6,7 @@ const { ipcMain, app, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { tx } = require('./i18n');
 
 const RAW_BASE = 'https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/';
 const cacheDir = () => path.join(app.getPath('userData'), 'autoeq-cache');
@@ -51,9 +52,9 @@ async function fetchCached(repoFile) {
     return await fs.promises.readFile(file, 'utf8');
   } catch { /* not cached yet */ }
   const res = await net.fetch(RAW_BASE + encodePath(repoFile));
-  if (!res.ok) throw new Error(`Download failed (${res.status})`);
+  if (!res.ok) throw new Error(tx('Download failed ({status})', { status: res.status }));
   const text = await res.text();
-  if (text.length > 2 * 1024 * 1024) throw new Error('Unexpectedly large file');
+  if (text.length > 2 * 1024 * 1024) throw new Error(tx('Unexpectedly large file'));
   await fs.promises.mkdir(cacheDir(), { recursive: true });
   await fs.promises.writeFile(file, text, 'utf8');
   return text;
@@ -81,7 +82,7 @@ ipcMain.handle('autoeq:measurement', async (event, id) => {
   const it = loadIndex().items[Number(id)];
   if (!it) throw new Error('Unknown headphone');
   const data = parseCurve(await fetchCached(repoPath(it)));
-  if (data.length < 10) throw new Error('This measurement has no usable data');
+  if (data.length < 10) throw new Error(tx('This measurement has no usable data'));
   return { ...publicItem(it), data };
 });
 
@@ -90,7 +91,7 @@ ipcMain.handle('autoeq:targets', () => loadIndex().targets);
 ipcMain.handle('autoeq:target', async (event, name) => {
   if (!loadIndex().targets.includes(name)) throw new Error('Unknown target');
   const data = parseCurve(await fetchCached(`targets/${name}.csv`));
-  if (data.length < 10) throw new Error('This target has no usable data');
+  if (data.length < 10) throw new Error(tx('This target has no usable data'));
   return { name, data };
 });
 

@@ -18,6 +18,7 @@ const { newMasterKey, fingerprint, toRecoveryKey, fromRecoveryKey } = require('.
 const store = require('./store');
 const { inferRow } = require('../inferTags');
 const { getLibraryRoots } = require('../paths');
+const { tx } = require('../i18n');
 
 const CHANNEL_TITLE = 'TeleCloud Music Library';
 const CHANNEL_ABOUT = 'Private music library storage for TeleCloud';
@@ -88,7 +89,7 @@ const endedError = () => `Telegram signed TeleCloud out. ${endedText(sessionEnde
 function ensureConnected() {
   if (connected) return connected;
   const creds = cm().getCredentials();
-  if (!creds?.session) return Promise.reject(new Error('TeleCloud is not set up'));
+  if (!creds?.session) return Promise.reject(new Error(tx('TeleCloud is not set up')));
   if (sessionEnded()) return Promise.reject(new Error(endedError()));
   connected = worker.call('connect', { apiId: creds.apiId, apiHash: creds.apiHash, session: creds.session, masterKey: creds.masterKey || null })
     .then(async (me) => {
@@ -117,7 +118,7 @@ async function migrateLegacy(creds) {
 
 function defaultStorage() {
   const s = store.storages.default();
-  if (!s) throw new Error('No storage chat yet. Finish TeleCloud setup first.');
+  if (!s) throw new Error(tx('No storage chat yet. Finish TeleCloud setup first.'));
   return s;
 }
 
@@ -154,7 +155,7 @@ async function refreshIndex(storage, { full = false } = {}) {
  * only: nothing is downloaded or changed, so damage inside a file of the right size can't be seen.
  */
 async function checkBackup() {
-  if (runner) throw new Error('A backup is running. Check again when it has finished.');
+  if (runner) throw new Error(tx('A backup is running. Check again when it has finished.'));
   await ensureConnected();
   const key = masterKey();
   const db = store.db();
@@ -234,7 +235,7 @@ async function restoreCover(storageId, key) {
 
 /** After a check: tracks still on this computer go back in the queue, lost covers go back, indexes that need it are saved */
 async function repairBackup({ paths }) {
-  if (runner) throw new Error('A backup is running. Try again when it has finished.');
+  if (runner) throw new Error(tx('A backup is running. Try again when it has finished.'));
   await ensureConnected();
   const report = await checkBackup();
   const wanted = new Set(paths || []);
@@ -322,7 +323,7 @@ const pushTrack = (p) => pushTracks([p]);
 async function uploadOne(item) {
   const row = store.library.row(item.path);
   if (!row) { store.queue.set(item.path, 'done'); return 'gone'; }
-  if (!fs.existsSync(item.path)) throw new Error('File is missing on disk');
+  if (!fs.existsSync(item.path)) throw new Error(tx('File is missing on disk'));
   const storage = store.storages.get(item.storage_id) || defaultStorage();
   const size = fs.statSync(item.path).size;
   store.queue.set(item.path, 'uploading', { size });
@@ -679,7 +680,7 @@ async function writeDirtyManifests() {
     try { await writeManifest(id); } catch (err) {
       manifestDirty.add(id); // tried again after the next backup
       console.error('[TeleCloud] manifest update failed:', err.message);
-      send('telecloud-sync:queue-error', { error: `Couldn't save the library index (tags, lyrics, covers): ${err.message}. It is retried after the next backup, or use Save now.` });
+      send('telecloud-sync:queue-error', { error: tx('Couldn\'t save the library index (tags, lyrics, covers): {message}. It is retried after the next backup, or use Save now.', { message: err.message }) });
     }
   }
 }
@@ -724,14 +725,14 @@ worker.events.on('stream-error', (p) => {
 /** A path or URL mpv can open for this track: the cached file, or a stream that fills the cache */
 async function streamTrack(libraryPath) {
   const row = store.library.row(libraryPath);
-  if (!row || !row.telegram_message_id) throw new Error('This track is not in TeleCloud');
+  if (!row || !row.telegram_message_id) throw new Error(tx('This track is not in TeleCloud'));
   if (row.cache_path && isInAppStorage(row.cache_path) && fs.existsSync(row.cache_path)) {
     const now = new Date();
     fs.promises.utimes(row.cache_path, now, now).catch(() => {});
     return { path: row.cache_path, streaming: false };
   }
   const storage = store.storages.byPeer(row.telegram_channel_id);
-  if (!storage) throw new Error('The Telegram chat for this track is not connected');
+  if (!storage) throw new Error(tx('The Telegram chat for this track is not connected'));
   await ensureConnected();
   let entry = store.index.get(storage.id, row.telegram_message_id);
   if (!entry) { await refreshIndex(storage); entry = store.index.get(storage.id, row.telegram_message_id); }
@@ -752,7 +753,7 @@ async function speedTest() {
   await ensureConnected();
   const storage = defaultStorage();
   const biggest = store.index.all(storage.id).sort((a, b) => (b.size || 0) - (a.size || 0))[0];
-  if (!biggest) throw new Error('Back up at least one track first: the test downloads part of it');
+  if (!biggest) throw new Error(tx('Back up at least one track first: the test downloads part of it'));
   return worker.call('speedTest', { peer: store.toPeer(storage), messageId: biggest.message_id, size: biggest.size });
 }
 
@@ -771,14 +772,14 @@ async function cacheTrack(libraryPath) {
   if (inFlight.has(libraryPath)) return inFlight.get(libraryPath);
   const job = (async () => {
     const row = store.library.row(libraryPath);
-    if (!row || !row.telegram_message_id) throw new Error('This track is not in TeleCloud');
+    if (!row || !row.telegram_message_id) throw new Error(tx('This track is not in TeleCloud'));
     if (row.cache_path && isInAppStorage(row.cache_path) && fs.existsSync(row.cache_path)) {
       const now = new Date();
       fs.promises.utimes(row.cache_path, now, now).catch(() => {}); // recently used: evicted last
       return row.cache_path;
     }
     const storage = store.storages.byPeer(row.telegram_channel_id);
-    if (!storage) throw new Error('The Telegram chat for this track is not connected');
+    if (!storage) throw new Error(tx('The Telegram chat for this track is not connected'));
     console.log(`[TeleCloud] Downloading to the cache: ${libraryPath}`);
     await ensureConnected();
     let entry = store.index.get(storage.id, row.telegram_message_id);
@@ -954,18 +955,18 @@ async function storageCandidates() {
 }
 
 async function addStorage({ title, chatId }) {
-  if (store.storages.count() >= MAX_STORAGES) throw new Error(`TeleCloud can use up to ${MAX_STORAGES} chats`);
+  if (store.storages.count() >= MAX_STORAGES) throw new Error(tx('TeleCloud can use up to {MAX_STORAGES} chats', { MAX_STORAGES }));
   await ensureConnected();
   let added;
   if (chatId === 'self') {
     added = store.storages.add({ kind: 'self', peerId: 'self', title: 'Saved Messages' });
   } else if (chatId) {
     const chat = (await worker.call('listChats')).find(c => String(c.id) === String(chatId));
-    if (!chat) throw new Error('That chat is not available to this account');
+    if (!chat) throw new Error(tx('That chat is not available to this account'));
     added = store.storages.add({ kind: chat.kind === 'group' ? 'group' : 'channel', peerId: chat.id, accessHash: chat.accessHash, title: chat.title });
   } else {
     const name = String(title || '').trim().slice(0, 120);
-    if (!name) throw new Error('Give the new channel a name');
+    if (!name) throw new Error(tx('Give the new channel a name'));
     const ch = await worker.call('createChannel', { title: name, about: CHANNEL_ABOUT });
     added = store.storages.add({ kind: 'channel', peerId: ch.id, accessHash: ch.accessHash, title: ch.title });
   }
@@ -977,7 +978,7 @@ async function addStorage({ title, chatId }) {
 async function renameStorage({ id, title }) {
   const s = store.storages.get(id);
   const name = String(title || '').trim().slice(0, 120);
-  if (!s || !name) throw new Error('Nothing to rename');
+  if (!s || !name) throw new Error(tx('Nothing to rename'));
   if (s.kind !== 'self') {
     await ensureConnected();
     await worker.call('renameChat', { peer: store.toPeer(s), title: name });
@@ -989,7 +990,7 @@ async function renameStorage({ id, title }) {
 function removeStorage({ id }) {
   const s = store.storages.get(id);
   if (!s) return;
-  if (store.storages.count() === 1) throw new Error('Keep at least one storage, or disconnect TeleCloud instead');
+  if (store.storages.count() === 1) throw new Error(tx('Keep at least one storage, or disconnect TeleCloud instead'));
   const { gone, kept } = store.library.unlinkStorage(s.peer_id);
   store.storages.remove(id);
   fs.promises.rm(manifestFile(id), { force: true }).catch(() => {});
@@ -1174,7 +1175,7 @@ function setupTeleCloudSyncHandlers() {
     try {
       // Only plain https links; file:, ms-*, custom protocol handlers etc. could launch programs
       const parsed = new URL(String(url));
-      if (parsed.protocol !== 'https:') return { success: false, error: 'Only https links can be opened' };
+      if (parsed.protocol !== 'https:') return { success: false, error: tx('Only https links can be opened') };
       await shell.openExternal(parsed.toString());
       return { success: true };
     } catch (error) {
@@ -1185,21 +1186,21 @@ function setupTeleCloudSyncHandlers() {
   handle('telecloud-sync:check-auth', status);
 
   handle('telecloud-sync:save-temp-credentials', async ({ apiId, apiHash } = {}) => {
-    if (!/^\d+$/.test(String(apiId || '')) || !/^[0-9a-f]{32}$/i.test(String(apiHash || ''))) throw new Error('API ID is a number and the API hash has 32 letters/digits');
+    if (!/^\d+$/.test(String(apiId || '')) || !/^[0-9a-f]{32}$/i.test(String(apiHash || ''))) throw new Error(tx('API ID is a number and the API hash has 32 letters/digits'));
     setup = { apiId: String(apiId), apiHash: String(apiHash) };
     return { success: true };
   });
 
   handle('telecloud-sync:send-code', async ({ phoneNumber, apiId, apiHash } = {}) => {
     setup = { ...setup, apiId: String(apiId || setup.apiId), apiHash: String(apiHash || setup.apiHash), phoneNumber };
-    if (!setup.apiId || !setup.apiHash) throw new Error('API credentials not provided');
+    if (!setup.apiId || !setup.apiHash) throw new Error(tx('API credentials not provided'));
     const r = await worker.call('sendCode', { apiId: setup.apiId, apiHash: setup.apiHash, phone: phoneNumber });
     setup.phoneCodeHash = r.phoneCodeHash;
     return { success: true };
   });
 
   handle('telecloud-sync:verify-code', async ({ code, phoneNumber } = {}) => {
-    if (!setup.phoneCodeHash) throw new Error('Request a new code first');
+    if (!setup.phoneCodeHash) throw new Error(tx('Request a new code first'));
     const r = await worker.call('signIn', { phone: phoneNumber || setup.phoneNumber, phoneCodeHash: setup.phoneCodeHash, code });
     if (r.passwordNeeded) return { success: true, passwordNeeded: true };
     setup.session = r.session;
@@ -1215,14 +1216,14 @@ function setupTeleCloudSyncHandlers() {
   // Sign in again after Telegram ended the sign-in: the same account, API keys, storages and settings
   handle('telecloud-sync:resign-start', async () => {
     const creds = cm().getCredentials();
-    if (!creds?.apiId || !creds?.phoneNumber) throw new Error('TeleCloud is not set up');
+    if (!creds?.apiId || !creds?.phoneNumber) throw new Error(tx('TeleCloud is not set up'));
     setup = { apiId: creds.apiId, apiHash: creds.apiHash, phoneNumber: creds.phoneNumber, resign: true };
     const r = await worker.call('sendCode', { apiId: setup.apiId, apiHash: setup.apiHash, phone: setup.phoneNumber });
     setup.phoneCodeHash = r.phoneCodeHash;
     return { success: true, phoneNumber: setup.phoneNumber };
   });
   handle('telecloud-sync:resign-finish', async () => {
-    if (!setup.resign || !setup.session) throw new Error('Sign in first');
+    if (!setup.resign || !setup.session) throw new Error(tx('Sign in first'));
     cm().updateCredentials({ session: setup.session });
     setup = {};
     kv.delete('teleCloudSessionEnded');
@@ -1236,7 +1237,7 @@ function setupTeleCloudSyncHandlers() {
   });
 
   handle('telecloud-sync:complete-setup', async (config = {}) => {
-    if (!setup.session) throw new Error('Sign in first');
+    if (!setup.session) throw new Error(tx('Sign in first'));
     kv.delete('teleCloudSessionEnded');
     const existing = cm().getCredentials();
     const keyB64 = existing?.masterKey || newMasterKey().toString('base64');

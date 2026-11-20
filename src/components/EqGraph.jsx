@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { logGrid, totalResponse, bandResponse, resample, smooth, meanIn, GAIN_LIMIT } from '../utils/autoEqMath';
+import { t } from '../i18n';
 
 // Canvas EQ graph: draws the filter curve, optional measurement / target / result curves and one
 // handle per band sitting on the curve. Drag a handle to move it (Shift: gain only, Alt:
@@ -246,7 +247,7 @@ const EqGraph = ({ bands, measurement, target, smoothing = 1 / 12, yRange = 12, 
     if (!d) return;
     if (d.raf) { cancelAnimationFrame(d.raf); if (d.pending) live.current.onChange(d.idx, d.pending); }
     drag.current = null;
-    if (d.moved) live.current.onCommit(`Moved band ${d.idx + 1}`);
+    if (d.moved) live.current.onCommit(t('Moved band {value}', { value: d.idx + 1 }));
   };
 
   const onDoubleClick = (e) => {
@@ -254,7 +255,7 @@ const EqGraph = ({ bands, measurement, target, smoothing = 1 / 12, yRange = 12, 
     const idx = pick(x, y);
     if (idx == null) return;
     live.current.onChange(idx, { ...live.current.bands[idx], gain: 0 });
-    live.current.onCommit(`Flattened band ${idx + 1}`);
+    live.current.onCommit(t('Flattened band {value}', { value: idx + 1 }));
   };
 
   // Wheel must be non-passive to stop the page scrolling while adjusting Q
@@ -272,7 +273,7 @@ const EqGraph = ({ bands, measurement, target, smoothing = 1 / 12, yRange = 12, 
       live.current.onSelect(idx);
       live.current.onChange(idx, { ...b, q });
       clearTimeout(wheelCommit.current);
-      wheelCommit.current = setTimeout(() => live.current.onCommit(`Q of band ${idx + 1} → ${q}`), 500);
+      wheelCommit.current = setTimeout(() => live.current.onCommit(t('Q of band {value} → {q}', { value: idx + 1, q })), 500);
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => { el.removeEventListener('wheel', onWheel); clearTimeout(wheelCommit.current); };

@@ -7,19 +7,20 @@ const path = require('path');
 const database = require('./database');
 const { describeWriteError } = require('./fileWrite');
 const { decryptQrc, qrcText } = require('./qrc');
+const { tx } = require('./i18n');
 
 const UA = 'TeleCloud/1.0 (https://github.com/MinhHaiDeveloper/telecloud)';
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
 const SOURCES = {
-  tags: { label: 'Metadata tags', online: false },
-  local: { label: 'Local .lrc file', online: false },
+  get tags() { return { label: tx('Metadata tags'), online: false }; },
+  get local() { return { label: tx('Local .lrc file'), online: false }; },
   lrclib: { label: 'LRCLIB', online: true },
   netease: { label: 'NetEase Cloud Music', online: true },
   qq: { label: 'QQ Music', online: true },
   kugou: { label: 'Kugou', online: true },
-  genius: { label: 'Genius', online: true, note: 'Plain lyrics only. Often blocks apps (403).' },
-  musixmatch: { label: 'Musixmatch', online: true, note: 'Unofficial. Often returns placeholder text.' },
+  get genius() { return { label: 'Genius', online: true, note: tx('Plain lyrics only. Often blocks apps (403).') }; },
+  get musixmatch() { return { label: 'Musixmatch', online: true, note: tx('Unofficial. Often returns placeholder text.') }; },
 };
 const DEFAULTS = {
   search: true,                 // look online when a playing track has no lyrics

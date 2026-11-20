@@ -3,6 +3,7 @@ import SongList from './SongList';
 import Cover from './Cover';
 import Icon from './Icon';
 import { formatDuration } from '../utils/audio';
+import { t } from '../i18n';
 
 // The library as the folders on disk, for people who keep their music by folder. Built from the library's
 // own paths, so it is instant and shows only music TeleCloud knows. Tracks only in TeleCloud have no folder.
@@ -73,10 +74,10 @@ const FoldersView = ({ musicFiles, roots = [], ...songListProps }) => {
   if (!rootList.length) {
     return (
       <>
-        <div className="page-head"><h2>Folders</h2></div>
+        <div className="page-head"><h2>{t('Folders')}</h2></div>
         <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>
           <Icon name="folder" style={{ width: 36, height: 36, marginBottom: 10 }} />
-          <div>Add a music folder in Settings to browse it here.</div>
+          <div>{t('Add a music folder in Settings to browse it here.')}</div>
         </div>
       </>
     );
@@ -84,17 +85,17 @@ const FoldersView = ({ musicFiles, roots = [], ...songListProps }) => {
   return (
     <>
       <div className="page-head folders-head">
-        {at && up !== undefined && <button className="icon-btn" onClick={() => go(up)} title="Up one folder" aria-label="Up one folder"><Icon name="chevron" style={{ transform: 'rotate(90deg)' }} /></button>}
-        <h2>{at ? base(at) : 'Folders'}</h2>
-        <span className="sub">{all.length.toLocaleString()} tracks{total ? ` · ${formatDuration(total)}` : ''}</span>
+        {at && up !== undefined && <button className="icon-btn" onClick={() => go(up)} title={t('Up one folder')} aria-label={t('Up one folder')}><Icon name="chevron" style={{ transform: 'rotate(90deg)' }} /></button>}
+        <h2>{at ? base(at) : t('Folders')}</h2>
+        <span className="sub">{t('{length} tracks{value}', { length: all.length.toLocaleString(), value: total ? ` · ${formatDuration(total)}` : '' })}</span>
         <div className="end">
-          <button className="btn-ghost" disabled={!all.length} onClick={shuffle}><Icon name="shuffle" />Shuffle</button>
-          <button className="btn-primary" disabled={!all.length} onClick={() => onPlay(all[0], 0, all)}><Icon name="play" filled />Play folder</button>
+          <button className="btn-ghost" disabled={!all.length} onClick={shuffle}><Icon name="shuffle" />{t('Shuffle')}</button>
+          <button className="btn-primary" disabled={!all.length} onClick={() => onPlay(all[0], 0, all)}><Icon name="play" filled />{t('Play folder')}</button>
         </div>
       </div>
       {(crumbs.length > 1 || (crumbs.length && rootList.length > 1)) && (
-        <nav className="crumbs" aria-label="Folder">
-          {rootList.length > 1 && <><button onClick={() => go(null)}>Music folders</button><Icon name="chevron" /></>}
+        <nav className="crumbs" aria-label={t('Folder')}>
+          {rootList.length > 1 && <><button onClick={() => go(null)}>{t('Music folders')}</button><Icon name="chevron" /></>}
           {crumbs.map((c, i) => (
             <React.Fragment key={c.path}>
               {i > 0 && <Icon name="chevron" />}
@@ -108,18 +109,18 @@ const FoldersView = ({ musicFiles, roots = [], ...songListProps }) => {
           {folders.map(f => (
             <button key={f.path} className="folder-tile" onClick={() => go(f.path)} title={f.path}>
               <span className="folder-art">{f.sample ? <Cover file={f.sample} /> : <Icon name="folder" />}</span>
-              <span className="folder-txt"><b>{at ? f.name : base(f.name)}</b><span>{f.count.toLocaleString()} {f.count === 1 ? 'track' : 'tracks'}{!at ? ` · ${f.name}` : ''}</span></span>
+              <span className="folder-txt"><b>{at ? f.name : base(f.name)}</b><span>{f.count.toLocaleString()} {f.count === 1 ? t('track') : t('tracks')}{!at ? ` · ${f.name}` : ''}</span></span>
             </button>
           ))}
         </div>
       )}
       {tracks.length > 0 && (
         <>
-          {folders.length > 0 && <div className="section-head"><span>In this folder</span></div>}
+          {folders.length > 0 && <div className="section-head"><span>{t('In this folder')}</span></div>}
           <SongList {...songListProps} musicFiles={tracks} />
         </>
       )}
-      {at && !folders.length && !tracks.length && <div className="empty">No music in this folder.</div>}
+      {at && !folders.length && !tracks.length && <div className="empty">{t('No music in this folder.')}</div>}
     </>
   );
 };
