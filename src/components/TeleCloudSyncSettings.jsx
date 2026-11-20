@@ -40,6 +40,7 @@ const eta = (bytesLeft, speed) => {
 /** What to do (and not do) so a backup always completes and stays restorable */
 const TIPS = {
     get do() { return [
+        [t('Back up a little at a time: an album, or a playlist you made.'), t('It is gentler on Telegram’s limits, and a lighter channel restores faster. When you stop listening to something, it can leave TeleCloud too.')],
         [t('Leave TeleCloud open until the queue says everything is backed up.'), t('Quitting mid-upload is safe, but the file in progress starts over next time.')],
         [t('Press Pause before quitting in the middle of a backup.'), t('Pausing saves the library index (tags, lyrics, covers) for what is already up.')],
         [t('Keep your recovery key outside this computer.'), t('Without it, encrypted tracks cannot be opened after a reinstall or on another computer.')],
@@ -532,6 +533,8 @@ const TeleCloudSyncSettings = () => {
                         <button className="btn-primary" onClick={() => goTo('credentials')}>{t('Start setup')}<Icon name="chevron" style={{ transform: 'rotate(-90deg)' }} /></button>
                         <button className="btn-ghost" onClick={openPortal}>{t('Get API credentials')}</button>
                     </div>
+                    {/* Telegram's API terms: an app says plainly that it uses the Telegram API */}
+                    <p className="muted" style={{ marginTop: 14, fontSize: 12.5 }}>{t('TeleCloud is an unofficial app that uses the Telegram API. It is not affiliated with Telegram.')}</p>
                 </div>
             </div>
         );
