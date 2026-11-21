@@ -954,6 +954,7 @@ async function restore() {
     }
   }
   pushTracks([...added, ...changed]);
+  if (restored || updated) require('../dataPort').scheduleResolve(); // tracks an import was waiting for
   console.log(`[TeleCloud] Restore: ${restored} added, ${updated} updated, ${skipped} already here, ${coversFetched} covers, ${gifsFetched} artist GIFs${needKey ? `, ${needKey} need the recovery key` : ''}`);
   return { restoredCount: restored, skippedCount: skipped, updatedCount: updated, needKey, covers: coversFetched };
 }

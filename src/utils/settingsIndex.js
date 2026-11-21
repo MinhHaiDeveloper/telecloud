@@ -81,6 +81,10 @@ export const SETTINGS = [
   e('library', 'Clear cached data & database', 'reset rescan metadata', []),
   s('library', 'Duplicates', 'same track twice', []),
   e('library', 'Skip duplicate tracks', 'same track twice', []),
+  s('library', 'Your data', 'export import backup move new computer history playlists favourites', []),
+  e('library', 'Export your data', 'backup zip history listenbrainz m3u8 csv playlists favourites', []),
+  e('library', 'Include settings', 'export eq sound look shortcuts', []),
+  e('library', 'Import data', 'restore move new computer merge history playlists', []),
   s('library', 'When an album ends', 'autoplay continue radio', []),
   e('library', 'Keep playing another album', 'autoplay continue radio', []),
 
@@ -163,6 +167,9 @@ export const SETTINGS = [
 
 // SettingRow titles that show a state or a hint, not a setting
 export const IGNORED = [
+  'Listening history', // what to take from an export, shown only while one is picked
+  'Playlists and favourites',
+  'Settings from the export',
   'No folders yet',
   'Changes are picked up automatically',
   'Looking for devices…',

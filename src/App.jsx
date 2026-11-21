@@ -273,6 +273,15 @@ function App() {
     window.addEventListener('telecloud:library-changed', onChange);
     return () => { clearTimeout(t); ipcOff(window.ipcRenderer, 'stats:changed', onChange); window.removeEventListener('telecloud:library-changed', onChange); };
   }, []);
+  useEffect(() => {
+    // an import (Settings > Library > Your data), or tracks it was waiting for showing up: read the lists again
+    const onData = () => {
+      window.ipcRenderer.invoke('load-store', 'favorites').then(d => setFavorites(Array.isArray(d) ? d : []));
+      window.ipcRenderer.invoke('load-store', 'playlists').then(d => setPlaylists(Array.isArray(d) ? d : []));
+    };
+    ipcOn(window.ipcRenderer, 'data:changed', onData);
+    return () => ipcOff(window.ipcRenderer, 'data:changed', onData);
+  }, []);
   const listenRef = useRef({ path: null });
 
   // tell the play counts (and the Dashboard) when the set of library paths changes

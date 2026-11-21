@@ -547,7 +547,7 @@ input[type="number"].input::-webkit-inner-spin-button { opacity: .4; }
   transition: color var(--np-lyric-speed, 400ms), opacity var(--np-lyric-speed, 400ms), font-size var(--np-lyric-speed, 400ms) ease-in-out, transform var(--np-lyric-speed, 400ms) ease-in-out, text-shadow var(--np-lyric-speed, 400ms);
 }
 .np-lyrics .lyric.active { font-size: var(--np-lyric-current, 26px); }
-html.np-lyric-glow .np-lyrics .lyric.active { text-shadow: 0 0 22px color-mix(in srgb, var(--text) 55%, transparent), 0 0 6px color-mix(in srgb, var(--text) 35%, transparent); }
+html.np-lyric-glow .np-lyrics .lyric.active { text-shadow: 0 0 24px color-mix(in srgb, var(--text) 70%, transparent), 0 0 8px color-mix(in srgb, var(--text) 50%, transparent), 0 1px 2px rgba(0, 0, 0, .25); }
 html[style*="--np-lyric-align: center"] .np-lyrics .lyric { transform-origin: center center; }
 html[style*="--np-lyric-align: right"] .np-lyrics .lyric { transform-origin: right center; }
 .np-panel .lyrics-empty { margin: auto; font-size: 15px; font-weight: 600; font-style: normal; color: var(--text-2); }

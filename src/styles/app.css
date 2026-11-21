@@ -435,7 +435,7 @@
   background: linear-gradient(90deg, var(--on) 0 calc(var(--p, 0) * 100%), var(--off) calc(var(--p, 0) * 100%) 100%);
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-html.np-lyric-glow .np-lyrics .lyric.active .w { text-shadow: none; filter: drop-shadow(0 0 10px color-mix(in srgb, var(--text) 45%, transparent)); }
+html.np-lyric-glow .np-lyrics .lyric.active .w { text-shadow: none; filter: drop-shadow(0 0 12px color-mix(in srgb, var(--text) 62%, transparent)) drop-shadow(0 0 3px color-mix(in srgb, var(--text) 40%, transparent)); }
 .lyrics-lines.plain .lyric { color: var(--text-2); }
 .lyrics-scroll .lyric { font-size: 14px; }
 .lyrics-empty { color: var(--text-3); font-size: 13px; padding: 24px 0; text-align: center; font-style: italic; }

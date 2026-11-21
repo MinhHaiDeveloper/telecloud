@@ -54,6 +54,7 @@ require('./coverSearch.js');
 require('./discord.js');
 const artistImages = require('./artistImages.js');
 require('./logExport.js');
+require('./dataPort.js');
 require('./tagEdit.js');
 require('./mqa.js');
 require('./remote.js');
@@ -177,6 +178,9 @@ function createWindow() {
   require('./media').attach(win); // Windows media controls, media keys, taskbar buttons
   require('./openFiles').init(); // music opened from Windows plays at once
   win.once('ready-to-show', () => require('./floatingLyrics').restore()); // open again if it was open
+  // closed for real (not hidden to the tray): TeleCloud quits, floating lyrics and all. Left open, that window
+  // kept the app running with no main window: music on, and opening TeleCloud again showed nothing.
+  win.on('closed', () => { if (process.platform !== 'darwin') app.quit(); });
   // isFullScreen() can still give the old answer while Windows switches, so the full-screen events say it themselves
   let fullscreen = false;
   const sendState = () => { if (!win.isDestroyed()) win.webContents.send('window:state', { maximized: win.isMaximized(), fullscreen, focused: win.isFocused() }); };

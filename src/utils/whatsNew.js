@@ -2,6 +2,17 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.1.0-beta.15',
+    items: [
+      'Your data, in Settings > Library: export your listening history, playlists, favourites and a list of the library to one .zip of plain files (JSON, M3U8 for other players, CSV, and the history in the ListenBrainz format too), with your settings if you like. Music files, keys and sign-ins are never in it.',
+      'Import on another computer, or the same one: it adds to what is there and replaces nothing, and a play already there is not counted twice. A track that computer does not have yet still counts in Stats, and joins its playlist and the favourites by itself when it shows up (after adding a folder or restoring from TeleCloud).',
+      'The lyrics glow in Now Playing is a little stronger, and the floating lyrics stand out over any desktop: a soft dark glow around white lines, and a glow in your accent colour on the words already sung.',
+      'Fixed: closing TeleCloud while the floating lyrics were open kept the music playing with no window, and opening TeleCloud again showed nothing. Closing now quits (unless it hides to the tray), and the floating lyrics come back with the app next time.',
+      'Fixed: Settings > Sound forgot its settings when TeleCloud restarted.',
+      'Fixed: in word-by-word lyrics the fill of a word could step back a little, most of all in fast songs. It now only moves forward, smoothly, in Now Playing and the floating lyrics.',
+    ],
+  },
+  {
     version: '1.1.0-beta.14',
     items: [
       'Back up to a folder: a second drive, a share on your NAS, or a folder your OneDrive, Google Drive or Dropbox app keeps in step. Settings > TeleCloud Sync > Add a storage > A folder, or "Or back up to a folder" before you set up Telegram: no Telegram account is needed for it.',

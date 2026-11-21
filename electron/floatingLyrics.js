@@ -9,6 +9,8 @@ const fs = require('fs');
 let win = null;
 let locked = false;
 let last = null; // the latest state, for a window that opens mid-song
+let quitting = false; // closed because TeleCloud quits: it stays "open", to come back with the app
+app.on('before-quit', () => { quitting = true; });
 const file = () => path.join(app.getPath('userData'), 'floating-lyrics.json');
 const readSaved = () => { try { return JSON.parse(fs.readFileSync(file(), 'utf8')); } catch { return {}; } };
 const save = (patch) => { try { fs.writeFileSync(file(), JSON.stringify({ ...readSaved(), ...patch })); } catch { /* fine */ } };
@@ -51,7 +53,7 @@ function open() {
   const remember = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { if (win && !win.isDestroyed()) save({ bounds: win.getBounds() }); }, 300); };
   win.on('move', remember);
   win.on('resize', remember);
-  win.on('closed', () => { win = null; save({ open: false }); tellAll(); console.log('[Lyrics] Floating lyrics closed'); });
+  win.on('closed', () => { win = null; if (!quitting) save({ open: false }); tellAll(); console.log('[Lyrics] Floating lyrics closed'); });
   win.once('ready-to-show', () => {
     win.showInactive(); // never takes the focus from what you are doing
     if (locked) win.setIgnoreMouseEvents(true, { forward: true });

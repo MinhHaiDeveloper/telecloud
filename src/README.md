@@ -102,6 +102,7 @@ scripts/release.js   build one channel into beta/ or release/
 | `watcher.js` | Native folder watching, followed by a normal refresh |
 | `updater.js` | Update checks and installation |
 | `logger.js`, `logExport.js` | Log files and the log export |
+| `dataPort.js` | Settings > Library > Your data: export and import of history, playlists, favourites and settings |
 | `credentialManager.js` | Encrypting Telegram credentials with Windows DPAPI |
 
 ### TeleCloud (`electron/telecloud/`)
@@ -372,6 +373,14 @@ Each listen carries MusicBrainz IDs only when they are sure: the file's own tags
 
 When adding a log line, don't log credentials, captions or track names. Paths are fine, because the export hides them.
 
+### Your data (export and import)
+
+`dataPort.js` writes one .zip of plain files: `history.json` (every play, with the track's identity), `history-listenbrainz.json`, `playlists.json` and one `.m3u8` per playlist, `favourites.json`, `library.csv`, `manifest.json` (`format: 'telecloud-data'`), and with "Include settings" `settings.json` (settings without this computer's folders and devices, EQ, Sound, the sources' options without keys, and the page's look from `localStorage`). Never in it: the music, keys, sign-ins, caches.
+
+- **Identity.** Each track carries title, artist, album, length, `cloud_checksum`, MusicBrainz recording, file name, size and path. `matcher()` tries in that order: same path with the same title, checksum, MusicBrainz id, then title and length within 2 s with the album or one artist in common (tags read on two computers differ, "A" against "A, B"), then file name and size.
+- **Import adds, never replaces.** A play already here (same time, title, artist) is skipped; imported plays are marked sent to Last.fm and ListenBrainz. A playlist whose name is taken comes in as "Name (imported)"; each keeps `importedFrom`, so the same export imported twice adds nothing. Settings are applied only when chosen, and keep this computer's folders.
+- **Tracks not here yet.** Their plays keep the path `imported:<other computer's path>` and still count in Stats; their playlist places and favourites wait in `data-pending.json`. `resolvePending()` runs after every library scan, after a restore from TeleCloud and at start: it moves those plays and puts the tracks in their playlists (in their places) and favourites.
+
 ## Data on disk
 
 Everything is in `%APPDATA%\telecloud`.
@@ -383,6 +392,8 @@ Everything is in `%APPDATA%\telecloud`.
 | `lyrics-settings.json`, `cover-settings.json`, `discord-settings.json`, `artist-picture-settings.json`, `floating-lyrics.json` | Options of each feature |
 | `playlists.json`, `favorites.json`, `recent.json` | Playlists (smart ones keep their rules, `smart: { match, rules, sort, limit }`), favourites, recently played |
 | `eq.json` | EQ, per output when that option is on |
+| `sound.json` | Settings > Sound (tone, space, effects, correction, headroom) |
+| `data-pending.json` | Tracks an import is waiting for (Your data) |
 | `waveforms/` | Waveform seek bar data, by path, size and date |
 | `models/cadence/` | Cadence's model packs as downloaded (`w2v-en-int8.onnx`, `w2v-ja-int8.onnx`, `htdemucs-vocals.onnx`, vocabularies, licences), `installed.json`; a download in progress is `<file>.part` |
 | `media-controls/` | The last few covers handed to the Windows media controls |

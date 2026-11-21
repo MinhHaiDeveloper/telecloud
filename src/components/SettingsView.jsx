@@ -8,6 +8,7 @@ import ArtistPictureSettings from './ArtistPictureSettings';
 import DiscordSettings from './DiscordSettings';
 import { WhatsNewSection } from './WhatsNew';
 import LogsSettings from './LogsSettings';
+import DataSettings from './DataSettings';
 import LastfmSettings from './LastfmSettings';
 import ListenBrainzSettings from './ListenBrainzSettings';
 import UpdateStatus from './UpdateStatus';
@@ -426,6 +427,7 @@ const SettingsView = ({
               </div>
             </section>
             <DuplicatesSettings />
+            <DataSettings />
           </>
         );
 

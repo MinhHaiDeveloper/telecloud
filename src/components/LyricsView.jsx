@@ -6,6 +6,13 @@ import { t } from '../i18n';
 // LRC, Enhanced LRC (a time per word) and TTML are read in utils/lyrics.js
 export { parseLyrics };
 
+// the clock between the player's reports: a report a little behind what is shown (it is rounded to 0.1 s
+// and a moment old when it arrives) never pulls the fill back; the difference melts away instead, the fill
+// running at least a quarter of its speed meanwhile. A bigger difference is a seek and is followed at once.
+const JUMP = 0.45;   // s: more than this apart, the report is taken as it is (so a melt never outlasts the 0.6 s carry)
+const MIN_MELT = 0.35; // s: the shortest time a difference takes to melt away
+const clockAt = (c, ms) => c.t + Math.min(0.6, (ms - c.at) / 1000) + (c.drift ? c.drift * Math.max(0, 1 - (ms - c.at) / 1000 / c.melt) : 0);
+
 /**
  * The line being sung, word by word: each word fills from left to right over its own time. The player
  * reports the position a few times a second; in between it is carried on every frame here (at most
@@ -13,7 +20,7 @@ export { parseLyrics };
  */
 export const WordLine = ({ line, nextTime, currentTime, playing = true, className = 'words' }) => {
   const box = useRef(null);
-  const clock = useRef({ t: currentTime, at: performance.now() });
+  const clock = useRef({ t: currentTime, at: performance.now(), drift: 0, melt: MIN_MELT });
   // the word spans and what each shows now: found once per line, written only when a value changes, so a
   // frame usually touches the one word being sung instead of every word of the line
   const spans = useRef({ line: null, list: [], shown: [] });
@@ -25,14 +32,22 @@ export const WordLine = ({ line, nextTime, currentTime, playing = true, classNam
       sp.line = line; sp.list = [...el.querySelectorAll(':scope > .w')]; sp.shown = [];
     }
     const c = clock.current;
-    const now = playing ? c.t + Math.min(0.6, (performance.now() - c.at) / 1000) : c.t;
+    const now = playing ? clockAt(c, performance.now()) : c.t;
     sp.list.forEach((span, i) => {
       const a = line.words[i].time, b = wordEnd(line, i, nextTime);
       const p = (now <= a ? 0 : now >= b ? 1 : (now - a) / (b - a)).toFixed(3);
       if (sp.shown[i] !== p) { sp.shown[i] = p; span.style.setProperty('--p', p); }
     });
   };
-  useEffect(() => { clock.current = { t: currentTime, at: performance.now() }; paint(); }, [currentTime]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const ms = performance.now();
+    const shown = playing ? clockAt(clock.current, ms) : clock.current.t;
+    const drift = shown - currentTime;
+    clock.current = playing && Math.abs(drift) <= JUMP
+      ? { t: currentTime, at: ms, drift, melt: Math.max(MIN_MELT, Math.abs(drift) / 0.75) }
+      : { t: currentTime, at: ms, drift: 0, melt: MIN_MELT };
+    paint();
+  }, [currentTime]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!playing) { paint(); return undefined; }
     let id = 0;

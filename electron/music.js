@@ -252,6 +252,7 @@ const sendToUi = (ch, payload) => {
 let rerunRequested = false;
 const afterSync = () => {
   syncInFlight = null;
+  require('./dataPort').scheduleResolve(); // tracks an import was waiting for may be here now
   if (rerunRequested) {
     rerunRequested = false;
     backgroundRefresh();
@@ -366,8 +367,9 @@ const storePaths = {
   recent: path.join(app.getPath('userData'), 'recent.json'),
   settings: path.join(app.getPath('userData'), 'settings.json'),
   eq: path.join(app.getPath('userData'), 'eq.json'),
+  sound: path.join(app.getPath('userData'), 'sound.json'),
 };
-const OBJECT_STORES = new Set(['settings', 'eq']);
+const OBJECT_STORES = new Set(['settings', 'eq', 'sound']);
 
 ipcMain.handle('load-store', async (event, storeName) => {
   try {
@@ -393,7 +395,7 @@ ipcMain.handle('save-store', async (event, storeName, data) => {
       if (data.downloadFolder !== undefined && !(typeof data.downloadFolder === 'string' && path.isAbsolute(data.downloadFolder))) {
         delete data.downloadFolder;
       }
-    } else if (storeName === 'eq') {
+    } else if (OBJECT_STORES.has(storeName)) {
       if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
     } else if (!Array.isArray(data)) {
       return false;
