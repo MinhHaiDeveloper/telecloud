@@ -9,7 +9,7 @@ export const SOUND_DEFAULTS = {
   warmth: 0, bass: 0, treble: 0, loudness: false,
   width: 100, channels: 'normal', polarity: 'normal',
   night: 'off', air: 0, tube: 0,
-  correction: null, // { name, kind, rate, taps, points: [[f, dB]] }
+  correction: null, // { name, kind, rate, taps, channels, points: [[f, dB]], irId, irGain, mode: 'response' | 'full' }
   autoHeadroom: true,
 };
 
@@ -88,7 +88,7 @@ export default function useSound(eq) {
     if (!loaded) return undefined;
     const payload = {
       ...sound,
-      ir: sound.correction ? { points: sound.correction.points } : null,
+      ir: sound.correction ? { points: sound.correction.points, full: sound.correction.mode === 'full' && sound.correction.irId ? { id: sound.correction.irId, gain: sound.correction.irGain || 0, rate: sound.correction.rate } : null } : null,
       guard: curve.guard,
       // the original, as loud as the processed sound: louder always sounds better, so they must match
       bypass: ab ? { gain: Number(curve.loudness.toFixed(2)) } : null,
@@ -116,7 +116,7 @@ export function soundSummary(s, { guard = 0, ab = false, exclusive = false } = {
   if (s.bass) out.push(t('Bass {value}{bass} dB', { value: s.bass > 0 ? '+' : '', bass: s.bass }));
   if (s.treble) out.push(t('Treble {value}{treble} dB', { value: s.treble > 0 ? '+' : '', treble: s.treble }));
   if (s.loudness && !exclusive) out.push(t('Loudness'));
-  if (s.correction) out.push(t('Correction'));
+  if (s.correction) out.push(s.correction.mode === 'full' && s.correction.irId ? t('Correction (convolution)') : t('Correction'));
   if (s.width !== 100) out.push(t('Width {width}%', { width: s.width }));
   if (s.channels === 'mono') out.push(t('Mono'));
   if (s.channels === 'swap') out.push('L/R swapped');

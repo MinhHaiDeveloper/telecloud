@@ -2,6 +2,15 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.1.0-beta.16',
+    items: [
+      `Quality check, in a track's menu (it replaces Check spectrum): a clear verdict with how sure it is, and every clue on its own line, open for why it matters. Where the music stops, a CD-rate edge in a hi-res file, spectral holes, highs that fall to mono, bit depth, clipping and dynamic range, with the spectrogram, a strip that marks the holes and the average spectrum of the mid and the side. When the clues disagree it says Inconclusive instead of guessing.`,
+      `AutoEQ can make one headphone sound like another: Target sound > Another headphone, for example a HiFiMAN HE400se like a Sennheiser HE 1. Either headphone can come from a file such as a Squiglink export; pick its left and right files together and their average is used. A note shows when two measurements come from different rigs.`,
+      `Room or headphone correction can play a WAV impulse response in full: its timing, phase and a response for each channel, by convolution (Settings > Sound > How to play the impulse response). Frequency response only stays the default.`,
+      `Crossfade no longer fades into the next track of the same album, which plays gapless as it was made, nor into the same track under repeat one. The signal path says when it is skipped and why.`,
+    ],
+  },
+  {
     version: '1.1.0-beta.15',
     items: [
       'Your data, in Settings > Library: export your listening history, playlists, favourites and a list of the library to one .zip of plain files (JSON, M3U8 for other players, CSV, and the history in the ListenBrainz format too), with your settings if you like. Music files, keys and sign-ins are never in it.',

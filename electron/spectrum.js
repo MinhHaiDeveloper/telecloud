@@ -40,9 +40,11 @@ ipcMain.handle('analysis:spectrum', async (event, filePath) => {
     const verdict = judge({
       ext, codec: meta.codec, lossless: meta.lossless, declaredBits: meta.bits,
       rate: spec.sampleRate, cutoffHz: spec.cutoffHz, sharp: spec.sharp, effectiveBits, peakDb: spec.peakDb,
+      holes: spec.holes, monoHighs: spec.monoHighs, edge: spec.edge, clipped: spec.clipped, dr: spec.dr,
     });
+    console.log(`[Quality] ${path.basename(filePath)}: ${verdict.id} (${verdict.confidence}) · ${verdict.evidence.map(e => `${e.id} ${e.status}`).join(', ')}`);
 
-    const result = { ...spec, effectiveBits, declaredBits: meta.bits || null, verdict };
+    const result = { ...spec, effectiveBits, declaredBits: meta.bits || null, codec: meta.codec || null, verdict };
     if (cache.size > 30) cache.delete(cache.keys().next().value);
     cache.set(key, result);
     return { success: true, ...result };

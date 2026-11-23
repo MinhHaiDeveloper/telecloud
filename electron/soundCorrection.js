@@ -1,8 +1,11 @@
 // Settings > Sound > Correction: a room or headphone correction from a file. A WAV impulse response
 // (as REW, Dirac or an HRTF tool exports it) becomes its frequency response; a text file of
 // "frequency gain" lines is taken as it is. The curve is then played as a linear-phase FIR.
+// A WAV can also be played as it is ("Full impulse response"): its timing and phase, and one response per
+// channel, by convolution (ffmpeg's afir). A copy is kept in userData/corrections, named by its contents.
 
-const { ipcMain, dialog, BrowserWindow } = require('electron');
+const { ipcMain, dialog, BrowserWindow, app } = require('electron');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { tx } = require('./i18n');
@@ -10,7 +13,7 @@ const { tx } = require('./i18n');
 const POINTS = 160;
 const MAX_TAPS = 1 << 17;
 
-/** A WAV file's samples, all channels averaged: { rate, samples } */
+/** A WAV file's samples, all channels averaged: { rate, samples, channels } */
 function readWav(buf) {
   if (buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') throw new Error(tx('That is not a WAV file'));
   let off = 12, fmt = null, data = null;
@@ -47,7 +50,7 @@ function readWav(buf) {
     for (let c = 0; c < channels; c++) sum += read((i * channels + c) * bytes);
     samples[i] = sum / channels;
   }
-  return { rate, samples };
+  return { rate, samples, channels };
 }
 
 function fft(re, im) {
@@ -75,10 +78,15 @@ function fft(re, im) {
 /** Log-spaced frequencies from 20 Hz to the top the file can describe */
 const grid = (top) => Array.from({ length: POINTS }, (_, i) => 20 * Math.pow(Math.min(20000, top) / 20, i / (POINTS - 1)));
 
+/** The middle's level (200 Hz to 5 kHz), in dB */
+function midLevel(points) {
+  const mid = points.filter(([f]) => f >= 200 && f <= 5000);
+  return mid.length ? mid.reduce((a, [, g]) => a + g, 0) / mid.length : 0;
+}
+
 /** Level so the middle (200 Hz to 5 kHz) sits at 0 dB: the file's own loudness doesn't matter */
 function centred(points) {
-  const mid = points.filter(([f]) => f >= 200 && f <= 5000);
-  const mean = mid.length ? mid.reduce((a, [, g]) => a + g, 0) / mid.length : 0;
+  const mean = midLevel(points);
   return points.map(([f, g]) => [Number(f.toFixed(1)), Number(Math.max(-30, Math.min(30, g - mean)).toFixed(2))]);
 }
 
@@ -98,7 +106,7 @@ function responseOfIr({ rate, samples }) {
     for (let k = lo; k <= hi; k++) pow += mag(k) ** 2;
     return [f, 10 * Math.log10(pow / (hi - lo + 1) || 1e-12)];
   });
-  return centred(points);
+  return Object.assign(centred(points), { mid: midLevel(points) });
 }
 
 /** "frequency gain" lines (REW, Squiglink, CSV) */
@@ -120,20 +128,41 @@ function responseOfText(text) {
   return centred(grid(20000).map(f => [f, at(f)]));
 }
 
+const correctionsDir = () => path.join(app.getPath('userData'), 'corrections');
+/** The kept copy of an impulse response, by its id (the SHA-1 of the file); null when there is none */
+function irPath(id) {
+  if (!/^[0-9a-f]{40}$/.test(String(id || ''))) return null;
+  const p = path.join(correctionsDir(), `${id}.wav`);
+  return fs.existsSync(p) ? p : null;
+}
+
 function load(file) {
   const ext = path.extname(file).toLowerCase();
   const buf = fs.readFileSync(file);
   if (buf.length > 64 * 1024 * 1024) throw new Error(tx('That file is too large'));
   if (ext === '.wav') {
     const wav = readWav(buf);
-    return { name: path.basename(file), kind: 'ir', rate: wav.rate, taps: wav.samples.length, points: responseOfIr(wav) };
+    const points = responseOfIr(wav);
+    // kept for "Full impulse response": one or two channels (one per side) can be played as they are
+    let irId = null;
+    if (wav.channels <= 2) {
+      irId = crypto.createHash('sha1').update(buf).digest('hex');
+      fs.mkdirSync(correctionsDir(), { recursive: true });
+      const keep = path.join(correctionsDir(), `${irId}.wav`);
+      if (!fs.existsSync(keep)) fs.writeFileSync(keep, buf);
+    }
+    return {
+      name: path.basename(file), kind: 'ir', rate: wav.rate, taps: wav.samples.length, channels: wav.channels, points: [...points],
+      irId, irGain: Number((-points.mid).toFixed(2)), // brings the middle to 0 dB, as the frequency-response way does
+    };
   }
   return { name: path.basename(file), kind: 'curve', points: responseOfText(buf.toString('utf8')) };
 }
 
-ipcMain.handle('sound:load-correction', async (event) => {
+ipcMain.handle('sound:load-correction', async (event, testFile) => {
   const win = BrowserWindow.fromWebContents(event.sender);
-  const r = await dialog.showOpenDialog(win, {
+  // tests of a dev build name the file; the app itself always asks
+  const r = !app.isPackaged && typeof testFile === 'string' ? { filePaths: [testFile] } : await dialog.showOpenDialog(win, {
     title: tx('Room or headphone correction'),
     properties: ['openFile'],
     filters: [{ name: tx('Impulse response or curve'), extensions: ['wav', 'txt', 'csv'] }],
@@ -141,7 +170,7 @@ ipcMain.handle('sound:load-correction', async (event) => {
   if (r.canceled || !r.filePaths[0]) return null;
   try {
     const out = load(r.filePaths[0]);
-    console.log(`[Sound] Correction loaded: ${out.kind === 'ir' ? `impulse response, ${out.taps} taps at ${out.rate} Hz` : 'curve'}`);
+    console.log(`[Sound] Correction loaded: ${out.kind === 'ir' ? `impulse response, ${out.taps} taps at ${out.rate} Hz, ${out.channels} ch${out.irId ? '' : ' (more than two channels: frequency response only)'}` : 'curve'}`);
     return out;
   } catch (err) {
     console.error('[Sound] Correction refused:', err.message);
@@ -149,4 +178,4 @@ ipcMain.handle('sound:load-correction', async (event) => {
   }
 });
 
-module.exports = { load, readWav, responseOfIr, responseOfText };
+module.exports = { load, readWav, responseOfIr, responseOfText, irPath };

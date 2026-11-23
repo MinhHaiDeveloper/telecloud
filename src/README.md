@@ -69,7 +69,7 @@ scripts/release.js   build one channel into beta/ or release/
 | `fileWrite.js` | Plain-language write errors, writing to read-only files on request |
 | `player.js` | mpv over JSON IPC, filter chain, crossfade, output devices, DSD plan, exclusive buffer, releasing the DAC while paused |
 | `soundChain.js` | Settings > Sound (tone, space, effects, A/B, clip meter) as mpv filters; pure functions |
-| `soundCorrection.js` | Room or headphone correction from a WAV impulse response or a frequency/gain text file |
+| `soundCorrection.js` | Room or headphone correction from a WAV impulse response or a frequency/gain text file; a WAV of one or two channels can also play in full (a kept copy in `corrections/`, convolution with `afir`) |
 | `liveSpectrum.js` | The EQ page's live spectrum and Now Playing's VU meters: a second, silent mpv through the same filters (mono FFT, or stereo RMS and peak) |
 | `waveform.js` | The waveform seek bar: a track's loudness, worked out once with mpv and kept |
 | `dsd.js` | Reading DSF/DFF and packing DoP |
@@ -97,8 +97,8 @@ scripts/release.js   build one channel into beta/ or release/
 | `listenbrainz.js` | ListenBrainz listens from the play history, MusicBrainz IDs for each track |
 | `discord.js` | Discord status over its local pipe |
 | `remote.js` | TeleCloud Remote: the local web server other devices control the app through |
-| `autoeq.js` | Headphone measurements and target curves |
-| `spectrum.js`, `spectrumCore.js` | Spectrogram and lossless check |
+| `autoeq.js` | Headphone measurements and target curves (a target can also be another headphone: Target sound > Another headphone, from the list or from files; several files of one headphone, such as Squiglink's L and R, are averaged in `averageCurves`; a note shows when two listed measurements come from different rigs) |
+| `spectrum.js`, `spectrumCore.js` | Quality check: spectrogram, the evidence and the verdict |
 | `watcher.js` | Native folder watching, followed by a normal refresh |
 | `updater.js` | Update checks and installation |
 | `logger.js`, `logExport.js` | Log files and the log export |
@@ -184,7 +184,7 @@ The filter chain is built in `chainSpec`, in this order, and each part is there 
 | `@stereo` | `aformat=channel_layouts=stereo` | Balance or crossfeed |
 | `@bal` | `pan`, the quieter side multiplied down | Channel balance |
 | `@xfeed` | `bs2b` (`jmeier`, `cmoy`, `default`) | Headphone crossfeed |
-| `@xf` | `volume`, ramped for a crossfade | Crossfade |
+| `@xf` | `volume`, ramped for a crossfade | Crossfade (skipped into the next track of the same album and under repeat-one; `player:crossfade` tells the signal path why) |
 | `@fmt` | `aformat` | Output limit |
 
 ReplayGain is mpv's own option, not a filter. `dspWhy` names the first of EQ, balance or crossfeed that is on: native DSD and DoP need none of them, so they fall back to PCM with that reason.
@@ -197,7 +197,7 @@ Extra copies of a track are removed from the queue when playback starts, in `pla
 
 **ReplayGain Auto.** The renderer decides: album gain when shuffle is off and a neighbour in the queue belongs to the same album, otherwise track gain. It tells `player.js` through `player:replaygain-auto`.
 
-**Settings > Sound.** `soundChain.js` turns tone, space and effects into mpv filters after the EQ, and `soundCorrection.js` turns an impulse response into a filter. Prevent clipping takes the biggest boost off before the filters (`guard`); the chain runs in float, and the clip meter (`@meter`, mpv's `astats` peak, read a few times a second) makes the signal path light blink. A/B swaps the chain for a plain `volume` at the same loudness.
+**Settings > Sound.** `soundChain.js` turns tone, space and effects into mpv filters after the EQ, and `soundCorrection.js` turns an impulse response into a filter: its frequency response (`firequalizer`, the same for both channels), or with "Full impulse response" the file itself (`amovie` of the kept copy, `aresample` to the track's rate, `afir` with one response per channel, then the level the frequency-response way has). The renderer names the copy by id only; `player.js` watches `audio-params` and makes the convolution again when a track at another rate starts. Prevent clipping takes the biggest boost off before the filters (`guard`); the chain runs in float, and the clip meter (`@meter`, mpv's `astats` peak, read a few times a second) makes the signal path light blink. A/B swaps the chain for a plain `volume` at the same loudness.
 
 **Exclusive mode buffer.** `wasapi-exclusive-buffer` takes microseconds: 20 to 200 ms, `min` or `default` (the device's own). mpv's own `audio-buffer` is kept at four times the device buffer, at least 200 ms; the same size on both crackled on some USB DACs. A change reloads the output (`ao-reload`) at once when playing exclusive.
 
@@ -451,6 +451,12 @@ npx electron-builder --win --publish never "-c.directories.output=C:\some\other\
 
 Then copy the installer, its `.blockmap` and `latest.yml` to the `beta/` folder yourself.
 
+### Quality check
+
+The track menu's **Quality check** (`SpectrumModal.jsx`) asks `analysis:spectrum`. `spectrumCore.analyze` decodes the file as stereo and runs an FFT over 900 slices of the mid (the spectrogram) and the side. From that: the cutoff and whether it is a wall; an edge at 20 to 24.5 kHz in a hi-res file (made from 44.1 or 48 kHz); spectral holes (in a loud moment, a 500 Hz band above 8 kHz far below the rest, where an encoder dropped it); how often the highs (12 to 16 kHz) fall to mono; clipping (two samples in a row at full scale); DR as DR meters count it. `judge` turns these into a verdict id (genuine, genuine-padded, rolloff, transcoded, upsampled, upsampled-lossy, lossy-format, inconclusive), a confidence and the evidence, ids and numbers only: the window words them. Inconclusive is used when there are signs of lossy encoding without a wall.
+
+Checked on known files (`scratchpad` set made with mpv's own encoders): MP3 128/192/320 and AAC 256 turned back into FLAC are all "transcoded", a CD file upsampled to 96 kHz is "upsampled", 16-bit padded to 24 shows in the bit depth, and the originals (CD, 24/48, 24/88.2) give no false alarm.
+
 ### Releasing
 
 1. Set the new version in `package.json`, and add its notes at the top of `RELEASES` in `src/utils/whatsNew.js`.
@@ -460,7 +466,9 @@ Then copy the installer, its `.blockmap` and `latest.yml` to the `beta/` folder 
 
 Beta installs also receive pre-releases; stable installs only receive releases.
 
-`npm run build:beta` makes **TeleCloud Beta**: its own name, a teal-to-violet icon (`public/icon-beta.*`), `TeleCloud-Beta-Setup-<version>.exe`, and a Beta tag in the app and on remotes (any version with a `-`). It has the same app id as TeleCloud, so installing one replaces the other, and both keep the one library in `%APPDATA%	elecloud`. Stable releases come from their own branch (`release/1.0` for 1.0.x); betas from `main`, numbered above the last release (1.1.0-beta.N after 1.0.0).
+`scripts/release.js` runs `scripts/check-release.mjs` on what it just packed and files nothing if it fails: git must not track `.env`, key files, logs or databases, no key's value may appear in a tracked file, and the installer must not hold `.env`, logs, databases, the plans or test leftovers (the app's own `*-key.json` are packed on purpose and listed). `npm run check:release` runs it alone. `npm run test:bitperfect` plays noise at 16/44.1, 24/96 and 24/192 through mpv as TeleCloud plays it with nothing on, and compares every sample with what went in.
+
+`npm run build:beta` makes **TeleCloud Beta**: its own name, a teal-to-violet icon (`public/icon-beta.*`), `TeleCloud-Beta-Setup-<version>.exe`, and a Beta tag in the app and on remotes (any version with a `-`). It has the same app id as TeleCloud, so installing one replaces the other, and both keep the one library in `%APPDATA%\telecloud`. Stable releases come from their own branch (`release/1.0` for 1.0.x); betas from `main`, numbered above the last release (1.1.0-beta.N after 1.0.0).
 
 ## Testing hooks
 

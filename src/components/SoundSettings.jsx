@@ -56,7 +56,7 @@ const SoundSettings = () => {
     try {
       const r = await window.ipcRenderer.invoke('sound:load-correction');
       if (r?.error) alertDialog({ title: t('Could not use that file'), message: r.error, tone: 'warn' });
-      else if (r?.points) set({ correction: { name: r.name, kind: r.kind, rate: r.rate || null, taps: r.taps || null, points: r.points } });
+      else if (r?.points) set({ correction: { name: r.name, kind: r.kind, rate: r.rate || null, taps: r.taps || null, channels: r.channels || null, points: r.points, irId: r.irId || null, irGain: r.irGain || 0, mode: s.correction?.mode === 'full' && r.irId ? 'full' : 'response' } });
     } finally { setLoading(false); }
   };
 
@@ -139,12 +139,22 @@ const SoundSettings = () => {
         <div className="card set-card">
           <SettingRow icon="upload" title={s.correction ? s.correction.name : t('Correction from a file')}
             desc={s.correction
-              ? t('{value}, played as its frequency response.', { value: s.correction.kind === 'ir' ? t('Impulse response, {taps} samples at {rate} Hz', { taps: s.correction.taps?.toLocaleString(), rate: s.correction.rate?.toLocaleString() }) : t('Frequency curve') })
+              ? (s.correction.mode === 'full' ? t('{value}, played as it is: its timing and phase, one response per channel.', { value: t('Impulse response, {taps} samples at {rate} Hz', { taps: s.correction.taps?.toLocaleString(), rate: s.correction.rate?.toLocaleString() }) })
+                : t('{value}, played as its frequency response.', { value: s.correction.kind === 'ir' ? t('Impulse response, {taps} samples at {rate} Hz', { taps: s.correction.taps?.toLocaleString(), rate: s.correction.rate?.toLocaleString() }) : t('Frequency curve') }))
               : t('An impulse response (WAV) from REW, Dirac or a headphone tool, or a text file of frequency and gain. Its frequency response is applied; the level of the middle stays where it is.')}>
             {s.correction && <CurvePreview points={s.correction.points} />}
             {s.correction && <button className="btn-ghost" onClick={() => set({ correction: null })}>{t('Remove')}</button>}
             <button className="btn-ghost" onClick={loadCorrection} disabled={loading}><Icon name="folder" />{s.correction ? t('Change') : t('Load file')}</button>
           </SettingRow>
+          {s.correction?.kind === 'ir' && (
+            <SettingRow icon="spectrum" title={t('How to play the impulse response')}
+              desc={s.correction.irId
+                ? t('Frequency response only: the tonal balance, the same for both channels. Full impulse response: the file itself by convolution, with its timing, phase and a response for each channel, as REW or Dirac made it. Full uses more processing.')
+                : t('This file has more than two channels, so only its frequency response can be used.')}>
+              <Segmented size="sm" value={s.correction.irId ? s.correction.mode || 'response' : 'response'} onChange={(mode) => s.correction.irId && set({ correction: { ...s.correction, mode } })}
+                options={[{ value: 'response', label: t('Frequency response only') }, { value: 'full', label: t('Full impulse response') }]} />
+            </SettingRow>
+          )}
         </div>
       </section>
 

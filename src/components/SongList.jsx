@@ -412,7 +412,7 @@ const SongList = ({
           <div className="menu-sep" />
           <button className="menu-item" onClick={() => act(onToggleFavorite)}><Icon name="heart" />{favSet.has(menuFile.path) ? t('Remove favourite') : t('Add to favourites')}</button>
           {onAddPlaylist && <button className="menu-item" onClick={() => act(onAddPlaylist)}><Icon name="playlist" />{t('Add to playlist')}</button>}
-          {onCheckSpectrum && <button className="menu-item" onClick={() => act(onCheckSpectrum)}><Icon name="spectrum" />{t('Check spectrum')}</button>}
+          {onCheckSpectrum && <button className="menu-item" onClick={() => act(onCheckSpectrum)}><Icon name="spectrum" />{t('Quality check')}</button>}
           {onBackupTo && <button className="menu-item" onClick={() => act(onBackupTo)}><Icon name="cloud" />{menuFile.telegram_message_id ? t('In {value} · move…', { value: storageNames?.get(String(menuFile.telegram_channel_id)) || 'TeleCloud' }) : t('Back up to…')}</button>}
           {ctx.onEditInfo && <button className="menu-item" onClick={() => { const f = menuFile; setMenu(null); ctx.onEditInfo([f]); }}><Icon name="music" />{t('Edit info…')}</button>}
           {ctx.onEditLyrics && <button className="menu-item" onClick={() => act(ctx.onEditLyrics)}><Icon name="lyrics" />{t('Lyrics…')}</button>}

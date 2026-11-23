@@ -5,7 +5,7 @@ import Icon from './Icon';
 import { Toggle, Segmented, Select, Callout, Dialog, BackButton, MoreMenu, alertDialog } from './ui';
 import {
   parseGraphicCurve, fitCurve, formatAudacityText,
-  DEFAULT_Q, MAX_BANDS, GAIN_LIMIT, flatBands, autoEq, autoPreamp, parseEqText, formatEqText, parseCurveText,
+  DEFAULT_Q, MAX_BANDS, GAIN_LIMIT, flatBands, autoEq, autoPreamp, parseEqText, formatEqText, parseCurveText, averageCurves, curveName,
 } from '../utils/autoEqMath';
 import { AUTOEQ_DEFAULTS } from '../hooks/useEq';
 import { ipcOn, ipcOff } from '../utils/ipc';
@@ -74,7 +74,7 @@ const BandRow = memo(({ band, idx, selected, onSelect, onEdit, onRemove, canRemo
 });
 
 /** Headphone search over the AutoEq index (bundled), loading the measurement on pick */
-const HeadphonePicker = ({ value, onPick, onClear }) => {
+const HeadphonePicker = ({ value, onPick, onClear, placeholder, icon = 'speaker' }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
@@ -110,8 +110,8 @@ const HeadphonePicker = ({ value, onPick, onClear }) => {
   if (value) {
     return (
       <div className="hp-chip">
-        <Icon name="speaker" />
-        <div className="t"><b>{value.name}</b><span>{value.source}{value.rig ? ` · ${value.rig}` : ''}{value.kind ? ` · ${value.kind}` : ''}</span></div>
+        <Icon name={icon} />
+        <div className="t"><b>{value.name}</b><span>{value.note || value.source}{value.rig ? ` · ${value.rig}` : ''}{value.kind ? ` · ${value.kind}` : ''}</span></div>
         <button className="icon-btn sm" onClick={onClear} title={t('Choose another')}><Icon name="close" /></button>
       </div>
     );
@@ -120,7 +120,7 @@ const HeadphonePicker = ({ value, onPick, onClear }) => {
     <div className="hp-search" ref={boxRef}>
       <Icon name={loading ? 'refresh' : 'search'} className={loading ? 'spinning' : ''} />
       <input
-        className="input" placeholder={t('Search 6,800+ headphones and IEMs…')} value={query}
+        className="input" placeholder={placeholder || t('Search 6,800+ headphones and IEMs…')} value={query}
         onChange={e => { setQuery(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
         onKeyDown={e => { if (e.key === 'Enter' && results[0]) pick(results[0]); if (e.key === 'Escape') setOpen(false); }}
       />
@@ -138,6 +138,18 @@ const HeadphonePicker = ({ value, onPick, onClear }) => {
       )}
     </div>
   );
+};
+
+/** Every file picked (an input with multiple), read as text */
+const readTextFiles = (e) => {
+  const files = [...(e.target.files || [])];
+  e.target.value = null;
+  return Promise.all(files.map(file => new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({ name: file.name.replace(/\.[^.]+$/, ''), text: String(reader.result) });
+    reader.onerror = () => resolve(null);
+    reader.readAsText(file);
+  }))).then(list => list.filter(Boolean));
 };
 
 const readTextFile = (e) => new Promise((resolve) => {
@@ -195,6 +207,11 @@ const EqSettingsView = ({ onBack, eq, deviceName }) => {
   const [smoothing, setSmoothing] = useState(() => readPref('tc-eq-smooth', 1 / 12));
   const [targets, setTargets] = useState([]);
   const [targetLoading, setTargetLoading] = useState(false);
+  // the target: a curve (Harman, diffuse field…) or another headphone, to sound like it
+  const [targetMode, setTargetMode] = useState(() => (auto.target?.headphone ? 'headphone' : 'curve'));
+  useEffect(() => { if (auto.target?.headphone) setTargetMode('headphone'); }, [auto.target?.headphone]); // a saved EQ comes in after the page opens
+  const modeRef = useRef(targetMode);
+  modeRef.current = targetMode;
   const [lastFit, setLastFit] = useState(null);
   const [importNote, setImportNote] = useState(null);
   const [showGuide, setShowGuide] = useState(false);
@@ -283,22 +300,33 @@ const EqSettingsView = ({ onBack, eq, deviceName }) => {
     setSelected(null);
   };
 
-  const loadCurveFile = async (e, which) => {
-    const file = await readTextFile(e);
-    if (!file) return;
-    const data = parseCurveText(file.text);
-    if (data.length < 10) {
-      alertDialog({ title: t('Could not read that curve'), message: t('Expected two columns: frequency and level (dB), as exported by Squiglink, REW or AutoEq.'), tone: 'danger' });
+  // one file, or several of the same headphone (left and right, as Squiglink exports them): averaged into one
+  const loadCurveFile = async (e, which, asHeadphone = false) => {
+    const files = await readTextFiles(e);
+    if (!files.length) return;
+    const curves = files.map(f => parseCurveText(f.text));
+    const bad = files.filter((f, i) => !(curves[i].length >= 10)).map(f => f.name);
+    if (bad.length) {
+      alertDialog({ title: t('Could not read that curve'), message: t('{names}: expected two columns, frequency and level (dB), as exported by Squiglink, REW or AutoEq.', { names: bad.join(', ') }), tone: 'danger' });
       return;
     }
-    setAuto(a => ({ ...a, [which]: which === 'measurement' ? { name: file.name, source: 'File', data } : { name: file.name, custom: true, data } }));
+    const data = averageCurves(curves);
+    const name = curveName(files.map(f => f.name));
+    const source = files.length > 1 ? t('File · average of {n}', { n: files.length }) : t('File');
+    setAuto(a => ({
+      ...a,
+      [which]: which === 'measurement' ? { name, source: 'File', note: source, data }
+        : asHeadphone ? { name, headphone: true, source: 'File', note: source, data }
+          : { name, custom: true, data },
+    }));
   };
 
   const pickTarget = async (name) => {
     setTargetLoading(true);
     try {
       const t = await window.ipcRenderer.invoke('autoeq:target', name);
-      setAuto(a => ({ ...a, target: { name: t.name, data: t.data } }));
+      // a curve that arrives after switching to Another headphone is not wanted any more
+      if (modeRef.current === 'curve') setAuto(a => ({ ...a, target: { name: t.name, data: t.data } }));
     } catch (err) {
       alertDialog({ title: t('Could not load that target'), message: t('{message}. Check your internet connection.', { message: err.message }), tone: 'danger' });
     } finally {
@@ -306,9 +334,27 @@ const EqSettingsView = ({ onBack, eq, deviceName }) => {
     }
   };
 
+  // another headphone as the target: the EQ makes the one you listen on sound like it
+  const onPickTargetHeadphone = (m) => setAuto(a => ({ ...a, target: { name: m.name, headphone: true, source: m.source, kind: m.kind, rig: m.rig, data: m.data } }));
+  const switchTargetMode = (mode) => {
+    setTargetMode(mode);
+    modeRef.current = mode;
+    if (mode === 'curve' && auto.target?.headphone) pickTarget(defaultTargetFor(auto.measurement));
+    if (mode === 'headphone' && auto.target && !auto.target.headphone) setAuto(a => ({ ...a, target: null }));
+  };
+  // two measurements only compare well from the same kind of rig
+  const rigNote = useMemo(() => {
+    const m = auto.measurement, tg = auto.target;
+    if (!m || !tg?.headphone || m.source === 'File' || tg.source === 'File') return null;
+    if (m.kind && tg.kind && m.kind !== tg.kind) return t('{a} is {k1} and {b} is {k2}: they fit the ear differently, so take the result as a starting point.', { a: m.name, k1: m.kind, b: tg.name, k2: tg.kind });
+    const rig = (x) => (x.rig || '').trim() || x.source;
+    if (rig(m) !== rig(tg)) return t('Measured on different rigs ({r1} and {r2}): part of the difference is the rigs, not the headphones. Pick the same source for both when you can.', { r1: rig(m), r2: rig(tg) });
+    return null;
+  }, [auto.measurement, auto.target]);
+
   const onPickHeadphone = (m) => {
     setAuto(a => ({ ...a, measurement: m }));
-    if (!auto.target || !auto.target.custom) pickTarget(defaultTargetFor(m));
+    if (!auto.target || (!auto.target.custom && !auto.target.headphone)) pickTarget(defaultTargetFor(m));
   };
 
   const setParam = (k) => (v) => setAuto(a => ({ ...a, params: { ...AUTOEQ_DEFAULTS, ...a.params, [k]: v } }));
@@ -415,22 +461,37 @@ const EqSettingsView = ({ onBack, eq, deviceName }) => {
                   {!auto.measurement && (
                     <label className="btn-ghost pressable" title={t('Measurement file (frequency, dB)')}>
                       <Icon name="folder" />{t('File')}
-                      <input type="file" accept=".txt,.csv" onChange={e => loadCurveFile(e, 'measurement')} hidden />
+                      <input type="file" accept=".txt,.csv" multiple onChange={e => loadCurveFile(e, 'measurement')} hidden />
                     </label>
                   )}
                 </div>
               </div>
               <div className="field">
-                <span className="field-label">{t('Target sound')}</span>
-                <div className="row-gap">
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <Select value={auto.target?.name || ''} onChange={pickTarget} options={targetOptions.length ? targetOptions : [{ value: '', label: t('Loading targets…') }]} icon={targetLoading ? 'refresh' : undefined} width="100%" />
+                <span className="field-label">{t('Target sound')}
+                  <Segmented size="sm" value={targetMode} onChange={switchTargetMode} options={[{ value: 'curve', label: t('Curve') }, { value: 'headphone', label: t('Another headphone') }]} />
+                </span>
+                {targetMode === 'curve' ? (
+                  <div className="row-gap">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <Select value={auto.target?.name || ''} onChange={pickTarget} options={targetOptions.length ? targetOptions : [{ value: '', label: t('Loading targets…') }]} icon={targetLoading ? 'refresh' : undefined} width="100%" />
+                    </div>
+                    <label className="btn-ghost pressable" title={t('Target file (frequency, dB)')}>
+                      <Icon name="folder" />{t('File')}
+                      <input type="file" accept=".txt,.csv" multiple onChange={e => loadCurveFile(e, 'target')} hidden />
+                    </label>
                   </div>
-                  <label className="btn-ghost pressable" title={t('Target file (frequency, dB)')}>
-                    <Icon name="folder" />{t('File')}
-                    <input type="file" accept=".txt,.csv" onChange={e => loadCurveFile(e, 'target')} hidden />
-                  </label>
-                </div>
+                ) : (
+                  <div className="row-gap">
+                    <HeadphonePicker value={auto.target?.headphone ? auto.target : null} onPick={onPickTargetHeadphone} onClear={() => setAuto(a => ({ ...a, target: null }))} icon="headphones" placeholder={t('Search the headphone to sound like…')} />
+                    {!auto.target?.headphone && (
+                      <label className="btn-ghost pressable" title={t('Its measurement as a file (frequency, dB), from Squiglink for example. Pick the left and right files together to use their average.')}>
+                        <Icon name="folder" />{t('File')}
+                        <input type="file" accept=".txt,.csv" multiple onChange={e => loadCurveFile(e, 'target', true)} hidden />
+                      </label>
+                    )}
+                  </div>
+                )}
+                {rigNote && <div className="aeq-note">{rigNote}</div>}
               </div>
               <div className="aeq-params">
                 <label><span>{t('Filters')}</span><NumBox value={params.filters} min={1} max={MAX_BANDS} step={1} digits={0} onCommit={setParam('filters')} /></label>
@@ -501,6 +562,8 @@ const EqSettingsView = ({ onBack, eq, deviceName }) => {
         <ul>
           <li>{t('Search your headphone or IEM (measurements from the AutoEq project), pick a target sound, then Run AutoEQ.')}</li>
           <li>{t('Not listed? Load a measurement file exported from Squiglink or REW.')}</li>
+          <li>{t('Target sound > Another headphone: the EQ makes the headphone you listen on sound like another one, for example a HiFiMAN HE400 like a Sennheiser HE-1. It works best when both were measured on the same rig.')}</li>
+          <li>{t('Either headphone can also come from a file, such as a Squiglink export. Pick its left and right files together and their average is used.')}</li>
           <li>{t('The preamp is set so the EQ can\'t clip.')}</li>
         </ul>
         <h4>{t('Files and history')}</h4>

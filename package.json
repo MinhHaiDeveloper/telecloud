@@ -1,6 +1,6 @@
 {
   "name": "telecloud",
-  "version": "1.1.0-beta.15",
+  "version": "1.1.0-beta.16",
   "description": "Hi-res music player with encrypted, unlimited backup to your own Telegram",
   "main": "electron/main.js",
   "scripts": {
@@ -8,6 +8,8 @@
     "build": "npm run build:asio && npm run build:media && vite build && electron-builder",
     "build:beta": "node scripts/release.js beta",
     "build:release": "node scripts/release.js release",
+    "check:release": "node scripts/check-release.mjs",
+    "test:bitperfect": "node scripts/bitperfect.mjs",
     "clean": "if exist dist rmdir /s /q dist && if exist dist-electron rmdir /s /q dist-electron",
     "build:asio": "native\\asio\\build.cmd",
     "build:media": "native\\media\\build.cmd"

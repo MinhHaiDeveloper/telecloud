@@ -90,6 +90,7 @@ let appliedChain = null;
 // Settings > Sound (tone, space, effects, correction, A/B), checked by soundChain
 const sound = require('./soundChain');
 let soundState = null;
+let inputRate = 48000; // the decoded track's sample rate: a full impulse response is resampled to it
 let softVolume = 100;     // the software volume: loudness follows it, and it gives the clip light room
 let playerPaused = true;
 
@@ -476,6 +477,12 @@ function handleMessage(msg) {
         if (!released) scheduleRelease();
         spectrumF.follow(spectrumF.pos); metersF.follow(metersF.pos);
         send('player:state', { paused: !!msg.data });
+      } else if (msg.name === 'audio-params' && msg.data?.samplerate) {
+        // a new track at another rate: a full impulse response is made again for it
+        if (msg.data.samplerate !== inputRate) {
+          inputRate = msg.data.samplerate;
+          if (soundState?.irFull) scheduleChain();
+        }
       } else if (msg.name === 'audio-out-params' && msg.data) {
         // what really goes to the device: the first thing to look at when a DAC stays silent
         const out = `${msg.data.format} ${msg.data.samplerate} Hz ${msg.data['channel-count']} ch`;
@@ -652,6 +659,7 @@ function startMpv() {
     await command(['observe_property', 3, 'audio-out-params']);
     await command(['observe_property', 4, 'duration']);
     await command(['observe_property', 5, 'audio-device-list']);
+    await command(['observe_property', 6, 'audio-params']);
     appliedChain = null;
     await applyDevice(currentDevice);
     await applyAudioSettingsToMpv();
@@ -724,7 +732,8 @@ function capFilter(s) {
  */
 function chainSpec({ crossfadeSlot = currentAudioSettings.crossfade > 0, extra = '' } = {}) {
   const exclusive = isExclusive();
-  const sf = sound.soundFilters(soundState, { volume: exclusive ? 100 : softVolume, exclusive });
+  const irFile = soundState?.irFull ? require('./soundCorrection').irPath(soundState.irFull.id) : null;
+  const sf = sound.soundFilters(soundState, { volume: exclusive ? 100 : softVolume, exclusive, rate: inputRate, irFile });
   const bypass = !!soundState?.bypass; // A/B: the original, without the EQ and the sound settings
   const eq = bypass ? null : normalizeEq(eqState);
   const bal = currentAudioSettings.balance || 0;
@@ -805,6 +814,8 @@ async function applyChain() {
   }
   if (appliedChain && appliedChain.af === spec.af && !appliedChain.live && !appliedChain.liveSound) return;
   await setProp('af', spec.af);
+  if (/afir=/.test(spec.af) && !/afir=/.test(appliedChain?.af || '')) console.log(`[Sound] Correction by convolution (full impulse response) at ${inputRate} Hz`);
+  else if (/afir=/.test(spec.af) && appliedChain?.af !== spec.af) console.log(`[Sound] Convolution made again for ${inputRate} Hz`);
   appliedChain = spec;
   spectrumF.restart(); metersF.restart();
 }
@@ -956,9 +967,33 @@ async function applyExclusiveBuffer() {
 const XF_LEAD = 0.4; // seconds the tail player gets to open the device
 let xfadeTried = null;
 
+// Some changes of track should not fade: the next track of the same album (gapless, as the album was made: a live
+// set, a concept album) and the same track again under repeat-one. The window's signal path shows why.
+let xfadeSkip = { key: null, reason: null };
+const albumOf = (p) => {
+  const row = p ? require('./database').getFileByPath(p) : null;
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  return row && norm(row.album) ? `${norm(row.album_artist || row.artist)}|${norm(row.album)}` : null;
+};
+function crossfadeSkipReason() {
+  const key = `${currentPath}|${nextPath}`;
+  if (xfadeSkip.key === key) return xfadeSkip.reason;
+  let reason = null;
+  if (currentPath && nextPath === currentPath) reason = 'repeat';
+  else if (currentPath && nextPath) { const a = albumOf(currentPath); if (a && a === albumOf(nextPath)) reason = 'album'; }
+  if (reason !== xfadeSkip.reason) {
+    send('player:crossfade', { skip: reason });
+    if (reason) console.log(`[Player] Crossfade skipped for the next change: ${reason === 'album' ? 'next track of the same album' : 'the same track again'}`);
+  }
+  xfadeSkip = { key, reason };
+  return reason;
+}
+
 function maybeCrossfade(t) {
   const X = currentAudioSettings.crossfade;
-  if (!X || xfade || muted || !nextEntryId || !currentPath || currentDevice !== '-1' || xfadeTried === currentEntryId) return;
+  if (!X || !currentPath) return;
+  if (crossfadeSkipReason() || !nextEntryId) return; // the reason is worked out even at the end of the queue, so it clears
+  if (xfade || muted || currentDevice !== '-1' || xfadeTried === currentEntryId) return;
   if (mqaEntries.has(currentEntryId) || mqaEntries.has(nextEntryId)) return; // a fade would change MQA's bits
   if (!(duration > X * 2 + 1) || t < duration - X - XF_LEAD) return;
   startCrossfade(t, X).catch(err => { console.error('[Player] crossfade failed:', err.message); cancelCrossfade(); });

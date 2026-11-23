@@ -60,6 +60,14 @@ const betaLook = channel === 'beta'
   : '';
 execSync(`npx electron-builder --win --publish never${betaLook}`, { cwd: ROOT, stdio: 'inherit' });
 
+// nothing private in git or in what was just packed (keys, .env, logs, databases, plans, test leftovers)
+try {
+  execSync(`node scripts/check-release.mjs "${path.join(out, 'win-unpacked', 'resources', 'app.asar')}"`, { cwd: ROOT, stdio: 'inherit' });
+} catch {
+  console.error('The release check failed: nothing was filed. Fix the problems above and build again.');
+  process.exit(1);
+}
+
 const name = `${channel === 'beta' ? 'TeleCloud-Beta-Setup' : 'TeleCloud-Setup'}-${version}.exe`;
 if (!fs.existsSync(path.join(out, name))) { console.error('No installer was produced.'); process.exit(1); }
 fs.mkdirSync(target, { recursive: true });

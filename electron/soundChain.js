@@ -35,6 +35,8 @@ function normalizeSound(s) {
     air: Math.round(num(s.air, 0, 100)),
     tube: Math.round(num(s.tube, 0, 100)),
     ir: ir.length >= 2 ? ir : null,
+    // the impulse response itself instead of its frequency response: by id only, never a path from the renderer
+    irFull: s.ir?.full && /^[0-9a-f]{40}$/.test(String(s.ir.full.id || '')) ? { id: s.ir.full.id, gain: Number(num(s.ir.full.gain, -40, 40).toFixed(2)), rate: Math.round(num(s.ir.full.rate, 8000, 768000, 48000)) } : null,
     guard: Number(num(s.guard, -30, 0).toFixed(1)), // dB taken off so the boosts can't clip
     bypass: s.bypass ? { gain: Number(num(s.bypass.gain, -30, 30).toFixed(2)) } : null,
   };
@@ -61,6 +63,19 @@ function channelMatrix(n) {
   if (n.polarity === 'right' || n.polarity === 'both') r = r.map(x => -x);
   const term = (a, b) => [a ? `${a}*c0` : '', b ? `${b}*c1` : ''].filter(Boolean).join('+').replace(/\+-/g, '-');
   return `pan=stereo|c0=${term(...l)}|c1=${term(...r)}`;
+}
+
+// ffmpeg's filter-graph escaping: an option value (\ ' :), then quoted for the graph
+const escOpt = (s) => String(s).replace(/[\\':]/g, (c) => `\\${c}`);
+const graphQuote = (s) => `'${s.replace(/'/g, "'\\''")}'`;
+
+/**
+ * The impulse response itself, by convolution: read from its kept copy, resampled to the track's rate, one
+ * response per channel (a mono one serves both), then brought to the level the frequency-response way has.
+ */
+function convolutionFilter(irFile, rate, gainDb) {
+  const file = graphQuote(escOpt(String(irFile).replace(/\\/g, '/')));
+  return `amovie=filename=${file},aresample=${Math.round(rate)}[ir];[in][ir]afir=irnorm=-1:irgain=1,volume=volume=${gainDb}dB[out]`;
 }
 
 /** Room or headphone correction: the measured curve as a linear-phase FIR */
@@ -102,7 +117,7 @@ function soundSummary(n, opts) {
  * `post` after it. Each filter whose value can move while you drag has its own label, so the drag
  * is sent as af-command instead of a rebuild (which would click). `live` holds those values.
  */
-function soundFilters(n, { volume = 100, exclusive = false } = {}) {
+function soundFilters(n, { volume = 100, exclusive = false, rate = 48000, irFile = null } = {}) {
   const pre = [];
   const post = [];
   const live = {};
@@ -124,7 +139,9 @@ function soundFilters(n, { volume = 100, exclusive = false } = {}) {
     live.loudb = { filter: 'bass', param: 'g', value: String(g.bass) };
     live.loudt = { filter: 'treble', param: 'g', value: String(g.treble) };
   }
-  if (n.ir) post.push(`@corr:lavfi=[${correctionFilter(n.ir)}]`);
+  // resampled to fewer (or more) taps, the response's sum changes with the rates: put the level back
+  if (n.irFull && irFile) post.push(`@corr:lavfi=[${convolutionFilter(irFile, rate, Number((n.irFull.gain + 20 * Math.log10(n.irFull.rate / rate)).toFixed(2)))}]`);
+  else if (n.ir) post.push(`@corr:lavfi=[${correctionFilter(n.ir)}]`);
   // effects
   if (n.tube) post.push(`@tube:lavfi=[aeval=val(ch)+${(n.tube / 250).toFixed(3)}*val(ch)*val(ch):c=same,highpass=f=8]`);
   if (n.air) { post.push(`@air:lavfi=[aexciter=amount=${(n.air / 100).toFixed(2)}:drive=8.5:blend=0:freq=6000]`); live.air = { filter: 'aexciter', param: 'amount', value: (n.air / 100).toFixed(2) }; }
@@ -139,7 +156,7 @@ function soundFilters(n, { volume = 100, exclusive = false } = {}) {
     live.width = { filter: 'extrastereo', param: 'm', value: m };
   }
   // the structure: anything else is a rebuild
-  const key = JSON.stringify([!!n.guard, !!n.warmth, !!n.bass, !!n.treble, n.loudness && !exclusive, n.ir, n.tube, !!n.air, n.night, stereo, n.channels, n.polarity, n.width !== 100]);
+  const key = JSON.stringify([!!n.guard, !!n.warmth, !!n.bass, !!n.treble, n.loudness && !exclusive, n.ir, n.irFull && irFile ? [n.irFull, rate] : null, n.tube, !!n.air, n.night, stereo, n.channels, n.polarity, n.width !== 100]);
   return { pre, post, live, key };
 }
 
@@ -159,4 +176,4 @@ function clips(peakDb, { volume = 100, exclusive = false } = {}) {
   return peakDb > room + 0.05;
 }
 
-module.exports = { normalizeSound, soundFilters, soundActive, soundSummary, loudnessGains, channelMatrix, correctionFilter, clips, volumeDb, FLOAT, METER, METER_KEY, NIGHT };
+module.exports = { normalizeSound, soundFilters, soundActive, soundSummary, loudnessGains, channelMatrix, correctionFilter, convolutionFilter, clips, volumeDb, FLOAT, METER, METER_KEY, NIGHT };

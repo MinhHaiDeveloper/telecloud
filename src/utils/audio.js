@@ -143,7 +143,7 @@ export const mqaOf = (file) => {
   return { studio, rate, cls: studio ? 'b-mqa-studio' : 'b-mqa', label: studio ? t('MQA Studio') : 'MQA', short: `${studio ? 'MQA Studio' : 'MQA'}${rate ? ` ${khz(rate)}` : ''}` };
 };
 
-export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnabled, volume, audioSettings = {}, audioOut = null, stream = null, dsd = null, output = null, sound = null, clipping = false, released = false }) => {
+export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnabled, volume, audioSettings = {}, audioOut = null, stream = null, dsd = null, output = null, sound = null, clipping = false, released = false, crossfadeSkip = null }) => {
   const q = qualityOf(file);
   const exclusive = selectedDevice && selectedDevice !== '-1';
   const chosen = exclusive ? devices.find(d => d.id === selectedDevice) : null;
@@ -208,7 +208,9 @@ export const computeSignalPath = ({ file, selectedDevice, devices = [], eqEnable
     ...(Number(audioSettings.balance) ? [{ label: t('Channel balance'), value: mqaIntact ? SKIPPED : `${bal < 0 ? 'Left' : t('Right')} +${Math.abs(bal).toFixed(1)} dB`, state: bal ? 'warn' : 'off' }] : []),
     ...(audioSettings.crossfeed && audioSettings.crossfeed !== 'off' ? [{ label: t('Headphone crossfeed'), value: mqaIntact ? SKIPPED : xfeed[0].toUpperCase() + xfeed.slice(1), state: xfeed ? 'warn' : 'off' }] : []),
     ...(audioSettings.skipSilence ? [{ label: t('Skip silence'), detail: mqaIntact ? null : t('Silences of 2 s and more shrink to 0.5 s'), value: mqaIntact ? SKIPPED : 'On', state: silence ? 'warn' : 'off' }] : []),
-    ...(crossfade ? [{ label: t('Crossfade'), value: `${audioSettings.crossfade}s`, state: 'warn' }] : []),
+    ...(crossfade ? [crossfadeSkip
+      ? { label: t('Crossfade'), detail: crossfadeSkip === 'album' ? t('Not into the next track: it is the same album, which plays gapless as it was made') : t('Not into the same track again (repeat one)'), value: t('Skipped'), state: 'off' }
+      : { label: t('Crossfade'), value: `${audioSettings.crossfade}s`, state: 'warn' }] : []),
     ...(nativeDsd ? [{ label: t('Native DSD through ASIO'), value: `${(dsd.rate / 1e6).toFixed(4)} MHz`, state: 'ok' }]
       : dop ? [{ label: t('DSD over PCM (DoP)'), detail: dsd?.nativeWhy ? t('Native not used: {nativeWhy}', { nativeWhy: dsd.nativeWhy }) : null, value: `${q.label} in ${khz(dsd.rate)}`, state: 'ok' }]
       : isDsd ? [{ label: t('DSD to PCM'), detail: sentence([dsd?.nativeWhy && t('native not used: {nativeWhy}', { nativeWhy: dsd.nativeWhy }), dsd?.reason].filter(Boolean).join(' · ')) || null, value: outSpec || 'PCM', state: 'warn' }]

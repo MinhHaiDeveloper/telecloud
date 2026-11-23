@@ -221,6 +221,7 @@ const EVENT_CHANNELS = new Set([
     'player:output',
     'player:devices',
     'player:dsd-notice',
+    'player:crossfade',
     'player:restarted',
     'player:state',
     'scan-progress',

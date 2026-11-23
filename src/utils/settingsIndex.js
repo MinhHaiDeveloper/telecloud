@@ -120,6 +120,7 @@ export const SETTINGS = [
   e('eq', 'Air', 'exciter shine', ['sound']),
   e('eq', 'Tube warmth', 'valve harmonics saturation', ['sound']),
   s('eq', 'Room or headphone correction', 'convolution impulse response wav fir', ['sound']),
+  e('eq', 'How to play the impulse response', 'convolution afir full impulse response phase timing frequency response only rew dirac', ['sound']),
   s('eq', 'Headroom and comparing', '', ['sound']),
   e('eq', 'Prevent clipping', 'headroom preamp guard', ['sound', 'bitperfect']),
   e('eq', 'A/B: hear the original', 'compare bypass', ['sound', 'bitperfect']),

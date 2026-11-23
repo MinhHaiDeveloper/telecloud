@@ -119,6 +119,13 @@ function App() {
   const [toastType, setToastType] = useState('success');
   const [playlistModalData, setPlaylistModalData] = useState(null);
   const [spectrumFile, setSpectrumFile] = useState(null);
+  // the player skips the crossfade into the next track of the same album and under repeat-one: why, for the signal path
+  const [crossfadeSkip, setCrossfadeSkip] = useState(null);
+  useEffect(() => {
+    const on = (e, x) => setCrossfadeSkip(x?.skip || null);
+    ipcOn(window.ipcRenderer, 'player:crossfade', on);
+    return () => ipcOff(window.ipcRenderer, 'player:crossfade', on);
+  }, []);
   const [selectedAlbum, setSelectedAlbum] = useState(null);
   const [selectedArtist, setSelectedArtist] = useState(null);
   const [artistTab, setArtistTab] = useState('songs');
@@ -1572,7 +1579,7 @@ function App() {
   const queueFiles = live(playQueue.slice(currentIndex + 1));
   const visibleDevices = devices.filter(d => !disabledDevices.includes(d.deviceId || d.id));
   const signal = computeSignalPath({ stream: stream && currentLive && stream.path === currentLive.path ? stream : null, file: currentLive, selectedDevice, devices: visibleDevices, eqEnabled, volume, audioSettings: { ...audioSettings, autoGain }, audioOut: isPlaying ? audioOut : null, dsd: dsdInfo && currentLive && dsdInfo.path === currentLive.path ? dsdInfo : null, output: outputInfo,
-    sound: (snd.active || snd.ab) ? { ab: snd.ab, summary: soundSummary(snd.sound, { guard: snd.curve.guard, ab: snd.ab, exclusive: selectedDevice !== '-1' }) } : null, clipping: clipping && isPlaying, released: dacReleased && !isPlaying });
+    sound: (snd.active || snd.ab) ? { ab: snd.ab, summary: soundSummary(snd.sound, { guard: snd.curve.guard, ab: snd.ab, exclusive: selectedDevice !== '-1' }) } : null, clipping: clipping && isPlaying, released: dacReleased && !isPlaying, crossfadeSkip });
   signalRef.current = signal;
   const remoteTrack = (f) => remoteTrackOut(f);
   // the lyrics shown here: from the tags, or just found online for this track

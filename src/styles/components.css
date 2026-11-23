@@ -332,6 +332,9 @@ input[type="number"].input::-webkit-inner-spin-button { opacity: .4; }
 .eq-card h3 { font-size: 15px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
 .eq-card h3 .end { margin-left: auto; }
 .eq-card .field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+/* Target sound: its label shares the row with Curve | Another headphone */
+.eq-card .field-label:has(.segmented) { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.aeq-note { font-size: 12px; color: var(--warn, #f5b942); line-height: 1.45; }
 
 .hp-search { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; }
 .hp-search > svg { position: absolute; left: 12px; width: 16px; height: 16px; color: var(--text-3); pointer-events: none; }
@@ -415,7 +418,44 @@ input[type="number"].input::-webkit-inner-spin-button { opacity: .4; }
 .spec-canvas { position: relative; border-radius: 10px; overflow: hidden; background: var(--surface-2); }
 .spec-canvas canvas { width: 100%; height: 100%; display: block; transition: opacity .3s; }
 .spec-canvas .state { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 20px; font-size: 13px; color: var(--text-2); gap: 10px; }
-.spec-time { grid-column: 2; grid-row: 2; display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+.spec-time { grid-column: 2; grid-row: 3; display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+/* Quality check: the verdict, its evidence (one line each, open for why), the holes strip, the average spectrum */
+.quality .spec-plot { grid-template-rows: 340px 8px auto; }
+.qc-kicker { font: 700 11px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--text-3); margin-right: 4px; }
+.qc-verdict { margin-top: 12px; padding: 14px 16px; border-radius: 12px; background: var(--surface-2); border-left: 3px solid var(--info); }
+.qc-verdict.ok { border-left-color: var(--ok); } .qc-verdict.warn { border-left-color: var(--warn); } .qc-verdict.danger { border-left-color: var(--danger); }
+.qc-verdict-head { display: flex; align-items: center; gap: 10px; }
+.qc-verdict-head .ico { width: 18px; height: 18px; }
+.qc-verdict.ok .qc-verdict-head .ico { color: var(--ok); } .qc-verdict.warn .qc-verdict-head .ico { color: var(--warn); } .qc-verdict.danger .qc-verdict-head .ico { color: var(--danger); } .qc-verdict.info .qc-verdict-head .ico { color: var(--info); }
+.qc-verdict-head b { font-size: 16px; }
+.qc-conf { margin-left: auto; font: 600 11px var(--mono); color: var(--text-3); letter-spacing: .06em; text-transform: uppercase; }
+.qc-verdict p { margin: 6px 0 0 28px; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+.qc-evidence { margin-top: 8px; display: grid; gap: 2px; }
+.qc-row { border-radius: 9px; }
+.qc-row[open] { background: var(--surface-2); }
+.qc-row summary { list-style: none; display: grid; grid-template-columns: 22px 180px 230px minmax(0, 1fr); align-items: center; gap: 10px; padding: 7px 10px; border-radius: 9px; cursor: pointer; font-size: 13px; }
+.qc-row summary::-webkit-details-marker { display: none; }
+.qc-row summary:hover { background: var(--surface-2); }
+.qc-dot .ico { width: 15px; height: 15px; color: var(--text-3); }
+.qc-row.good .qc-dot .ico { color: var(--ok); } .qc-row.bad .qc-dot .ico { color: var(--danger); } .qc-row.warn .qc-dot .ico { color: var(--warn); }
+.qc-label { font-weight: 700; }
+.qc-value { color: var(--text); font-size: 12px; }
+.qc-row.na .qc-label, .qc-row.na .qc-value { color: var(--text-3); }
+.qc-says { color: var(--text-2); }
+.qc-why { margin: 0; padding: 0 12px 10px 42px; color: var(--text-2); font-size: 12.5px; line-height: 1.55; }
+.qc-holes { grid-column: 2; grid-row: 2; border-radius: 3px; overflow: hidden; background: rgba(255, 255, 255, .04); }
+.qc-holes canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+.qc-avg { margin-top: 14px; padding: 12px 14px 8px; border-radius: 12px; background: var(--surface-2); }
+.qc-avg-head { display: flex; align-items: center; gap: 14px; font-size: 12px; margin-bottom: 6px; }
+.qc-avg-head b { font-size: 13px; margin-right: auto; }
+.qc-avg-head .lg::before { content: ''; display: inline-block; width: 14px; height: 2px; margin-right: 6px; vertical-align: middle; background: currentColor; }
+.qc-avg-head .mid { color: #f9a03f; } .qc-avg-head .side { color: #8ab4ff; }
+.qc-avg svg { display: block; width: 100%; height: 150px; }
+.qc-avg path { fill: none; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.qc-avg path.mid { stroke: #f9a03f; } .qc-avg path.side { stroke: #8ab4ff; opacity: .9; }
+.qc-avg line.grid { stroke: rgba(255, 255, 255, .06); vector-effect: non-scaling-stroke; }
+.qc-avg line.cut { stroke: rgba(255, 255, 255, .55); stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+.qc-avg-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-3); margin-top: 2px; }
 
 @media (max-width: 1100px) {
   .eq-layout, .eq-layout.collapsed { grid-template-columns: 1fr; }

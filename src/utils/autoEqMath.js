@@ -93,6 +93,24 @@ export function parseCurveText(text) {
   return out.sort((a, b) => a.x - b.x);
 }
 
+/**
+ * Several measurements of one headphone (its left and right channel, or a few seatings) as one curve: the level
+ * at each frequency of the first, averaged in dB. One curve comes back as it is.
+ */
+export function averageCurves(curves) {
+  const list = curves.filter(c => c && c.length);
+  if (list.length <= 1) return list[0] || [];
+  const xs = list[0].map(p => p.x);
+  const all = list.map(c => resample(c, xs));
+  return xs.map((x, i) => ({ x, y: all.reduce((s, c) => s + c[i], 0) / all.length }));
+}
+
+/** The headphone's name from its files' names: "Sundara [1]" and "Sundara [2]", "HD 600 L" and "HD 600 R" give one name */
+export function curveName(names) {
+  const bare = names.map(n => String(n).replace(/\s*(?:[[(]\s*(?:\d+|l|r|left|right)\s*[\])]|[-_ ]+(?:l|r|left|right|ch\s*\d))\s*$/i, '').trim());
+  return bare.every(n => n === bare[0]) ? bare[0] : bare.join(' + ');
+}
+
 /** Resample a curve onto the grid (linear in log-frequency) */
 export function resample(data, freqs) {
   const out = new Float64Array(freqs.length);
