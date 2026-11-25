@@ -253,6 +253,7 @@ let rerunRequested = false;
 const afterSync = () => {
   syncInFlight = null;
   require('./dataPort').scheduleResolve(); // tracks an import was waiting for may be here now
+  require('./qualityScan').schedule(); // new and changed tracks get their quality check
   if (rerunRequested) {
     rerunRequested = false;
     backgroundRefresh();
@@ -338,7 +339,7 @@ ipcMain.handle('load-library', async () => {
   }
 });
 
-/** Used by the folder watcher for a single added/changed file. */
+/** One file this app has just written (tags, covers): read it again. */
 async function upsertSingleFile(filePath) {
   const stat = await fs.promises.stat(filePath);
   const before = database.getFileByPath(filePath);
@@ -349,6 +350,8 @@ async function upsertSingleFile(filePath) {
     && (before.size !== stat.size || Math.round(before.mtime || 0) !== Math.round(stat.mtimeMs))) {
     notifyCloudChanged([filePath]);
   }
+  // written here (tags, a cover): the music is the same, so its quality check still holds
+  require('./qualityScan').carry(filePath, before);
   return toFrontend(database.getFileByPath(filePath));
 }
 
@@ -427,6 +430,7 @@ ipcMain.handle('delete-song', async (event, file) => {
       await fs.promises.unlink(row.cache_path).catch(() => {});
     }
     database.deleteFile(row.path);
+    require('./qualityScan').forget(row.path);
     return { success: true };
   } catch (err) {
     console.error('Error deleting song:', err);

@@ -42,6 +42,7 @@ const { backgroundRefresh } = require('./music.js');
 const { applyAudioSettings } = require('./player.js');
 require('./i18n'); // the app's language, sent by the window: the tray, file pickers and messages follow it
 require('./spectrum.js');
+require('./qualityScan.js');
 require('./soundCorrection.js');
 require('./waveform.js');
 require('./wordTiming.js');
@@ -202,7 +203,7 @@ function createWindow() {
   });
 
   if (isDev) {
-    win.loadURL('http://localhost:3000');
+    win.loadURL(process.env.TELECLOUD_DEV_SERVER || 'http://localhost:3000'); // another port: TELECLOUD_DEV_SERVER
     win.webContents.openDevTools();
   } else {
     win.loadFile(path.join(__dirname, '../dist/index.html'));

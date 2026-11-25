@@ -60,7 +60,7 @@ function open() {
     if (last) win.webContents.send('lyrics-float:update', last);
     tellAll();
   });
-  if (!app.isPackaged) win.loadURL('http://localhost:3000/#floating-lyrics');
+  if (!app.isPackaged) win.loadURL(`${process.env.TELECLOUD_DEV_SERVER || 'http://localhost:3000'}/#floating-lyrics`);
   else win.loadFile(path.join(__dirname, '../dist/index.html'), { hash: 'floating-lyrics' });
   save({ open: true });
   console.log(`[Lyrics] Floating lyrics open${locked ? ', locked' : ''}`);

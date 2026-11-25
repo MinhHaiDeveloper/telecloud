@@ -11,6 +11,7 @@ import PlaylistsView from './components/PlaylistsView';
 import ArtistsView from './components/ArtistsView';
 import AlbumsView from './components/AlbumsView';
 import SpectrumModal from './components/SpectrumModal';
+import { QualityNotice, useQualityFlags } from './components/QualityCheck';
 import RightPanel from './components/RightPanel';
 import NowPlayingFullscreen from './components/NowPlayingFullscreen';
 import Icon from './components/Icon';
@@ -93,6 +94,7 @@ function App() {
   const [outputInfo, setOutputInfo] = useState(null); // the device in use: name, Bluetooth
   const showToastRef = useRef(null);
   const [libraryReady, setLibraryReady] = useState(false);
+  const qualityFlags = useQualityFlags(libraryReady); // tracks the background quality check marks
   const [advanceTick, setAdvanceTick] = useState(0); // bumps on every gapless advance
 
   const [loopMode, setLoopMode] = useState('none'); // 'none', 'all', 'one'
@@ -146,6 +148,10 @@ function App() {
   const [artistFilter, setArtistFilterState] = useState('album');
   useEffect(() => { window.ipcRenderer.invoke('load-store', 'settings').then(s => { if (s?.artistFilter === 'all') setArtistFilterState('all'); }).catch(() => {}); }, []);
   const setArtistFilter = (v) => { setArtistFilterState(v); return saveSetting({ artistFilter: v }); };
+  // Quality check in the background (Settings > Library): off until turned on
+  const [qualityBackground, setQualityBackgroundState] = useState(false);
+  useEffect(() => { window.ipcRenderer.invoke('load-store', 'settings').then(s => { if (s?.qualityBackground === true) setQualityBackgroundState(true); }).catch(() => {}); }, []);
+  const setQualityBackground = async (v) => { setQualityBackgroundState(v); await saveSetting({ qualityBackground: v }); return window.ipcRenderer.invoke('quality:enable', v); };
   const [theme, setTheme] = useState(() => {
     const saved = readPref('tc-theme');
     if (isTheme(saved)) return saved;
@@ -1788,6 +1794,7 @@ function App() {
     onQueueMany: handleQueueMany, onPlayNextMany: handlePlayNextMany, onRepeat: handleRepeat, onFavoriteMany: handleFavoriteMany, onDeleteMany: handleDeleteMany,
     openAlbum, openArtist, playCounts,
     duplicates, skipDuplicates, setSkipDuplicates, openDuplicates: () => navigate('duplicates'),
+    qualityFlags, qualityBackground, setQualityBackground, onQualityCheck: setSpectrumFile,
     autoContinue, setAutoContinue,
     snd, eq, clipping, openEq: () => openEq('sound'), soundExclusive: selectedDevice !== '-1',
     artistFilter, setArtistFilter,
@@ -2187,6 +2194,7 @@ function App() {
       )}
 
       <div className="float-stack">
+        <QualityNotice />
         <Presence show={update.state === 'ready' && !updateDismissed}>
           <div className="card float-card">
             <div className="row">

@@ -6,6 +6,7 @@ import MetaLinks from './MetaLinks';
 import { formatTime, qualityOf, storageOf, mqaOf } from '../utils/audio';
 import { Select } from './ui';
 import { SOURCE_HELP, QUALITY_HELP, playsHelp } from '../utils/badges';
+import { flagText } from './QualityCheck';
 import useRemembered from '../hooks/useRemembered';
 import { t } from '../i18n';
 
@@ -113,14 +114,20 @@ const PlaysInfo = () => (
   </HeaderInfo>
 );
 
+/** The quality tag; a dot on it when the background quality check found something, which opens the details */
+const QualityTag = ({ q, file, flag, open }) => (flag
+  ? <button type="button" className={`badge b-${q.tier} mono qc-flag ${flag.level}`} title={t('Quality check: {verdict}. Click for the details.', { verdict: flagText(flag) })}
+      onClick={(e) => { e.stopPropagation(); open?.(file); }} onDoubleClick={(e) => e.stopPropagation()}>{q.label}</button>
+  : <span className={`badge b-${q.tier} mono`}>{q.label}</span>);
 const titleOf = (f) => f.metadata?.title || f.name || '';
 const isDsd = (q) => q.label.startsWith('DSD');
 const khzText = (hz) => `${Number((hz / 1000).toFixed(1))} kHz`;
 const rateLabel = (hz) => `${Number((hz / 1000).toFixed(1))} kHz`;
 /** Which filter a track falls under. A track can match a kind ("hires") and a sample rate ("r96000"). */
-const qualityKeys = (f) => {
+const qualityKeys = (f, flags) => {
   const q = qualityOf(f);
   const keys = [q.tier];
+  if (flags?.has(f.path)) keys.push('flagged');
   if (isDsd(q)) keys.push('dsd');
   if (f?.mqa) keys.push('mqa');
   else {
@@ -187,19 +194,20 @@ const SongList = ({
   const qualityOptions = useMemo(() => {
     if (!showSort) return [];
     const counts = new Map();
-    musicFiles.forEach(f => qualityKeys(f).forEach(k => counts.set(k, (counts.get(k) || 0) + 1)));
+    musicFiles.forEach(f => qualityKeys(f, ctx.qualityFlags).forEach(k => counts.set(k, (counts.get(k) || 0) + 1)));
     const label = (name, key) => ({ value: key, label: name, hint: counts.get(key).toLocaleString() });
     const out = [{ value: 'all', label: t('All quality'), hint: musicFiles.length.toLocaleString() }];
     [['hires', 'Hi-Res'], ['lossless', t('Lossless')], ['lossy', t('Lossy')], ['dsd', 'DSD'], ['mqa', 'MQA']].forEach(([k, n]) => { if (counts.has(k)) out.push(label(n, k)); });
+    if (counts.has('flagged')) out.push(label(t('Worth a look'), 'flagged')); // the background quality check's marks
     const numbered = (prefix, name) => [...counts.keys()].filter(k => k[0] === prefix).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))).forEach(k => out.push(label(name(Number(k.slice(1))), k)));
     numbered('b', n => `${n}-bit`);
     numbered('r', rateLabel);
     // every track the same: there is nothing to filter
     return [...counts.values()].some(n => n < musicFiles.length) ? out : [];
-  }, [musicFiles, showSort]);
+  }, [musicFiles, showSort, ctx.qualityFlags]);
   // a choice this list no longer has (tracks removed, source changed) falls back to everything
   const activeFilter = qualityOptions.some(o => o.value === qualityFilter) ? qualityFilter : 'all';
-  const shown = useMemo(() => (activeFilter === 'all' ? musicFiles : musicFiles.filter(f => qualityKeys(f).includes(activeFilter))), [musicFiles, activeFilter]);
+  const shown = useMemo(() => (activeFilter === 'all' ? musicFiles : musicFiles.filter(f => qualityKeys(f, ctx.qualityFlags).includes(activeFilter))), [musicFiles, activeFilter, ctx.qualityFlags]);
 
   const sorted = useMemo(() => {
     const list = [...shown];
@@ -372,7 +380,7 @@ const SongList = ({
                   </div>
                 </div>
                 <span className="t-album c-album">{linkAlbum ? (<MetaLinks file={file} artist={false} />) : (file.metadata?.album || '—')}{linkAlbum && (!file.metadata?.album || file.metadata.album === 'Unknown Album') && '—'}</span>
-                <span className="q-cell"><span className={`badge b-${q.tier} mono`}>{q.label}</span>{mqaOf(file) && <span className={`badge ${mqaOf(file).cls} mono`} title={`${mqaOf(file).label}${mqaOf(file).rate ? t(', {khzText} original', { khzText: khzText(mqaOf(file).rate) }) : ''}`}>{mqaOf(file).short}</span>}</span>
+                <span className="q-cell"><QualityTag q={q} file={file} flag={ctx.qualityFlags?.get(file.path)} open={onCheckSpectrum || ctx.onQualityCheck} />{mqaOf(file) && <span className={`badge ${mqaOf(file).cls} mono`} title={`${mqaOf(file).label}${mqaOf(file).rate ? t(', {khzText} original', { khzText: khzText(mqaOf(file).rate) }) : ''}`}>{mqaOf(file).short}</span>}</span>
                 <span className="t-src c-src" title={file.telegram_message_id && storageNames ? t('In {storage}', { storage: storageNames.get(String(file.telegram_channel_id)) || 'TeleCloud' }) : undefined}>{storageOf(file).map(s => SRC_BADGE[s])}{ctx.duplicates?.has(file.path) && <span className="badge b-cached" key="dup" title={t('Extra copy of {get}', { get: ctx.duplicates.get(file.path) })}>{t('Copy')}</span>}</span>
                 <span className="c-plays">
                   {ctx.playCounts?.[file.path] > 0 && (

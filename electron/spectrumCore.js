@@ -140,6 +140,70 @@ function judge({ ext, codec, lossless, declaredBits, rate, cutoffHz, sharp, effe
   return out('rolloff', 'info', 'medium', { hz: cutoffHz, nyquist, padded: !!padded, bits: effectiveBits });
 }
 
+// ---------- mastering (the window only): loudness (EBU R128), true peak, stereo ----------
+
+/** ITU-R BS.1770 K-weighting at any sample rate: a high shelf, then a high-pass (as libebur128 derives them) */
+function kWeighting(rate) {
+  let K = Math.tan(Math.PI * 1681.974450955533 / rate);
+  const Vh = 10 ** (3.999843853973347 / 20), Vb = Vh ** 0.4996667741545416, Q1 = 0.7071752369554196;
+  let a0 = 1 + K / Q1 + K * K;
+  const shelf = [(Vh + Vb * K / Q1 + K * K) / a0, 2 * (K * K - Vh) / a0, (Vh - Vb * K / Q1 + K * K) / a0, 2 * (K * K - 1) / a0, (1 - K / Q1 + K * K) / a0];
+  K = Math.tan(Math.PI * 38.13547087602444 / rate);
+  const Q2 = 0.5003270373238773;
+  a0 = 1 + K / Q2 + K * K;
+  const hp = [1, -2, 1, 2 * (K * K - 1) / a0, (1 - K / Q2 + K * K) / a0];
+  return [shelf, hp];
+}
+
+// True peak: 4x oversampling, as BS.1770 asks. Values at 1/4, 2/4 and 3/4 between two samples, from 16 samples
+// around them (a Kaiser-windowed sinc).
+const TP_TAPS = 16;
+const TP_COEF = (() => {
+  const bessel0 = (x) => { let s = 1, t = 1; for (let k = 1; k < 30; k++) { t *= (x / (2 * k)) ** 2; s += t; } return s; };
+  const beta = 6, half = TP_TAPS / 2;
+  return [0.25, 0.5, 0.75].map(f => {
+    const c = new Float64Array(TP_TAPS);
+    for (let j = 0; j < TP_TAPS; j++) {
+      const x = j - (half - 1) - f;                                       // distance from the point, in samples
+      const sinc = x === 0 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x);
+      const w = Math.abs(x) >= half ? 0 : bessel0(beta * Math.sqrt(1 - (x / half) ** 2)) / bessel0(beta);
+      c[j] = sinc * w;
+    }
+    const sum = c.reduce((a, b) => a + b, 0);
+    return c.map(v => v / sum);
+  });
+})();
+const TP_GAIN = Math.max(...TP_COEF.map(c => c.reduce((a, v) => a + Math.abs(v), 0))); // the most a value between can be
+
+const percentile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * p)))];
+
+/** Integrated loudness and loudness range from 100 ms mean squares (K-weighted) per channel */
+function loudnessOf(segs, mono) {
+  const lk = (ms) => -0.691 + 10 * Math.log10(ms + 1e-20);
+  const power = (i, n) => { let l = 0, r = 0; for (let k = i - n + 1; k <= i; k++) { l += segs[k][0]; r += segs[k][1]; } return mono ? l / n : (l + r) / n; };
+  // integrated: 400 ms blocks every 100 ms, gated at -70 LUFS, then 10 LU under the level of what is left
+  const blocks = [];
+  for (let i = 3; i < segs.length; i++) blocks.push(power(i, 4));
+  const loudBlocks = blocks.filter(p => lk(p) > -70);
+  let lufs = null;
+  if (loudBlocks.length) {
+    const rel = lk(loudBlocks.reduce((a, b) => a + b, 0) / loudBlocks.length) - 10;
+    const gated = loudBlocks.filter(p => lk(p) > rel);
+    if (gated.length) lufs = lk(gated.reduce((a, b) => a + b, 0) / gated.length);
+  }
+  // range: 3 s windows every 100 ms, gated at -70 LUFS and 20 LU under, the spread from the 10th to the 95th percentile
+  const st = [];
+  for (let i = 29; i < segs.length; i++) st.push(power(i, 30));
+  const loudSt = st.filter(p => lk(p) > -70);
+  let lra = null;
+  if (loudSt.length > 1) {
+    const rel = lk(loudSt.reduce((a, b) => a + b, 0) / loudSt.length) - 20;
+    const vals = loudSt.map(lk).filter(v => v > rel).sort((a, b) => a - b);
+    if (vals.length > 1) lra = percentile(vals, 0.95) - percentile(vals, 0.1);
+  }
+  return { lufs, lra };
+}
+
 // ---------- analysis ----------
 
 function fftSizeFor(rate) {
@@ -154,7 +218,7 @@ function fftSizeFor(rate) {
  * because a lossy encoder gives the side far fewer bits than the mid, most of all in the highs.
  * Returns the spectrogram (columns x rows, Uint8 0..255 = -120..0 dBFS) and the numbers judge() reads.
  */
-async function analyze(mpvPath, filePath, meta = {}, { columns = 900, rows = 480, onProgress, signal } = {}) {
+async function analyze(mpvPath, filePath, meta = {}, { columns = 900, rows = 480, onProgress, signal, mastering = false } = {}) {
   const duration = Math.max(1, meta.duration || 0);
   let N = 0, hop = 0, ringM = null, ringS = null, writeIdx = 0, sampleCount = 0, nextCol = 0, nextEnd = 0;
   let fft = null, win = null, re = null, im = null, reS = null, imS = null, midPower = null, sidePower = null, colsDone = 0;
@@ -165,6 +229,10 @@ async function analyze(mpvPath, filePath, meta = {}, { columns = 900, rows = 480
   // clipping: samples at full scale, two or more in a row on one channel; dynamic range: 3 s blocks per channel
   let clipped = 0; const run = [0, 0];
   let blockLen = 0, blockN = 0; const blockSq = [0, 0], blockPeak = [0, 0]; const blocks = [[], []];
+  let clipEvents = 0;
+  // mastering (only when asked): K-weighted 100 ms mean squares, the true-peak history, stereo sums
+  let kf = null, kz = null, segLen = 0, segN = 0; const segSq = [0, 0]; const segs = [];
+  let truePeak = 0, overs = 0, sumLL = 0, sumRR = 0, sumLR = 0, frames = 0;
 
   const setup = (rate) => {
     rateSeen = rate;
@@ -187,7 +255,78 @@ async function analyze(mpvPath, filePath, meta = {}, { columns = 900, rows = 480
     colBands = new Float32Array(columns * Math.max(1, bandEdges.length - 1));
     colMidHi = new Float32Array(columns); colSideHi = new Float32Array(columns); colRef = new Float32Array(columns);
     blockLen = rate * 3;
+    if (mastering) {
+      kf = kWeighting(rate);
+      kz = new Float64Array(8); // per channel, per stage: two delay values
+      segLen = Math.max(1, Math.round(rate / 10));
+    }
   };
+
+  // the mastering numbers for one decoded chunk (interleaved L, R). Runs over every sample, so it works on plain
+  // typed arrays in tight loops, a chunk at a time.
+  let tpExt = new Float64Array(0), tpMax = new Float64Array(0);
+  const tpTail = [new Float64Array(TP_TAPS - 1), new Float64Array(TP_TAPS - 1)];
+  const masterChunk = (lr) => {
+    const n = lr.length >> 1;
+    if (!n) return;
+    // stereo sums, then K-weighting into 100 ms mean squares
+    const [s0, s1, s2, s3, s4] = kf[0], [h0, h1, h2, h3, h4] = kf[1];
+    const seg0 = segs.length; // the segments this chunk ends: left makes them, right fills them in
+    for (let c = 0; c < 2; c++) {
+      let z1 = kz[c * 4], z2 = kz[c * 4 + 1], z3 = kz[c * 4 + 2], z4 = kz[c * 4 + 3];
+      let acc = segSq[c], cnt = segN;
+      let k = 0;
+      for (let i = c; i < lr.length; i += 2) {
+        const x = lr[i];
+        let y = s0 * x + z1; z1 = s1 * x - s3 * y + z2; z2 = s2 * x - s4 * y;
+        const v = y;
+        y = h0 * v + z3; z3 = h1 * v - h3 * y + z4; z4 = h2 * v - h4 * y;
+        acc += y * y;
+        if (++cnt >= segLen) {
+          if (c === 0) segs.push([acc / cnt, 0]); else segs[seg0 + k][1] = acc / cnt;
+          k++; acc = 0; cnt = 0;
+        }
+      }
+      kz[c * 4] = z1; kz[c * 4 + 1] = z2; kz[c * 4 + 2] = z3; kz[c * 4 + 3] = z4;
+      segSq[c] = acc;
+      if (c === 1) segN = cnt;
+    }
+    for (let i = 0; i < n; i++) { const l = lr[2 * i], r = lr[2 * i + 1]; sumLL += l * l; sumRR += r * r; sumLR += l * r; }
+    frames += n;
+    // true peak: each channel laid out after the last 15 samples of the chunk before
+    const len = n + TP_TAPS - 1;
+    if (tpExt.length < len) { tpExt = new Float64Array(len * 2); tpMax = new Float64Array(Math.ceil(len * 2 / TP_TAPS) + 2); }
+    const ext = tpExt, bm = tpMax;
+    for (let c = 0; c < 2; c++) {
+      ext.set(tpTail[c], 0);
+      for (let i = 0; i < n; i++) ext[TP_TAPS - 1 + i] = lr[2 * i + c];
+      // the largest level in each run of 16: a window of 16 touches at most two of them
+      const blocks = Math.ceil(len / TP_TAPS);
+      for (let b = 0; b < blocks; b++) {
+        let m = 0;
+        const end = Math.min(len, (b + 1) * TP_TAPS);
+        for (let i = b * TP_TAPS; i < end; i++) { const v = ext[i]; if (v > m) m = v; else if (-v > m) m = -v; }
+        bm[b] = m;
+      }
+      const c0 = TP_COEF[0], c1 = TP_COEF[1], c2 = TP_COEF[2];
+      for (let i = 0; i < n; i++) {
+        const m = Math.max(bm[i >> 4], bm[(i + TP_TAPS - 1) >> 4]) * TP_GAIN;
+        if (m <= truePeak && m <= 1) continue; // nothing here can be a new peak or an over
+        let y0 = 0, y1 = 0, y2 = 0;
+        for (let j = 0; j < TP_TAPS; j++) { const v = ext[i + j]; y0 += c0[j] * v; y1 += c1[j] * v; y2 += c2[j] * v; }
+        if (y0 < 0) y0 = -y0; if (y1 < 0) y1 = -y1; if (y2 < 0) y2 = -y2;
+        const y = y0 > y1 ? (y0 > y2 ? y0 : y2) : (y1 > y2 ? y1 : y2);
+        if (y > truePeak) truePeak = y;
+        if (y > 1) {
+          const a = ext[i + TP_TAPS / 2 - 1], b = ext[i + TP_TAPS / 2];
+          if (a <= 1 && a >= -1 && b <= 1 && b >= -1) overs++; // over 0 dBFS between two samples that are not
+        }
+      }
+      tpTail[c].set(ext.subarray(n, n + TP_TAPS - 1));
+    }
+  };
+
+
 
   const sumBins = (arrRe, arrIm, fromHz, toHz, norm2) => {
     const binHz = rateSeen / N;
@@ -245,8 +384,8 @@ async function analyze(mpvPath, filePath, meta = {}, { columns = 900, rows = 480
       const al = Math.abs(l), ar = Math.abs(r);
       if (al > peak) peak = al;
       if (ar > peak) peak = ar;
-      if (al >= 0.9999) { if (++run[0] === 2) clipped += 2; else if (run[0] > 2) clipped++; } else run[0] = 0;
-      if (ar >= 0.9999) { if (++run[1] === 2) clipped += 2; else if (run[1] > 2) clipped++; } else run[1] = 0;
+      if (al >= 0.9999) { if (++run[0] === 2) { clipped += 2; clipEvents++; } else if (run[0] > 2) clipped++; } else run[0] = 0;
+      if (ar >= 0.9999) { if (++run[1] === 2) { clipped += 2; clipEvents++; } else if (run[1] > 2) clipped++; } else run[1] = 0;
       blockSq[0] += l * l; blockSq[1] += r * r;
       if (al > blockPeak[0]) blockPeak[0] = al;
       if (ar > blockPeak[1]) blockPeak[1] = ar;
@@ -276,13 +415,16 @@ async function analyze(mpvPath, filePath, meta = {}, { columns = 900, rows = 480
     const usable = chunk.length - (chunk.length % 8); // whole stereo frames
     carry = chunk.subarray(usable);
     const aligned = Buffer.from(chunk.subarray(0, usable)); // copy → 4-byte aligned for Float32Array
-    push(new Float32Array(aligned.buffer, aligned.byteOffset, usable / 4));
+    const lr = new Float32Array(aligned.buffer, aligned.byteOffset, usable / 4);
+    push(lr);
+    if (kf) masterChunk(lr);
     if (onProgress && total) {
       const pct = Math.min(99, Math.round((sampleCount / total) * 100));
       if (pct !== lastProgress) { lastProgress = pct; onProgress(pct); }
     }
   });
   if (signal) signal.addEventListener('abort', () => dec.child.kill(), { once: true });
+  if (signal?.aborted) dec.child.kill(); // aborted before it started: the listener above would never fire
   await dec.promise;
   if (signal?.aborted) throw new Error('Cancelled');
   if (!colsDone) throw new Error('File is too short to analyse');
@@ -385,7 +527,8 @@ async function analyze(mpvPath, filePath, meta = {}, { columns = 900, rows = 480
     const peaks = list.map(b => b[1]).sort((a, b) => b - a);
     return rmsTop > 0 ? 20 * Math.log10(peaks[1] / rmsTop) : null;
   };
-  const drs = blocks.map(drOf).filter(v => v != null);
+  const drByChannel = blocks.map(drOf);
+  const drs = drByChannel.filter(v => v != null);
   const dr = drs.length ? Math.round(drs.reduce((s, v) => s + v, 0) / drs.length) : null;
 
   const profileOf = (power) => {
@@ -418,7 +561,24 @@ async function analyze(mpvPath, filePath, meta = {}, { columns = 900, rows = 480
     monoHighs: { ...monoHighs, fraction: Math.round(monoHighs.fraction * 1000) / 1000 },
     clipped,
     dr,
+    mastering: kf ? masteringOf() : null,
   };
+
+  function masteringOf() {
+    const mono = meta.channels === 1;
+    const { lufs, lra } = loudnessOf(segs, mono);
+    const db = (x) => (x > 0 ? Math.round(20 * Math.log10(x) * 100) / 100 : null);
+    const r1 = (x) => (x == null ? null : Math.round(x * 10) / 10);
+    const corr = sumLL > 0 && sumRR > 0 ? sumLR / Math.sqrt(sumLL * sumRR) : null;
+    return {
+      lufs: r1(lufs), lra: r1(lra),
+      truePeakDb: db(Math.max(truePeak, peak)), overs,
+      rmsL: db(Math.sqrt(sumLL / Math.max(1, frames))), rmsR: db(Math.sqrt(sumRR / Math.max(1, frames))),
+      drL: r1(drByChannel[0]), drR: r1(drByChannel[1]),
+      correlation: corr == null ? null : Math.round(corr * 100) / 100,
+      clipEvents, mono,
+    };
+  }
 }
 
 /** Effective bit depth from the first minute: count the always-zero low bits. */

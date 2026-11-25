@@ -2,6 +2,16 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.1.0-beta.17',
+    items: [
+      `Quality check in the background, in Settings > Library (off until you turn it on): every lossless track gets the Quality check verdict, one at a time at the lowest priority. It waits on battery, while a track plays bit-perfect and while the computer is busy, and new tracks are checked after they are added. A small card beside the scan card shows how far it is, and Stop is there.`,
+      `A dot on the quality tag marks the tracks worth a look: red for a likely lossy source, amber for an upsample or padded bits. Click it for the details, or pick Worth a look in the quality filter. Lossy, MQA and DSD files are left as they are, and cloud tracks are checked once played or downloaded.`,
+      `Quality check has a Mastering tab: loudness and loudness range (EBU R128), true peak and the overs between samples, dynamic range for each side, clipping, average level and stereo correlation, with one line that sums them up and no score. Fidelity keeps the verdict on the file itself.`,
+      `Copy as text in Quality check copies both tabs, to paste in a forum or a chat, without where the file is.`,
+      `Quality check no longer counts its progress up and then down again when it is opened twice quickly.`,
+    ],
+  },
+  {
     version: '1.1.0-beta.16',
     items: [
       `Quality check, in a track's menu (it replaces Check spectrum): a clear verdict with how sure it is, and every clue on its own line, open for why it matters. Where the music stops, a CD-rate edge in a hi-res file, spectral holes, highs that fall to mono, bit depth, clipping and dynamic range, with the spectrogram, a strip that marks the holes and the average spectrum of the mid and the side. When the clues disagree it says Inconclusive instead of guessing.`,

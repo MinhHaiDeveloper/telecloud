@@ -1493,6 +1493,6 @@ function playbackReport() {
   };
 }
 
-module.exports = { playingPath: () => currentPath, _playback: playbackReport, listDevices, applyAudioSettings, buildEqFilter, capFilter, chainSpec, _sound: () => ({ soundState, softVolume, clipShown, meter: !!meterTimer, spectrum: spectrum.running(), meters: meters.running() }), _release: () => ({ released, timer: !!releaseTimer, fading: !!fading, settings: { releaseOnPause: currentAudioSettings.releaseOnPause, pauseFade: currentAudioSettings.pauseFade } }), mpvPath, getProp, setStreamPrefix, parseBluetoothOutputs,
+module.exports = { playingPath: () => currentPath, playingBitPerfect: () => !!currentPath && !playerPaused && (isExclusive() || !!native),_playback: playbackReport, listDevices, applyAudioSettings, buildEqFilter, capFilter, chainSpec, _sound: () => ({ soundState, softVolume, clipShown, meter: !!meterTimer, spectrum: spectrum.running(), meters: meters.running() }), _release: () => ({ released, timer: !!releaseTimer, fading: !!fading, settings: { releaseOnPause: currentAudioSettings.releaseOnPause, pauseFade: currentAudioSettings.pauseFade } }), mpvPath, getProp, setStreamPrefix, parseBluetoothOutputs,
   // tests only: feed a message as if mpv sent it, and see what is playing
   _mpvMessage: (msg) => handleMessage(msg), _playing: () => ({ entry: currentEntryId, path: currentPath, refused: [...refused] }) };

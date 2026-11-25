@@ -189,7 +189,11 @@ const library = {
   notUploaded: () => db().prepare("SELECT path FROM music_files WHERE (storage_type IS NULL OR storage_type = 'local') AND path NOT LIKE 'tc://%'").all().map(r => r.path),
   linkedMessages: (peerId) => new Set(db().prepare('SELECT telegram_message_id AS id FROM music_files WHERE telegram_channel_id = ?').all(String(peerId)).map(r => r.id)),
   byChecksum: (sha) => db().prepare('SELECT * FROM music_files WHERE cloud_checksum = ? LIMIT 1').get(sha),
-  setCache: (p, cachePath) => db().prepare('UPDATE music_files SET cache_path = ? WHERE path = ?').run(cachePath, p),
+  setCache: (p, cachePath) => {
+    db().prepare('UPDATE music_files SET cache_path = ? WHERE path = ?').run(cachePath, p);
+    // a cloud track is here now: its quality can be checked
+    if (cachePath) { try { require('../qualityScan').schedule(); } catch { /* tests without Electron */ } }
+  },
   setCover: (p, key) => db().prepare('UPDATE music_files SET cloud_cover = ? WHERE path = ?').run(key, p),
   /** Backed-up local tracks of this chat that have no cloud cover recorded yet */
   withoutCover: (peerId) => db().prepare("SELECT path FROM music_files WHERE telegram_channel_id = ? AND storage_type = 'both' AND (cloud_cover IS NULL OR cloud_cover = '') AND path NOT LIKE 'tc://%'").all(String(peerId)).map(r => r.path),

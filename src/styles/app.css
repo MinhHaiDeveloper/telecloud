@@ -52,6 +52,11 @@
 .fmt-mqa.studio { color: var(--q-mqa-studio); }
 /* the quality column: the format, then MQA under it, both from the left like every other tag */
 .q-cell { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 7px; }
+/* the background quality check's mark: a dot on the quality tag (Settings > Library > Quality check) */
+.badge.qc-flag { position: relative; border: 0; cursor: pointer; }
+.badge.qc-flag::after { content: ''; position: absolute; top: -3px; right: -3px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 2px var(--bg-app); }
+.badge.qc-flag.bad::after { background: var(--danger); }
+.badge.qc-flag:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .b-lossless { background: var(--ok-soft); color: var(--ok); }
 .b-lossy, .b-local { background: var(--surface-2); color: var(--text-2); }
 .b-cloud { background: var(--info-soft); color: var(--info); }
@@ -606,6 +611,10 @@ html.np-lyric-glow .np-lyrics .lyric.active .w { text-shadow: none; filter: drop
 .float-card .row { display: flex; align-items: center; gap: 10px; }
 .float-card b { font-size: 13px; }
 .float-card small { display: block; font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.float-card.qc-pill { align-self: flex-end; display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; font: inherit; font-size: 12px; color: var(--text-2); border: 0; cursor: pointer; }
+.float-card.qc-pill .ring { width: 13px; height: 13px; border-width: 2px; }
+.float-card.qc-pill .ico { width: 13px; height: 13px; }
+.float-card.qc-pill .mono { color: var(--text-3); }
 .ring { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid var(--surface-hover); border-top-color: var(--accent); animation: spin .9s linear infinite; flex-shrink: 0; }
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 1000; background: var(--overlay); backdrop-filter: blur(4px);

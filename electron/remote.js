@@ -254,7 +254,7 @@ function serveFile(res, file) {
 
 // npm run dev: the page comes from Vite (it has no dist/ yet); a built copy is the fallback
 // TELECLOUD_REMOTE_DEV_SERVER: another Vite address, or `off` to serve dist/ even in development
-const VITE = process.env.TELECLOUD_REMOTE_DEV_SERVER || 'http://localhost:3000';
+const VITE = process.env.TELECLOUD_REMOTE_DEV_SERVER || process.env.TELECLOUD_DEV_SERVER || 'http://localhost:3000';
 // what the page needs under npm run dev: the app's own sources, Vite's client and the packages.
 // Never the rest of the project (electron/ holds the API keys, the root holds .env).
 const DEV_FILES = /^\/(?:(?:index|remote)\.html|icon\.png|@vite\/client|@react-refresh|(?:src|@id|node_modules)\/[\w@.\/+~-]+)?(?:\?[\w=&.%-]*)?$/;

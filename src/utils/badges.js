@@ -19,6 +19,7 @@ export const QUALITY_HELP = [
   { tags: [['b-hires', 'FLAC 24/96']], get text() { return t('Hi-Res: lossless above 16-bit or 48 kHz, or DSD.'); } },
   { tags: [['b-lossless', 'FLAC 16/44.1']], get text() { return t('CD-quality lossless.'); } },
   { tags: [['b-lossy', 'MP3 320']], get text() { return t('Lossy: the format and its bitrate in kbps, read from the file (MP3 320, AAC 256, MP3 96…). Higher sounds closer to the original.'); } },
+  { tags: [['b-hires qc-flag warn', 'FLAC 24/96']], get text() { return t('A dot on the tag: the quality check in the background found something. Amber is an upsample or extra bits with nothing in them, red a likely lossy source. Click it for the details.'); } },
   { tags: [['b-mqa', 'MQA 88.2']], get text() { return t('MQA, found in the audio itself or its tags. The number is the original rate the encoder recorded. TeleCloud plays it as the plain PCM it is (see Settings > Playback).'); } },
   { tags: [['b-mqa-studio', 'MQA Studio 88.2']], get text() { return t('MQA Studio: MQA that the label or the artist says they checked in the studio. Only a label: the music inside is the same kind of MQA.'); } },
 ];

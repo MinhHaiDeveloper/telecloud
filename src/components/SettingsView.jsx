@@ -12,6 +12,7 @@ import DataSettings from './DataSettings';
 import LastfmSettings from './LastfmSettings';
 import ListenBrainzSettings from './ListenBrainzSettings';
 import UpdateStatus from './UpdateStatus';
+import { QualitySettings } from './QualityCheck';
 import DuplicatesSettings from './DuplicatesSettings';
 import ContinueSettings from './ContinueSettings';
 import SoundSettings from './SoundSettings';
@@ -427,6 +428,7 @@ const SettingsView = ({
               </div>
             </section>
             <DuplicatesSettings />
+            <QualitySettings />
             <DataSettings />
           </>
         );

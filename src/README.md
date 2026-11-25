@@ -99,6 +99,7 @@ scripts/release.js   build one channel into beta/ or release/
 | `remote.js` | TeleCloud Remote: the local web server other devices control the app through |
 | `autoeq.js` | Headphone measurements and target curves (a target can also be another headphone: Target sound > Another headphone, from the list or from files; several files of one headphone, such as Squiglink's L and R, are averaged in `averageCurves`; a note shows when two listed measurements come from different rigs) |
 | `spectrum.js`, `spectrumCore.js` | Quality check: spectrogram, the evidence and the verdict |
+| `qualityScan.js`, `qualityWorker.js` | Quality check in the background (Settings > Library): what to check and when, the results, the marks |
 | `watcher.js` | Native folder watching, followed by a normal refresh |
 | `updater.js` | Update checks and installation |
 | `logger.js`, `logExport.js` | Log files and the log export |
@@ -457,6 +458,12 @@ The track menu's **Quality check** (`SpectrumModal.jsx`) asks `analysis:spectrum
 
 Checked on known files (`scratchpad` set made with mpv's own encoders): MP3 128/192/320 and AAC 256 turned back into FLAC are all "transcoded", a CD file upsampled to 96 kHz is "upsampled", 16-bit padded to 24 shows in the bit depth, and the originals (CD, 24/48, 24/88.2) give no false alarm.
 
+**Two tabs.** Fidelity is the verdict above. Mastering is about the song's master, not the file, and has no score: `analyze(..., { mastering: true })` (the window only; the background check leaves it out, and the fidelity numbers are the same either way) adds, in the same decode, loudness and loudness range as EBU R128 (K-weighting from BS.1770 at any sample rate, 400 ms and 3 s blocks, the usual gates; a mono file counts its one channel once), true peak at 4x (a 16-tap Kaiser-windowed sinc; windows that cannot hold a new peak or an over are skipped), inter-sample overs, RMS and DR per channel, stereo correlation and clipping as runs. Checked against ffmpeg's `ebur128` through mpv on real files: LUFS the same, LRA within 0.1 LU, true peak within 0.3 dB. It adds 0.4 to 2 s to a track. The DR and clipping rows of `judge` show on the Mastering tab. **Copy as text** copies both tabs without the file's location.
+
+**In the background** (Settings > Library > Check track quality in the background, off until turned on): `qualityScan.js` gives every lossless track the same verdict, in `qualityWorker.js`, a utilityProcess at the lowest priority (mpv, started from it, gets that priority too). Same `analyze` and `judge` as the window, so the two never disagree; the window's own verdict is saved as well. One track at a time, then a rest as long as it took (half of one core at most). Before each track it waits while on battery, while a track plays bit-perfect (exclusive or ASIO), while the window analyses, or while the CPU is above 85%; with every core busy, Windows gives it no time at all.
+
+Results are in `quality_checks` in the library database (about 180 bytes a track), valid while the track's path, size and date are the ones checked and `VERSION` is the same; raise `VERSION` when the analysis changes. It runs 2 minutes after the app starts, a minute after a scan or refresh, when a cloud track is cached (`store.library.setCache`), and when it is turned on. Files written here (tags, covers, through `upsertSingleFile`) keep their verdict (`carry`); a file changed elsewhere is checked again; a deleted track's result goes. Cloud-only tracks wait until they are cached; lossy, MQA and DSD files are noted and not decoded. Only transcoded and upsampled-lossy (red), upsampled and genuine-padded (amber) mark a track: a dot on the quality tag that opens the window, and a "Worth a look" choice in the quality filter. While it runs, a card beside the scan card turns into a small pill after a few seconds.
+
 ### Releasing
 
 1. Set the new version in `package.json`, and add its notes at the top of `RELEASES` in `src/utils/whatsNew.js`.
@@ -479,6 +486,7 @@ There is no test suite in the repo. These environment variables let a script run
 | `TELECLOUD_MPV_AO` | Audio output for mpv, for example `null` for silence |
 | `TELECLOUD_DISCORD_PIPE` | Pipe to use instead of the real Discord |
 | `TELECLOUD_REMOTE_HOST` | Address the remote listens on, for example `127.0.0.1` so tests get no firewall prompt |
+| `TELECLOUD_DEV_SERVER` | In development, the Vite address the windows load (default `http://localhost:3000`), when that port is taken |
 | `TELECLOUD_REMOTE_DEV_SERVER` | In development, where the remote page comes from (default `http://localhost:3000`); `off` serves `dist/` |
 | `TC_ASIO_TEST_OUT` | Adds "TeleCloud test output", an ASIO stand-in that writes the DSD it gets to files |
 | `TELECLOUD_FAKE_CLIENT` | Module to use instead of the real Telegram client |

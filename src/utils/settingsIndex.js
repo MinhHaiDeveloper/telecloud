@@ -81,6 +81,8 @@ export const SETTINGS = [
   e('library', 'Clear cached data & database', 'reset rescan metadata', []),
   s('library', 'Duplicates', 'same track twice', []),
   e('library', 'Skip duplicate tracks', 'same track twice', []),
+  s('library', 'Quality check', 'spectrum transcode upsample fake lossless', ['hires']),
+  e('library', 'Check track quality in the background', 'spectrum transcode upsample fake lossless scan library new tracks', ['hires']),
   s('library', 'Your data', 'export import backup move new computer history playlists favourites', []),
   e('library', 'Export your data', 'backup zip history listenbrainz m3u8 csv playlists favourites', []),
   e('library', 'Include settings', 'export eq sound look shortcuts', []),
