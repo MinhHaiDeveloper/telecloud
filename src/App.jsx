@@ -151,6 +151,10 @@ function App() {
   // Quality check in the background (Settings > Library): off until turned on
   const [qualityBackground, setQualityBackgroundState] = useState(false);
   useEffect(() => { window.ipcRenderer.invoke('load-store', 'settings').then(s => { if (s?.qualityBackground === true) setQualityBackgroundState(true); }).catch(() => {}); }, []);
+  // Quality check's Copy as text ends with "Checked with TeleCloud" unless turned off
+  const [qualityCopySign, setQualityCopySignState] = useState(true);
+  useEffect(() => { window.ipcRenderer.invoke('load-store', 'settings').then(s => { if (s?.qualityCopySign === false) setQualityCopySignState(false); }).catch(() => {}); }, []);
+  const setQualityCopySign = (v) => { setQualityCopySignState(v); return saveSetting({ qualityCopySign: v }); };
   const setQualityBackground = async (v) => { setQualityBackgroundState(v); await saveSetting({ qualityBackground: v }); return window.ipcRenderer.invoke('quality:enable', v); };
   const [theme, setTheme] = useState(() => {
     const saved = readPref('tc-theme');
@@ -1385,6 +1389,31 @@ function App() {
     }, 2500);
   };
 
+  // Keep offline (albums and playlists): which are kept, and how far the background download is
+  const [offlineSets, setOfflineSets] = useState([]);
+  const [offlineProgress, setOfflineProgress] = useState(null);
+  const loadOffline = () => window.ipcRenderer.invoke('telecloud-sync:offline-list').then(r => { if (r?.success) setOfflineSets(r.sets); }).catch(() => {});
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+    loadOffline();
+    const on = (e, p) => {
+      setOfflineProgress(p);
+      if (p.state === 'done') {
+        loadOffline();
+        setTimeout(() => setOfflineProgress(x => (x?.state === 'done' ? null : x)), 3500);
+      }
+    };
+    ipcOn(window.ipcRenderer, 'telecloud-sync:offline', on);
+    return () => ipcOff(window.ipcRenderer, 'telecloud-sync:offline', on);
+  }, [isAuthenticated]);
+  const offlineKeys = useMemo(() => new Set(offlineSets.map(s => s.key)), [offlineSets]);
+  const setOffline = async (key, label, kind, files, on) => {
+    const r = await window.ipcRenderer.invoke('telecloud-sync:offline-set', { key, label, kind, paths: files.map(f => f.path), on });
+    if (!r?.success) { showToast(r?.error || t('Could not change it'), 'error'); return; }
+    setOfflineSets(r.sets);
+    showToast(on ? t('“{label}” is kept offline: its cloud tracks download in the background.', { label }) : t('“{label}” is no longer kept offline.', { label }));
+  };
+
   const handleDownloadSong = async (file) => {
     const ipcRenderer = window.ipcRenderer;
     const storageType = file.storage_type || 'local';
@@ -1431,6 +1460,21 @@ function App() {
   // smart playlists are worked out from the library, the history and the favourites each time
   const smartCtx = useMemo(() => ({ playCounts, lastPlayed, favorites: new Set(favorites.map(f => f.path)) }), [playCounts, lastPlayed, favorites]);
   const playlistsLive = useMemo(() => playlists.map(p => ({ ...p, songs: p.smart ? smartTracks(p.smart, musicFiles, smartCtx) : live(p.songs) })), [live, playlists, musicFiles, smartCtx]);
+  // a kept album or playlist that gains a track keeps that one offline too (sent again; unchanged sets are ignored)
+  useEffect(() => {
+    if (!offlineSets.length || !libraryReady) return undefined;
+    const timer = setTimeout(async () => {
+      const idx = albumIndex(musicFiles);
+      for (const s of offlineSets) {
+        const files = s.key.startsWith('album:') ? idx.byKey.get(s.key.slice(6))?.songs
+          : s.key.startsWith('playlist:') ? playlistsLive.find(p => String(p.id) === s.key.slice(9))?.songs : null;
+        if (!files?.length) continue; // not loaded yet, or gone: Settings can stop keeping it
+        const r = await window.ipcRenderer.invoke('telecloud-sync:offline-set', { key: s.key, label: s.label, kind: s.kind, paths: files.map(f => f.path), on: true }).catch(() => null);
+        if (r?.changed) setOfflineSets(r.sets);
+      }
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [musicFiles, playlistsLive, offlineSets.length, libraryReady]);
   const currentLive = (currentFile && libraryByPath.get(currentFile.path)) || currentFile;
 
   const duplicates = useMemo(() => findDuplicates(musicFiles), [musicFiles]);
@@ -1794,7 +1838,8 @@ function App() {
     onQueueMany: handleQueueMany, onPlayNextMany: handlePlayNextMany, onRepeat: handleRepeat, onFavoriteMany: handleFavoriteMany, onDeleteMany: handleDeleteMany,
     openAlbum, openArtist, playCounts,
     duplicates, skipDuplicates, setSkipDuplicates, openDuplicates: () => navigate('duplicates'),
-    qualityFlags, qualityBackground, setQualityBackground, onQualityCheck: setSpectrumFile,
+    qualityFlags, qualityBackground, setQualityBackground, onQualityCheck: setSpectrumFile, qualityCopySign, setQualityCopySign,
+    offlineKeys, offlineSets, setOffline, onDownloadMany: (files) => handleDownloadAlbum(files, t('{n|# track|# tracks}', { n: files.length })),
     autoContinue, setAutoContinue,
     snd, eq, clipping, openEq: () => openEq('sound'), soundExclusive: selectedDevice !== '-1',
     artistFilter, setArtistFilter,
@@ -2190,11 +2235,25 @@ function App() {
       )}
 
       {spectrumFile && (
-        <SpectrumModal file={spectrumFile} onClose={() => setSpectrumFile(null)} theme={theme} />
+        <SpectrumModal file={spectrumFile} onClose={() => setSpectrumFile(null)} theme={theme} signCopy={qualityCopySign} />
       )}
 
       <div className="float-stack">
         <QualityNotice />
+        {offlineProgress && (
+          <div className="card float-card">
+            <div className="row">
+              {offlineProgress.state === 'done' ? <Icon name="check" style={{ color: 'var(--ok)' }} /> : <span className="ring" />}
+              <div style={{ minWidth: 0 }}>
+                <b>{offlineProgress.state === 'done' ? t('Kept offline') : t('Keeping offline…')}</b>
+                <small>{offlineProgress.state === 'done'
+                  ? (offlineProgress.failed ? t('{n} downloaded, {failed} could not be', { n: offlineProgress.done, failed: offlineProgress.failed }) : t('{n|# track|# tracks} downloaded', { n: offlineProgress.done }))
+                  : `${offlineProgress.done + 1} / ${offlineProgress.total} · ${offlineProgress.name || ''}`}</small>
+              </div>
+            </div>
+            {offlineProgress.state !== 'done' && <div style={{ marginTop: 10 }}><Progress value={(offlineProgress.done / Math.max(1, offlineProgress.total)) * 100} /></div>}
+          </div>
+        )}
         <Presence show={update.state === 'ready' && !updateDismissed}>
           <div className="card float-card">
             <div className="row">

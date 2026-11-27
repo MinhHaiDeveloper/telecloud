@@ -83,6 +83,7 @@ export const SETTINGS = [
   e('library', 'Skip duplicate tracks', 'same track twice', []),
   s('library', 'Quality check', 'spectrum transcode upsample fake lossless', ['hires']),
   e('library', 'Check track quality in the background', 'spectrum transcode upsample fake lossless scan library new tracks', ['hires']),
+  e('library', 'Sign copied results', 'quality check copy as text forum checked with telecloud', ['hires']),
   s('library', 'Your data', 'export import backup move new computer history playlists favourites', []),
   e('library', 'Export your data', 'backup zip history listenbrainz m3u8 csv playlists favourites', []),
   e('library', 'Include settings', 'export eq sound look shortcuts', []),
@@ -133,6 +134,13 @@ export const SETTINGS = [
   e('downloads', 'Download location', 'folder save offline', ['cloud']),
 
   // ---- TeleCloud Sync
+  e('telecloud', 'Back up new tracks', 'auto automatic backup new album folder', ['cloud']),
+  e('telecloud', 'New albums go to', 'auto backup storage default', ['cloud']),
+  s('telecloud', 'Upload schedule', 'night time window hours', ['cloud']),
+  e('telecloud', 'Upload only at set times', 'schedule night time window hours bandwidth', ['cloud']),
+  e('telecloud', 'Upload window', 'schedule from to hours minutes', ['cloud']),
+  e('telecloud', 'Applies to', 'schedule folders albums', ['cloud']),
+  e('telecloud', 'Keep offline', 'offline download album playlist pin cache', ['cloud']),
   e('telecloud', 'Back up your library', 'telegram upload backup', ['cloud']),
   e('telecloud', 'Upload speed limit', 'bandwidth', ['cloud']),
   s('telecloud', 'Storages', 'telegram channel chat saved messages folder nas', ['cloud']),

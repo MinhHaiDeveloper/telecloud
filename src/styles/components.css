@@ -1385,3 +1385,12 @@ h4.whats-new-older { margin-top: 18px; }
 .vu-backdrop .vu-face { filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .35)); }
 .vu-backdrop .vu-cap { background: color-mix(in srgb, var(--text) 16%, transparent); box-shadow: none; }
 .vu-backdrop .vu-needle { box-shadow: 0 0 6px rgba(0, 0, 0, .35); }
+
+/* Settings > TeleCloud Sync > Upload schedule */
+.qs-time { width: 112px; }
+.qs-scope { display: grid; gap: 6px; }
+.qs-item { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 9px; background: var(--surface-2); font-size: 13px; }
+.qs-item .ico { width: 15px; height: 15px; color: var(--text-3); }
+.qs-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qs-empty { font-size: 12.5px; padding: 4px 2px; }
+.qs-add { margin-top: 4px; flex-wrap: wrap; }

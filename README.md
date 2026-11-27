@@ -1,23 +1,66 @@
 <p align="center">
-  <img src="public/icon.png" width="128" alt="TeleCloud">
+  <img src="public/icon.png" width="112" alt="TeleCloud">
 </p>
 
 <h1 align="center">TeleCloud</h1>
 
-<p align="center">A hi-res music player for Windows that backs up your library to your own Telegram account.</p>
+<p align="center">
+  <b>Your music, bit-perfect. Your backup, encrypted, wherever you want it.</b><br>
+  A hi-res music player for Windows, with a private backup to your own Telegram or to a folder you pick.<br>
+  No server. No subscription. No lock-in.
+</p>
+
+<p align="center">
+  <a href="https://github.com/MinhHaiDeveloper/telecloud/releases"><img src="https://img.shields.io/badge/Download-Windows%2010%20%2F%2011-ff6a3d?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows"></a>
+  <a href="https://telecloud-music.pages.dev/"><img src="https://img.shields.io/badge/Website-telecloud--music.pages.dev-23262e?style=for-the-badge" alt="Website"></a>
+  <a href="https://telecloud-music.pages.dev/beta/"><img src="https://img.shields.io/badge/What's%20new-Beta-4f8dff?style=for-the-badge" alt="What's new in the beta"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/MinhHaiDeveloper/telecloud/releases"><img src="https://img.shields.io/github/v/release/MinhHaiDeveloper/telecloud?include_prereleases&label=latest&color=ff6a3d" alt="Latest release"></a>
+  <a href="https://github.com/MinhHaiDeveloper/telecloud/releases"><img src="https://img.shields.io/github/downloads/MinhHaiDeveloper/telecloud/total?color=23262e" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/MinhHaiDeveloper/telecloud?color=23262e" alt="License: GPL-3.0"></a>
+  <a href="SECURITY.md"><img src="https://img.shields.io/badge/backup-AES--256%20encrypted-3c9a5f" alt="Encrypted backup"></a>
+</p>
+
+<p align="center">
+  <img src="https://telecloud-music.pages.dev/assets/beta/app.webp" width="880" alt="TeleCloud playing an album, with the signal path on the right">
+</p>
 
 ---
 
 ## What it does
 
-TeleCloud plays the music files on your computer the way they were recorded, and keeps a private copy of them in Telegram. Telegram gives every account unlimited storage, so your whole collection is safe and can be streamed back to any computer where you sign in.
+TeleCloud plays the music files on your computer the way they were recorded, tells you whether a file is what it says it is, and keeps an encrypted copy of your library where you choose: your own Telegram, a second drive, a NAS, or the folder your OneDrive or Google Drive app keeps in step. Nothing passes through a server of ours, because there is none.
 
 - **Plays your files as they are.** FLAC, ALAC, WAV, AIFF, APE, WavPack, DSD and the common lossy formats. With an exclusive output device, the sound goes to your DAC untouched (bit-perfect). DSD can go to the DAC as native DSD or DoP.
 - **Shows what happens to the sound.** The Signal path panel lists every step from the file to your DAC, and says when something changes it.
-- **Backs up to Telegram.** Your music goes into a private channel that only you can see. Files are encrypted before they leave your computer.
-- **Streams from the cloud.** Tracks that are only in TeleCloud play straight from Telegram and are kept in a cache for next time.
+- **Checks your files.** Quality check finds the "hi-res" files that are really MP3s, upsampled CDs or padded bits, and measures the master: loudness, true peak, dynamic range. It can check the whole library in the background and mark what is worth a look.
+- **Shapes the sound, if you want.** A 31-band EQ with AutoEQ, including making one headphone sound like another, room correction from an impulse response, and an A/B switch at matched loudness.
+- **Lyrics word by word.** From NetEase, QQ Music and Kugou, or timed on your computer by Cadence when a file only has lines.
+- **Backs up, encrypted.** To a private Telegram channel or to a folder. Files are encrypted before they leave your computer, and every one is checked when it comes back.
+- **Streams and restores.** Tracks that are only in your backup play with seeking and are cached for next time. On a new computer your library comes back with its tags, lyrics and covers.
 - **A remote on any device.** A phone, a tablet or another computer on your Wi-Fi opens a page from TeleCloud and controls the music, with nothing to install.
-- **Restores on a new computer.** Sign in, restore, and your library comes back with its tags, lyrics and album covers.
+- **Your data is yours.** Export your listening history, playlists and favourites to plain files (JSON, M3U8, CSV, ListenBrainz) at any time.
+
+<table>
+  <tr>
+    <td width="50%"><img src="https://telecloud-music.pages.dev/assets/quality-fidelity.webp" alt="Quality check: likely transcoded from a lossy file, with the evidence and the spectrogram"></td>
+    <td width="50%"><img src="https://telecloud-music.pages.dev/assets/quality-mastering.webp" alt="Quality check's Mastering tab: loudness, true peak, dynamic range"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>Quality check</b>: is the file what it says it is?</sub></td>
+    <td align="center"><sub><b>Mastering</b>: how loud, how compressed, how much headroom</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="https://telecloud-music.pages.dev/assets/beta/words-np.webp" alt="Now Playing with lyrics lit word by word"></td>
+    <td width="50%"><img src="https://telecloud-music.pages.dev/assets/beta/phone-now.webp" alt="The remote on a phone" height="300"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>Word by word</b>, in Now Playing, the floating lyrics and the remote</sub></td>
+    <td align="center"><sub><b>The remote</b>, from a QR code, nothing to install</sub></td>
+  </tr>
+</table>
 
 ## Download and install
 
@@ -84,17 +127,21 @@ The **Signal path** panel on the right shows exactly what happens to the sound o
 
 **Settings > Sound** holds everything that changes the sound. Each one is heard as you move it, and none of it is on until you turn it on, so playback stays bit-perfect otherwise.
 
-- **Parametric EQ:** 31 bands. Drag the points on the curve or scroll over them. **AutoEQ** builds a correction from your headphones' measurement and a target sound. Import and export the Squiglink format, undo and redo with `Ctrl+Z` and `Ctrl+Y`. The **live spectrum** under the curve shows the music as it plays, after every filter.
+- **Parametric EQ:** 31 bands. Drag the points on the curve or scroll over them. **AutoEQ** builds a correction from your headphones' measurement and a target sound: a curve such as Harman, or **another headphone**, to make, say, a HiFiMAN HE400se sound like a Sennheiser HE 1. Either headphone can come from a file such as a Squiglink export (pick its left and right files together and they are averaged). Import and export the Squiglink format, undo and redo with `Ctrl+Z` and `Ctrl+Y`. The **live spectrum** under the curve shows the music as it plays, after every filter.
 - **Tone:** Warmth (one slider from bright to warm), Bass, Treble, and **Loudness**, which brings back bass and treble as you turn TeleCloud down.
 - **Space:** stereo width from mono to wider than the recording, mono, left and right swapped, and polarity.
 - **Effects:** Night mode (quiet passages up, loud ones down), Air (shine above 6 kHz) and Tube warmth (soft even harmonics).
-- **Room or headphone correction:** load an impulse response (WAV) from REW, Dirac or a headphone tool, or a text file of frequency and gain.
+- **Room or headphone correction:** load an impulse response (WAV) from REW, Dirac or a headphone tool, or a text file of frequency and gain. A WAV can play as its frequency response only, or in full (timing, phase and a response for each channel), by convolution.
 - **Prevent clipping** lowers the level by the biggest boost. If the sound still goes over 0 dBFS, the light in the signal path blinks red.
 - **A/B** plays the original at the same loudness, to hear what the settings really do.
 
-### 4. Back up to TeleCloud (optional)
+### 4. Back up (optional)
 
-Open **Settings > TeleCloud Sync** and follow the steps:
+Open **Settings > TeleCloud Sync**. You can back up to a folder, to Telegram, or to both (up to five storages), and move tracks between them later.
+
+**To a folder** (no account needed): click **Or back up to a folder** (or, with Telegram set up, add **A folder** as a storage) and pick a second drive, a share on your NAS, or the folder your OneDrive, Google Drive or Dropbox app keeps in step. TeleCloud keeps its files in a `TeleCloud` folder inside it. **Save your recovery key** when it is shown, then click **Back up now**.
+
+**To Telegram**, follow the steps:
 
 1. **Get your Telegram app keys.** Go to [my.telegram.org/apps](https://my.telegram.org/apps), sign in with your phone number and create an app (any name works). Copy the **API ID** and **API hash** into TeleCloud. They stay on your computer, protected by Windows.
 2. **Sign in.** Enter your phone number and the code Telegram sends you, plus your password if you use two-step verification.
@@ -120,6 +167,17 @@ Browse by **Library**, **Albums**, **Artists**, **Folders**, **Playlists**, **Fa
 
 Lyrics show in the side panel, Now Playing, the floating lyrics and the remote. TeleCloud reads them from the tags or a `.lrc` file next to the track, and can look online when a track has none (**Settings > Lyrics**): LRCLIB, NetEase Cloud Music, QQ Music and Kugou, plus Genius and Musixmatch if you turn them on. **Lyrics** in a track's menu searches every source, lets you pick and edit a result, sync it line by line as the music plays, and save it into the tags, a `.lrc` file or both.
 
+### Quality check
+
+**Quality check** in a track's menu answers two questions, in two tabs:
+
+- **Fidelity:** is the file what it says it is? A verdict with how sure it is (genuine, likely transcoded from a lossy file, upsampled, padded to more bits than it uses, or Inconclusive when the clues disagree), each clue on its own line (open it for why it matters), the spectrogram and the average spectrum.
+- **Mastering:** how the song was mastered, whatever the file: loudness and loudness range (EBU R128), true peak and the overs between samples, dynamic range for each side, clipping, average level and stereo correlation. One line sums them up; there is no score.
+
+**Copy as text** copies both tabs to paste in a forum or a chat, without where the file is. It ends with "Checked with TeleCloud" and the website; **Settings > Library > Sign copied results** leaves that out.
+
+To check the whole library, turn on **Settings > Library > Check track quality in the background**. It works one track at a time at the lowest priority, waits while the computer is on battery, busy or playing bit-perfect, and checks new tracks after they are added. Tracks worth a look get a dot on their quality tag (red for a likely lossy source, amber for an upsample or padded bits); click it for the details, or pick **Worth a look** in the quality filter.
+
 ### Where a track lives
 
 Each track shows small labels in the **Source** column. The info icon next to "Source" explains them.
@@ -141,11 +199,18 @@ Albums can be sorted by title, artist, number of tracks, **Latest added** or **O
 - `Shift` + click selects every track between two clicks.
 - `Ctrl+A` selects every track in the list, `Esc` clears the selection.
 
-A bar appears at the bottom, where you can play the selection, add it to a playlist, back it up, or remove it from TeleCloud.
+A bar appears at the bottom, where you can play the selection, add it to a playlist, download it, back it up, or remove it from TeleCloud.
 
 ### Several storages
 
 You can keep up to five storages, such as "Hi-Res Vault" for your best albums and the default channel for everything else. Add them in **Settings > TeleCloud Sync > Storages**, then use **Back up to...** on a track, an album, a playlist or a selection. Each track is kept in one storage only, so nothing is uploaded twice.
+
+### Backing up by itself, and when
+
+In **Settings > TeleCloud Sync**:
+
+- **Back up new tracks** (off until you turn it on): tracks that appear in your music folders are backed up by themselves, into the storage their album is already in (or, for a new album, the storage its folder's tracks are in; else the one you pick under **New albums go to**). Tracks already backed up are always backed up again when their file changes, as before.
+- **Upload schedule** (off until you turn it on): backups run only between two times you choose, to the minute, for example from 01:30 to 06:45, also past midnight. It applies to everything, or only to the folders and albums you choose; other tracks upload at once. Outside the window, **Back up now anyway** starts the waiting ones.
 
 ### Removing music from TeleCloud
 
@@ -156,9 +221,15 @@ Use **Remove from TeleCloud** in a track's menu, in an album or playlist menu, o
 
 ### Saving a track to your computer
 
-Choose **Download** in a track's menu, or **Download album** in an album's menu, to keep a copy on your computer. Each track goes into a folder named after its album, inside the download folder set in **Settings > Downloads**.
+Choose **Download** in a track's menu, **Download album** in an album's menu, or the download button on a selection, to keep a copy on your computer. Each track goes into a folder named after its album, inside the download folder set in **Settings > Downloads**.
+
+To keep an album or a playlist playable without the internet, but in TeleCloud's cache rather than your folders, choose **Keep offline** in its menu. Its cloud tracks download in the background and stay in the cache, also when the cache is full or cleared; a track added later is kept too. **Settings > TeleCloud Sync > Cache** lists what is kept, with **Stop**.
 
 For a track whose file is on this computer, **Open file location** shows it in File Explorer.
+
+### Your data
+
+**Settings > Library > Your data** exports your listening history, playlists, favourites and a list of the library to one `.zip` of plain files: JSON, M3U8 for other players, CSV, and the history in the ListenBrainz format too, with your settings if you like. Music files, keys and sign-ins are never in it. **Import** on another computer, or the same one, adds to what is there and replaces nothing; a track that computer does not have yet joins its playlists by itself when it shows up.
 
 ### Artist pictures
 
@@ -198,7 +269,7 @@ The sound still comes from your computer. Each paired device can be set to **Vie
 
 ### Restoring on another computer
 
-Install TeleCloud, sign in with the same Telegram account, enter your recovery key under **Encryption**, and choose **Restore**. Your tracks appear with their tags, lyrics and covers, ready to stream or download.
+Install TeleCloud, enter your recovery key under **Encryption**, then add the same storage: sign in with the same Telegram account, or pick the same folder (on that computer's NAS share or synced cloud folder). Choose **Restore**, and your tracks appear with their tags, lyrics and covers, ready to stream or download.
 
 ## Keeping your backup safe
 
@@ -236,10 +307,10 @@ You can change the playback shortcuts in **Settings > Keyboard**.
 ## Questions
 
 **Is my music private?**
-Yes. It is stored in your own Telegram account, in a channel only you can see. With encryption on, the files cannot be played by anyone who does not have your recovery key, Telegram included.
+Yes. It is stored in your own Telegram account, in a channel only you can see, or in a folder you chose. With encryption on, the files cannot be played by anyone who does not have your recovery key, Telegram or your cloud drive included. How it works, and what it does not cover, is in [SECURITY.md](SECURITY.md).
 
 **How much can I store?**
-Telegram does not limit the total size. Single files can be up to 2 GB, which covers almost any album track.
+In a folder, as much as the drive holds. Telegram sets no total size; single files can be up to 2 GB, which covers almost any album track.
 
 **Does streaming change the sound?**
 No. The exact file you uploaded is streamed back, and TeleCloud checks it against the original before saving it to the cache.
@@ -252,7 +323,7 @@ Your backup can still be used on the computer where you made it. You can see the
 
 ## Feedback
 
-TeleCloud is in beta and made by a single developer. If something does not work as expected, or you have an idea, please open an issue on the [Issues](https://github.com/MinhHaiDeveloper/telecloud/issues) page. To help with code or translations, see [CONTRIBUTING.md](CONTRIBUTING.md).
+TeleCloud is in beta and made by a single developer. If something does not work as expected, or you have an idea, please open an issue on the [Issues](https://github.com/MinhHaiDeveloper/telecloud/issues) page. To help with code or translations, see [CONTRIBUTING.md](CONTRIBUTING.md). Security problems go privately, as [SECURITY.md](SECURITY.md) explains.
 
 TeleCloud is not affiliated with Telegram.
 

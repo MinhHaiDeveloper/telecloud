@@ -2,7 +2,7 @@
 
 For what the app does and how to use it, see the [main README](../README.md). This file is for people working on the code.
 
-TeleCloud is a hi-res music player for Windows, built with Electron and React. mpv plays the audio, and the user's own Telegram account stores the backup. No server belongs to the project.
+TeleCloud is a hi-res music player for Windows, built with Electron and React. mpv plays the audio, and the backup goes to the user's own Telegram account or to a folder they pick (a second drive, a NAS, a synced cloud folder). No server belongs to the project.
 
 ## Tech stack
 
@@ -53,6 +53,158 @@ native/asio          tc-asio.exe (native DSD)
 native/media         tc-media.exe (Windows media controls)
 scripts/release.js   build one channel into beta/ or release/
 ```
+
+### How the parts connect
+
+Each box is a file or a folder; arrows are calls (solid) and messages between processes (dotted). Four processes run beside the app's own window: the TeleCloud worker, the background quality check, Cadence while it times a song, and mpv for playback.
+
+```mermaid
+flowchart LR
+  subgraph PAGE["Page (src/, sandboxed)"]
+    direction TB
+    APP["App.jsx<br/>library, queue, navigation"]
+    VIEWS["Views<br/>SongList, Albums, Artists,<br/>Playlists, Search, Dashboard"]
+    NP["PlayerBar, NowPlaying,<br/>SignalPathSteps, VuMeters, WaveSeek"]
+    SET["SettingsView and *Settings.jsx<br/>(settingsIndex.js for search)"]
+    EQV["EqSettingsView<br/>useEq, useSound, autoEqMath"]
+    QCV["SpectrumModal (Quality check)<br/>QualityCheck.jsx (marks, card)"]
+    LYV["LyricsView, LyricsDialog,<br/>WordLyricsEditor"]
+    HQ["remote/hostQuery.js<br/>answers the Remote's questions"]
+    I18N["i18n.js, locales/"]
+    APP --> VIEWS & NP & SET & EQV & QCV & LYV
+    APP --> HQ
+  end
+
+  BRIDGE{{"preload.js<br/>window.ipcRenderer<br/>allowlisted channels"}}
+  PAGE <-.->|invoke / events| BRIDGE
+
+  subgraph MAIN["Main process (electron/)"]
+    direction TB
+    M["main.js<br/>window, media:// protocol"]
+    PATHS["paths.js<br/>what may be read, played, written"]
+
+    subgraph LIB["Library"]
+      MUSIC["music.js<br/>scan, sync, JSON stores"]
+      WATCH["watcher.js"]
+      TAGS["tagPool.js → tagWorker.js<br/>(worker threads) → tags.js"]
+      TEDIT["tagEdit.js, tagFile.js,<br/>inferTags.js, fileWrite.js"]
+      DB[("database.js<br/>music-library.db")]
+      COV["covers.js, coverSearch.js,<br/>artistImages.js, mqa.js"]
+    end
+
+    subgraph PLAY["Playback"]
+      PLAYER["player.js<br/>mpv over JSON IPC, crossfade,<br/>devices, DSD plan"]
+      CHAIN["soundChain.js, soundCorrection.js<br/>(filters, IR convolution)"]
+      LIVE["liveSpectrum.js, waveform.js"]
+      DSD["dsd.js, asio.js"]
+      MEDIA["media.js, tray.js,<br/>openFiles.js"]
+    end
+
+    subgraph QUAL["Quality check"]
+      SPEC["spectrum.js<br/>the window's analysis"]
+      CORE["spectrumCore.js<br/>FFT, evidence, judge(),<br/>loudness, true peak"]
+      QSCAN["qualityScan.js<br/>what to check, when, results"]
+    end
+
+    subgraph WORDS["Lyrics"]
+      LYR["lyrics.js, qrc.js"]
+      WT["wordTiming.js, cadenceModels.js"]
+      FL["floatingLyrics.js"]
+    end
+
+    subgraph ONLINE["Online and the rest"]
+      ON["lastfm.js, artistBio.js,<br/>listenbrainz.js, discord.js,<br/>autoeq.js, updater.js"]
+      DATA["stats.js, dataPort.js, m3u.js"]
+      REM["remote.js<br/>HTTP + WebSocket on the LAN"]
+      LOG["logger.js, logExport.js,<br/>credentialManager.js (DPAPI)"]
+    end
+
+    subgraph TC["TeleCloud (electron/telecloud/)"]
+      SVC["service.js<br/>queue, restore, cache,<br/>storages, index, checks"]
+      TSTORE[("store.js<br/>cloud tables")]
+      WCL["workerClient.js"]
+      CAP["caption.js, crypto.js"]
+    end
+
+    M --> MUSIC & PLAYER & REM & FL
+    MUSIC --> TAGS & DB
+    WATCH --> MUSIC
+    TEDIT --> MUSIC
+    MUSIC --> QSCAN
+    SPEC --> CORE
+    SPEC --> QSCAN
+    PLAYER --> CHAIN & LIVE & DSD
+    SVC --> TSTORE & WCL & CAP
+    SVC --> DB
+    MUSIC -. cloud files changed .-> SVC
+    WT --> SVC
+    DATA --> DB
+  end
+
+  BRIDGE <-.-> MAIN
+
+  subgraph PROCS["Other processes"]
+    direction TB
+    MPV["mpv.exe<br/>playback, decoding for analysis"]
+    QW["qualityWorker.js<br/>(utilityProcess, idle priority)"]
+    CW["cadence/worker.js<br/>(utilityProcess, onnxruntime)"]
+    TW["worker.js<br/>(utilityProcess)<br/>GramJS, folderStorage.js,<br/>stream.js on 127.0.0.1"]
+    ASIO["tc-asio.exe<br/>native DSD"]
+    TMED["tc-media.exe<br/>media keys, SMTC"]
+  end
+
+  PLAYER -.->|JSON IPC pipe| MPV
+  LIVE -.-> MPV
+  SPEC -.->|decode| MPV
+  QSCAN -.->|one track at a time| QW
+  QW -.->|decode| MPV
+  WT -.-> CW
+  WCL -.->|"{ id, method, params }"| TW
+  MPV -.->|byte ranges| TW
+  DSD -.-> ASIO
+  MEDIA -.-> TMED
+
+  subgraph EXT["Outside the computer"]
+    direction TB
+    TG[("Your Telegram chats")]
+    FOLDER[("A folder: drive, NAS,<br/>OneDrive / Google Drive folder")]
+    LSRC["LRCLIB, NetEase, QQ, Kugou"]
+    SVCS["Last.fm, ListenBrainz,<br/>MusicBrainz, Discord (local pipe)"]
+    GH["GitHub Releases<br/>(updates, Cadence packs)"]
+    PHONE["Phone or tablet browser<br/>(the Remote page)"]
+    AEQ["AutoEQ, Squiglink"]
+  end
+
+  TW --> TG & FOLDER
+  LYR --> LSRC
+  ON --> SVCS & GH
+  ON --> AEQ
+  WT --> GH
+  PHONE <-.-> REM
+  REM -.->|remote:query| HQ
+
+  classDef page fill:#e8f0ff,stroke:#5b7fd6,color:#1d2a4a
+  classDef proc fill:#fff3e0,stroke:#e8a33d,color:#4a3210
+  classDef data fill:#e9f7ef,stroke:#3c9a5f,color:#173d26
+  classDef ext fill:#eef1f5,stroke:#8a94a6,color:#2b313c
+  classDef bridge fill:#f6e8ff,stroke:#9b5fd6,color:#35184f
+  class APP,VIEWS,NP,SET,EQV,QCV,LYV,HQ,I18N page
+  class MPV,QW,CW,TW,ASIO,TMED proc
+  class DB,TSTORE data
+  class TG,FOLDER,LSRC,SVCS,GH,PHONE,AEQ ext
+  class BRIDGE bridge
+```
+
+Colours: blue the page, purple the bridge, orange the other processes, green the databases, grey what is outside the computer.
+
+What the arrows carry, in short:
+
+- **Page ↔ main:** only `preload.js` channels. Paths from the page are checked by `paths.js` before anything is opened.
+- **Library:** `music.js` walks the folders, reads tags on worker threads, writes `music_files`, and after each sync tells TeleCloud which backed-up files changed and the background quality check which files are new.
+- **Playback:** `player.js` builds one filter chain (`soundChain.js`, the EQ, correction) and sends it to mpv. A cloud track plays from the worker's `stream.js` at a secret `127.0.0.1` address.
+- **Quality check:** the window (`spectrum.js`) and the background check (`qualityWorker.js`) call the same `spectrumCore.analyze` and `judge`, so they always agree. Both decode with mpv.
+- **TeleCloud:** `service.js` decides; the worker moves the bytes, to Telegram or to a folder, through the same calls.
+- **Remote:** the phone talks to `remote.js`; library questions go on to the page (`hostQuery.js`), which already has the library in memory.
 
 ### Main process (`electron/`)
 
@@ -294,9 +446,19 @@ Telegram work runs in a `utilityProcess` (`worker.js`), so the interface stays s
 
 **Encryption.** There is one random master key per user, shown as a recovery key. Audio uses AES-256-CTR, so any byte range can be decrypted on its own. Captions use AES-256-GCM, so a wrong key or tampering is detected.
 
+**Integrity.** CTR has no tag of its own, so everything that comes back is checked against a checksum kept where it cannot be changed without the key:
+- a track: the SHA-256 of the original file is in its caption (sealed with GCM when encrypted); a stream or a download is hashed before it becomes the cache file (`stream.js`, `worker.download`);
+- the library index: its SHA-256 is in its caption after a space, `tcm1:<enc> s.<checksum>`, sealed with GCM when encrypted; `loadManifest` passes it to the download. Versions before 1.1.0-beta.18 read only the first word, so they still read the index; indexes they wrote have no checksum and are read as before (`storages.manifest_sha` is then empty);
+- an album cover: its key is the start of its SHA-1, checked in `fetchCover`; an artist GIF: its key is checked in `artistImages.gifFromCloud`. The keys come from the index, which is checked first.
+A file that does not match is not kept: a track is not cached, a cover is not saved, an index is called unreadable by Check backup.
+
 **Streaming.** `stream.js` serves each cloud track from `127.0.0.1` at a secret address, and mpv reads it with byte-range requests. Seeking works, and the bytes are exactly the uploaded file. Blocks are cached on disk and become a normal cached file once complete and verified.
 
 **Index.** The manifest (`library.tcm`) holds tags, lyrics and cover references. It is pinned in the chat and rewritten after changes. Restore on another computer reads it, and falls back to the captions if it can't.
+
+**Automation** (options in `telecloud-sync` `teleCloudOptions`). *Back up new tracks* (`autoBackup`, off by default): `music.js` reports the paths that are new after each scan (`onTracksAdded`); each goes to `homeOf(row)`, the storage most of its album is in (album name with album artist, else artist), else the one its folder's backed-up tracks are in, else `autoBackupStorage` or the default. Changed backed-up files are queued again whatever the switch (`onCloudFilesChanged`). *Upload schedule* (`schedule: { on, from, to, scope, folders, albums }`): the runner takes `nextItem()`, the first queued track not `held`; a track is held when the schedule is on, now is outside the window (it may wrap midnight; from = to is all day) and it is in scope. When the runner stops with held tracks, `planWindow` sets a timer for the window's start. `backup-now-anyway` ignores the window until the run ends. `queueState` reports `held`, `windowFrom`, `windowTo`.
+
+**Keep offline.** `offlineSets` in the same store: `{ key: { label, kind, paths } }`, keyed `album:<albumIndex key>` or `playlist:<id>`. The page sends a set's tracks again when the album or playlist changes (unchanged sets are ignored). `fetchOffline` downloads the cloud-only ones that have no cache file, one at a time, telling the page (`telecloud-sync:offline`); it runs after a change, 20 s after start and after a restore. `enforceCacheLimit` and Clear cache never remove a kept file.
 
 **Check backup.** `checkBackup` lists each chat and compares it with the library, `cloud_index`, the manifest and the covers. It only compares message ids and sizes, so damage inside a file of the right size isn't seen. `repairBackup` queues tracks still on this computer again, uploads lost covers from the local copy, and saves the index. It deletes a wrong-size copy from the chat first, otherwise the same hash would link back to it.
 

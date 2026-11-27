@@ -18,6 +18,8 @@ const SORTS = [
   { value: 'oldest', get label() { return t('Oldest added'); } },
 ];
 
+/** Only in TeleCloud: what Keep offline downloads */
+const inCloudOnly = (f) => (f.storage_type || 'local') === 'cloud' || f.path?.startsWith('tc://');
 const bestQuality = (songs) => songs.map(qualityOf).sort((a, b) => (b.bits * 1e6 + b.rate) - (a.bits * 1e6 + a.rate))[0];
 
 const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavorite, onAddPlaylist, favorites, onCheckSpectrum, selectedAlbum, setSelectedAlbum, onDeleteSong, onDeleteAlbum, onDownloadSong, onDownloadAlbum, onBackupMany, onBackupTo, storageNames, onRemoveFromCloud }) => {
@@ -38,6 +40,8 @@ const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavori
     const total = songs.reduce((s, f) => s + (f.metadata?.duration || 0), 0);
     const year = songs.find(f => f.metadata?.year)?.metadata?.year;
     const artist = current.artist || songs[0]?.metadata?.artist || 'Unknown Artist';
+    const offlineKey = current.key ? `album:${current.key}` : null;
+    const keptOffline = !!offlineKey && !!ctx.offlineKeys?.has(offlineKey);
 
     return (
       <>
@@ -57,12 +61,14 @@ const AlbumsView = ({ musicFiles, currentFile, isPlaying, onPlay, onToggleFavori
               {year && <span>· {year}</span>}
               <span>· {trackCount(songs.length)} · {formatDuration(total)}</span>
               {q && <span className={`badge b-${q.tier} mono`}>{q.label}</span>}
+              {keptOffline && <span className="badge b-cached" title={t('Its cloud tracks stay in the cache, also when the cache is full')}>{t('Kept offline')}</span>}
             </div>
             <div className="btn-row">
               <button className="btn-primary" onClick={() => onPlay(songs[0], 0, songs)}><Icon name="play" filled />{t('Play')}</button>
               <button className="btn-ghost" onClick={() => { const s = [...songs].sort(() => Math.random() - 0.5); onPlay(s[0], 0, s); }}><Icon name="shuffle" />{t('Shuffle')}</button>
               <MoreMenu items={[
-                ...(onDownloadAlbum ? [{ label: t('Download album'), icon: 'download', onClick: () => onDownloadAlbum(songs, name) }] : []),
+                ...(onDownloadAlbum ? [{ label: t('Download album'), icon: 'download', onClick: () => onDownloadAlbum(songs, selectedAlbum.name) }] : []),
+                ...(ctx.setOffline && offlineKey && songs.some(inCloudOnly) ? [{ label: keptOffline ? t('Stop keeping offline') : t('Keep offline'), icon: 'disc', onClick: () => ctx.setOffline(offlineKey, selectedAlbum.name, 'album', songs, !keptOffline) }] : []),
                 ...(onAddPlaylist ? [{ label: t('Add to playlist'), icon: 'playlist', onClick: () => onAddPlaylist(songs[0], songs) }] : []),
                 ...(ctx.onEditInfo ? [{ label: t('Edit album info…'), icon: 'music', onClick: () => ctx.onEditInfo(songs) }] : []),
                 ...(ctx.onEditCover ? [{ label: t('Album cover…'), icon: 'image', onClick: () => ctx.onEditCover(songs) }] : []),

@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useContext } from 'react';
 import useRemembered from '../hooks/useRemembered';
 import SongList from './SongList';
 import Cover from './Cover';
 import Icon from './Icon';
 import { Select, MoreMenu, confirmDialog } from './ui';
+import SongActions from './songActions';
 import { formatDuration } from '../utils/audio';
 import SmartPlaylistDialog from './SmartPlaylistDialog';
 import { describe } from '../utils/smartPlaylist';
@@ -27,6 +28,7 @@ const PlaylistCover = ({ songs = [] }) => {
 };
 
 const PlaylistsView = ({ playlists, setPlaylists, onSavePlaylists, currentFile, isPlaying, onPlay, onToggleFavorite, favorites, onDeleteSong, onDownloadSong, selectedPlaylistId, onSelectPlaylist, createSignal = 0, onBackupMany, onBackupTo, storageNames, onRemoveFromCloud, smartCtx, allFiles = [], onImport, onExport }) => {
+  const ctx = useContext(SongActions);
   // Selection lives in App so the sidebar can open a playlist directly
   const setSelectedPlaylistId = onSelectPlaylist;
   const [isCreating, setIsCreating] = useState(createSignal > 0);
@@ -143,7 +145,7 @@ const PlaylistsView = ({ playlists, setPlaylists, onSavePlaylists, currentFile, 
                         onBlur={rename} onKeyDown={e => e.key === 'Escape' && setRenaming(null)} style={{ fontSize: 20, fontWeight: 800 }} />
                     </form>
                   ) : <h2>{selected.name}</h2>}
-                  <div className="meta">{t('{length} tracks · {duration}', { length: selected.songs.length, duration: formatDuration(total) })}</div>
+                  <div className="meta">{t('{length} tracks · {duration}', { length: selected.songs.length, duration: formatDuration(total) })}{ctx.offlineKeys?.has(`playlist:${selected.id}`) && <span className="badge b-cached" style={{ marginLeft: 8 }} title={t('Its cloud tracks stay in the cache, also when the cache is full')}>{t('Kept offline')}</span>}</div>
                   {selected.smart && <div className="sp-rules-text muted" title={describe(selected.smart)}>{describe(selected.smart)}</div>}
                   <div className="btn-row">
                     <button className="btn-primary" disabled={!selected.songs.length} onClick={() => onPlay(selected.songs[0], 0, selected.songs)}><Icon name="play" filled />{t('Play')}</button>
@@ -153,6 +155,7 @@ const PlaylistsView = ({ playlists, setPlaylists, onSavePlaylists, currentFile, 
                       ...(selected.smart?.sort === 'random' ? [{ label: t('Shuffle again'), icon: 'shuffle', onClick: () => reshuffle(selected) }] : []),
                       { label: t('Rename'), icon: 'lyrics', onClick: () => setRenaming({ id: selected.id, name: selected.name }) },
                       ...(onExport && selected.songs.length ? [{ label: t('Export as .m3u8…'), icon: 'fileOut', onClick: () => onExport(selected) }] : []),
+                      ...(ctx.setOffline && selected.songs.some(f => (f.storage_type || 'local') === 'cloud' || f.path?.startsWith('tc://')) ? [{ label: ctx.offlineKeys?.has(`playlist:${selected.id}`) ? t('Stop keeping offline') : t('Keep offline'), icon: 'disc', onClick: () => ctx.setOffline(`playlist:${selected.id}`, selected.name, 'playlist', selected.songs, !ctx.offlineKeys?.has(`playlist:${selected.id}`)) }] : []),
                       ...(onBackupMany && selected.songs.length ? [{ label: t('Back up playlist to…'), icon: 'cloud', onClick: () => onBackupMany(selected.songs, `“${selected.name}”`) }] : []),
                       ...(onRemoveFromCloud && selected.songs.some(f => f.telegram_message_id) ? [{ label: t('Remove playlist tracks from TeleCloud'), icon: 'cloud', danger: true, onClick: () => onRemoveFromCloud(selected.songs.filter(f => f.telegram_message_id)) }] : []),
                       { sep: true },

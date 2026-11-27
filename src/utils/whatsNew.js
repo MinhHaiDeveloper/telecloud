@@ -2,6 +2,21 @@
 // Add an entry here for every release; keep it short and written for people using the app.
 export const RELEASES = [
   {
+    version: '1.1.0-beta.18',
+    items: [
+      `Keep offline, in an album's or a playlist's menu: its cloud tracks download now and stay in the cache, also when the cache is full or you clear it. Settings > TeleCloud Sync lists what is kept and how much of it is here.`,
+      `Download many tracks at once: select them and use the download button in the selection bar. Cloud tracks are fetched first.`,
+      `Back up new tracks (Settings > TeleCloud Sync, off until you turn it on): tracks that appear in your music folders are backed up by themselves, into the storage their album, or else their folder, is already in, so a new track of an album you keep in a hi-res chat goes there too.`,
+      `Upload schedule (off until you turn it on): backups wait for the hours you choose, to the minute, for everything or only for chosen folders and albums. Back up now anyway still starts one at once.`,
+      `Discord shows the cover you picked online (Apple Music, QQ Music, Deezer and the others) instead of searching again, and a beta shows the beta logo when there is no cover. The link is kept in the library, and in the tags (COVER_URL, COVER_SOURCE) when your covers are saved into the tags.`,
+      `Copy as text in Quality check ends with "Checked with TeleCloud" and the website; Sign copied results in Settings turns it off.`,
+      `TeleCloud checks the covers and the library index it downloads from your backup against a checksum, so a damaged one is never used.`,
+      `The first opening of Now Playing from the mini player is smooth, like the ones after it.`,
+      `Signing in to Telegram: Resend code is there when the code does not come, and the screen says where the code was sent (the Telegram app or a text message).`,
+      `Fixed: in the word-by-word editor, after Cadence some lines ran past their strip, and the last words and the grey end grip could not be dragged.`,
+    ],
+  },
+  {
     version: '1.1.0-beta.17',
     items: [
       `Quality check in the background, in Settings > Library (off until you turn it on): every lossless track gets the Quality check verdict, one at a time at the lowest priority. It waits on battery, while a track plays bit-perfect and while the computer is busy, and new tracks are checked after they are added. A small card beside the scan card shows how far it is, and Stop is there.`,

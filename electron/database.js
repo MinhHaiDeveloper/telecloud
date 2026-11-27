@@ -77,7 +77,7 @@ function createSchema() {
     }
 
     // Library: file name/extension and codec details
-    for (const col of ['name TEXT', 'ext TEXT', 'codec TEXT', 'lossless INTEGER', 'cloud_cover TEXT', 'album_artist TEXT', 'mqa INTEGER', 'mqa_rate INTEGER']) {
+    for (const col of ['name TEXT', 'ext TEXT', 'codec TEXT', 'lossless INTEGER', 'cloud_cover TEXT', 'album_artist TEXT', 'mqa INTEGER', 'mqa_rate INTEGER', 'cover_url TEXT', 'cover_source TEXT']) {
         try { db.exec(`ALTER TABLE music_files ADD COLUMN ${col}`); } catch (e) { /* exists */ }
     }
 
@@ -155,11 +155,11 @@ const UPSERT_SQL = `
     INSERT INTO music_files (
       path, name, ext, mtime, size, title, artist, album, album_artist, year, genre,
       track_number, disc_number, duration, bitrate, sample_rate, bit_depth,
-      codec, lossless, lyrics, cover, has_cover, cover_hash, last_scanned, created_at, mqa, mqa_rate
+      codec, lossless, lyrics, cover, has_cover, cover_hash, last_scanned, created_at, mqa, mqa_rate, cover_url, cover_source
     ) VALUES (
       @path, @name, @ext, @mtime, @size, @title, @artist, @album, @albumArtist, @year, @genre,
       @trackNumber, @discNumber, @duration, @bitrate, @sampleRate, @bitDepth,
-      @codec, @lossless, @lyrics, @cover, @hasCover, @coverHash, @lastScanned, @addedAt, @mqa, @mqaRate
+      @codec, @lossless, @lyrics, @cover, @hasCover, @coverHash, @lastScanned, @addedAt, @mqa, @mqaRate, @coverUrl, @coverSource
     )
     ON CONFLICT(path) DO UPDATE SET
       name = @name,
@@ -186,7 +186,10 @@ const UPSERT_SQL = `
       cover = @cover,
       has_cover = @hasCover,
       cover_hash = @coverHash,
-      last_scanned = @lastScanned
+      last_scanned = @lastScanned,
+      -- a link in the tags wins; without one the library keeps what TeleCloud remembered (a cover.jpg has no tags)
+      cover_source = CASE WHEN @coverUrl IS NOT NULL THEN @coverSource ELSE cover_source END,
+      cover_url = COALESCE(@coverUrl, cover_url)
   `;
 let upsertStmt = null;
 
@@ -222,6 +225,9 @@ function upsertParams(fileData) {
         // MQA from the tags; null when unknown, the first play or a library check reads the audio
         mqa: fileData.mqa ?? null,
         mqaRate: fileData.mqaRate || null,
+        // the online cover's link, from the tags (COVER_URL, COVER_SOURCE)
+        coverUrl: fileData.coverUrl || null,
+        coverSource: fileData.coverSource || null,
     };
 }
 

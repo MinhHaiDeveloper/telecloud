@@ -224,6 +224,8 @@ async function search(q, { all = false, auto = false } = {}) {
   const ask = async (id) => {
     try {
       const found = (await providers[id](q)).filter(r => !SOURCES[id].online || r.score >= 0.3);
+      // which source a picture comes from travels with it, so saving it can remember the link
+      if (SOURCES[id].online) for (const r of found) if (r.image) r.image.source = id;
       found.sort((a, b) => b.score - a.score);
       return found;
     } catch (err) {
@@ -273,14 +275,18 @@ async function download(url) {
   return buf;
 }
 
-async function loadImage(image) {
+async function loadImage(image, used = () => {}) {
   if (image?.url) {
     // the largest size isn't always there: the size shown in the results is
     try {
-      return await download(image.url);
+      const buf = await download(image.url);
+      used(image.url);
+      return buf;
     } catch (err) {
       if (!image.fallback) throw err;
-      return download(image.fallback);
+      const buf = await download(image.fallback);
+      used(image.fallback);
+      return buf;
     }
   }
   if (image?.track) return (await embeddedPicture(image.track)) || Promise.reject(new Error(tx('That track has no picture')));
@@ -302,7 +308,7 @@ function toJpeg(buf) {
   return fit.toJPEG(90);
 }
 
-const { openTags, writeWhenFree, isBusy } = require('./tagFile');
+const { openTags, writeWhenFree, isBusy, setCoverLink } = require('./tagFile');
 /** The playing track: decided now (reading is safe), written when it stops */
 function writeTag(file, jpeg, opts = {}) {
   if (!isBusy(file)) return writeTagNow(file, jpeg, opts);
@@ -316,7 +322,7 @@ function writeTag(file, jpeg, opts = {}) {
   writeWhenFree(file, () => { try { writeTagNow(file, jpeg, opts); } finally { covers.releaseCover(file); } });
   return true;
 }
-function writeTagNow(file, jpeg, { onlyMissing = false, onlyIfEmbedded = false } = {}) {
+function writeTagNow(file, jpeg, { onlyMissing = false, onlyIfEmbedded = false, link } = {}) {
   const { Picture, PictureType, ByteVector } = require('node-taglib-sharp');
   const f = openTags(file);
   try {
@@ -327,9 +333,19 @@ function writeTagNow(file, jpeg, { onlyMissing = false, onlyIfEmbedded = false }
     if ((onlyMissing && had) || (onlyIfEmbedded && !had)) return false;
     const pic = Picture.fromFullData(ByteVector.fromByteArray(jpeg), PictureType.FrontCover, 'image/jpeg', '');
     f.tag.pictures = [...artist, pic]; // the cover last: Windows' thumbnail for a FLAC is its last picture
+    if (link !== undefined) setCoverLink(f, link); // the file is saved anyway: the link goes with the picture
     f.save();
     return true;
   } finally { f.dispose(); }
+}
+
+/** Only the link (or taking it out), when the picture itself was not written into the tags */
+function writeLinkOnly(file, link) {
+  const go = () => {
+    const f = openTags(file);
+    try { if (setCoverLink(f, link)) f.save(); } finally { f.dispose(); }
+  };
+  if (isBusy(file)) writeWhenFree(file, go); else go();
 }
 
 const albumId = (r) => `${r?.album || ''}\u0000${(r?.album_artist || '').toLowerCase()}`;
@@ -342,7 +358,15 @@ function folderHasOtherAlbum(dir, albums) {
 
 async function save({ paths, image, to, onlyMissing = false, allowReadOnly = false }) {
   const where = to || options().saveTo;
-  const jpeg = toJpeg(await loadImage(image));
+  // a picture from an online source: its link is remembered for the album (Discord shows covers from links),
+  // in the library always and in the tags when the cover goes into the tags. Any other picture forgets it.
+  let usedUrl = null;
+  const jpeg = toJpeg(await loadImage(image, (u) => { usedUrl = u; }));
+  const src = image?.source && SOURCES[image.source];
+  const link = usedUrl && src?.online && /^https:\/\//i.test(usedUrl) ? { url: usedUrl, source: src.label } : null;
+  // filling in only missing covers leaves the tracks that already had one as they were, link and all
+  const keep = new Set();
+  if (onlyMissing) for (const p of paths || []) if (await (isLocal(p) ? covers.coverForFile(p) : covers.artFor(p)).catch(() => null)) keep.add(p);
   const previous = (paths || []).map(p => database.getFileByPath(p)?.cloud_cover).filter(Boolean);
   const { upsertSingleFile, toFrontend } = require('./music');
   const files = [];
@@ -374,8 +398,13 @@ async function save({ paths, image, to, onlyMissing = false, allowReadOnly = fal
     for (const p of list) {
       try {
         // embedded art wins over cover.jpg, so a replaced cover has to replace it there too
-        const wrote = withWritable(p, allowReadOnly, () => writeTag(p, jpeg, wantTag ? { onlyMissing } : { onlyIfEmbedded: !onlyMissing, onlyMissing }));
+        const tagLink = keep.has(p) ? undefined : wantTag ? link : null; // a cover.jpg only: no link in the tags
+        const wrote = withWritable(p, allowReadOnly, () => writeTag(p, jpeg, wantTag ? { onlyMissing, link: tagLink } : { onlyIfEmbedded: !onlyMissing, onlyMissing, link: tagLink }));
         if (wrote) { done.tag++; files.push(await upsertSingleFile(p)); }
+        else if (tagLink !== undefined) {
+          // the picture stayed out of the tags: an older link there would now be wrong
+          try { withWritable(p, allowReadOnly, () => writeLinkOnly(p, tagLink)); } catch (err) { console.warn(`[Covers] Could not update the cover link in ${path.basename(p)}: ${err.message}`); }
+        }
       } catch (err) { errors.push({ path: p, ...describeWriteError(err, p) }); }
     }
   }
@@ -391,6 +420,12 @@ async function save({ paths, image, to, onlyMissing = false, allowReadOnly = fal
     const set = database.initDatabase().prepare('UPDATE music_files SET cloud_cover = ? WHERE path = ?');
     for (const p of cloudOnly) { set.run(key, p); files.push(toFrontend(database.getFileByPath(p))); done.cloud++; }
   }
+
+  // '' is "forgotten on purpose": the album's other tracks' link is not borrowed for this one
+  const remember = database.initDatabase().prepare('UPDATE music_files SET cover_url = ?, cover_source = ? WHERE path = ?');
+  const failed = new Set(errors.map(e => e.path));
+  for (const p of paths || []) if (!keep.has(p) && !failed.has(p)) remember.run(link ? link.url : '', link ? link.source : null, p);
+  try { require('./discord').coverChanged?.(paths || []); } catch { /* Discord off or not loaded */ }
 
   covers.clearMissing();
   const service = (() => { try { return require('./telecloud/service'); } catch { return null; } })();

@@ -3,6 +3,7 @@ import Icon from './Icon';
 import { Field, Callout, Progress, Select, SettingRow, BackButton, Toggle, MoreMenu, Dialog, confirmDialog, alertDialog } from './ui';
 import { formatBytes } from '../utils/audio';
 import BackupCheck from './BackupCheck';
+import { AutoBackupRows, ScheduleSection, OfflineRows } from './BackupAutomation';
 import { ipcOn, ipcOff } from '../utils/ipc';
 import { t } from '../i18n';
 
@@ -72,16 +73,20 @@ const showTips = () => alertDialog({
 });
 
 /** Live backup queue: current file, speed, counts, pause/resume */
-const BackupCard = ({ queue, onSync, onPause, onResume, rate, onRate }) => {
+const BackupCard = ({ queue, onSync, onPause, onResume, onAnyway, rate, onRate }) => {
     const total = queue.queued + queue.done + queue.error + (queue.active ? 1 : 0);
     const a = queue.active;
     const busy = queue.running;
     const waiting = queue.queued > 0 && !busy;
+    // not paused: the rest waits for the upload window (Upload schedule)
+    const forWindow = waiting && !queue.paused && queue.held > 0;
     return (
         <>
             <SettingRow icon="refresh" title={t('Back up your library')} desc={t('Uploads local tracks that are not in TeleCloud yet. Runs in the background and continues after a restart.')}>
                 {busy
                     ? <button className="btn-outline" onClick={onPause}><Icon name="pause" />{t('Pause')}</button>
+                    : forWindow
+                        ? <button className="btn-ghost" onClick={onAnyway} title={t('Start the waiting backups now, this once')}>{t('Back up now anyway')}</button>
                     : waiting
                         ? <button className="btn-primary" onClick={onResume}><Icon name="play" />{t('Resume')}</button>
                         : <button className="btn-primary" onClick={onSync}>{t('Back up now')}</button>}
@@ -90,10 +95,10 @@ const BackupCard = ({ queue, onSync, onPause, onResume, rate, onRate }) => {
                 <div className="set-sub">
                     <div className="sync-live">
                         <div className="row">
-                            {busy ? <span className="ring" /> : <Icon name={waiting ? 'pause' : 'alert'} />}
+                            {busy ? <span className="ring" /> : <Icon name={forWindow ? 'clock' : waiting ? 'pause' : 'alert'} />}
                             <b>
                                 {busy ? (a?.stage === 'checking' ? t('Checking for duplicates…') : a?.stage === 'waiting' ? t('Telegram asked us to slow down, waiting…') : a?.stage === 'manifest' ? t('Saving tags, lyrics and covers…') : t('Uploading {value} of {total}', { value: queue.done + queue.error + 1, total }))
-                                    : waiting ? t('Paused · {queued} waiting', { queued: queue.queued.toLocaleString() }) : t('{error} failed', { error: queue.error })}
+                                    : forWindow ? t('{n} waiting for the upload window, {from} to {to}', { n: queue.held.toLocaleString(), from: queue.windowFrom, to: queue.windowTo }) : waiting ? t('Paused · {queued} waiting', { queued: queue.queued.toLocaleString() }) : t('{error} failed', { error: queue.error })}
                             </b>
                             <span className="mono" style={{ marginLeft: 'auto', color: 'var(--text-3)', fontSize: 12 }}>
                                 {t('{done} done{value}', { done: queue.done.toLocaleString(), value: queue.error ? t(' · {error} failed', { error: queue.error }) : '' })}
@@ -377,6 +382,7 @@ const TeleCloudSyncSettings = () => {
     const [queue, setQueue] = useState({ queued: 0, done: 0, error: 0, running: false, active: null, errors: [] });
     const [error, setError] = useState('');
     const [resign, setResign] = useState(false); // signing in again after Telegram ended the sign-in
+    const [viaApp, setViaApp] = useState(true); // where Telegram sent the code: the Telegram app, or an SMS
 
     const refresh = useCallback(async () => {
         const r = await ipc().invoke('telecloud-sync:check-auth');
@@ -429,6 +435,8 @@ const TeleCloudSyncSettings = () => {
         if (!phoneNumber) throw new Error(t('Enter your phone number with the country code.'));
         const r = await ipc().invoke('telecloud-sync:send-code', { phoneNumber: phoneNumber.replace(/\s+/g, '') });
         if (!r.success) throw new Error(r.error || t('Failed to send code'));
+        setViaApp(r.viaApp !== false);
+        setOtpCode('');
         setStep('otp');
     });
     // signing in again keeps everything: no API keys, no storage choice, just the code (and the password)
@@ -436,6 +444,7 @@ const TeleCloudSyncSettings = () => {
         const r = await ipc().invoke('telecloud-sync:resign-start');
         if (!r.success) throw new Error(r.error);
         setPhoneNumber(r.phoneNumber || '');
+        setViaApp(r.viaApp !== false);
         setOtpCode('');
         setResign(true);
         setStep('otp');
@@ -631,10 +640,15 @@ const TeleCloudSyncSettings = () => {
                 {step === 'otp' && (
                     <div className="card form-card">
                         {errorBox}
-                        <div style={{ color: 'var(--text-2)', fontSize: 13.5 }}>{t('Telegram sent a login code to your Telegram app (not SMS){value}', { value: resign && phoneNumber ? t(' for {phoneNumber}', { phoneNumber }) : '' })}.</div>
+                        <div style={{ color: 'var(--text-2)', fontSize: 13.5 }}>
+                            {viaApp
+                                ? t('Telegram sent a login code to your Telegram app, in the chat named “Telegram” (not by SMS){value}.', { value: resign && phoneNumber ? t(' for {phoneNumber}', { phoneNumber }) : '' })
+                                : t('Telegram sent a login code by SMS{value}.', { value: phoneNumber ? t(' to {phoneNumber}', { phoneNumber }) : '' })}
+                            {' '}{t('It can take a minute. If it does not come, Resend asks again: by SMS or a call when Telegram offers one, else in the app.')}
+                        </div>
                         <input className="input code" value={otpCode} onChange={e => setOtpCode(e.target.value.replace(/\D/g, ''))} placeholder="•••••" maxLength={6} inputMode="numeric" onKeyDown={onEnter(verifyCode)} autoFocus />
                         <div className="btn-row" style={{ justifyContent: 'space-between' }}>
-                            <button className="btn-link" onClick={resign ? signInAgain : sendCode} disabled={isLoading}>{t('Resend code')}</button>
+                            <button className="btn-link" onClick={() => run(async () => { const r = await ipc().invoke('telecloud-sync:resend-code'); if (!r.success) throw new Error(r.error); setViaApp(r.viaApp !== false); setOtpCode(''); })} disabled={isLoading}>{t('Resend code')}</button>
                             <button className="btn-primary" onClick={verifyCode} disabled={isLoading || otpCode.length < 5}>{isLoading ? t('Verifying…') : t('Verify')}</button>
                         </div>
                     </div>
@@ -721,7 +735,8 @@ const TeleCloudSyncSettings = () => {
             <section className="set-section">
                 <h3>{t('Backup')}</h3>
                 <div className="card set-card">
-                    <BackupCard queue={queue} onSync={sync} onPause={pause} onResume={resume} rate={opts.rateKBps || 0} onRate={(v) => setOption({ rateKBps: v })} />
+                    <BackupCard queue={queue} onSync={sync} onPause={pause} onResume={resume} onAnyway={() => ipc().invoke('telecloud-sync:backup-now-anyway')} rate={opts.rateKBps || 0} onRate={(v) => setOption({ rateKBps: v })} />
+                    <AutoBackupRows opts={opts} setOption={setOption} />
                     <IndexRow index={status?.index} onSaved={refresh} />
                     <SpeedTest />
                     <BackupCheck disabled={isLoading} />
@@ -730,6 +745,8 @@ const TeleCloudSyncSettings = () => {
                     </SettingRow>
                 </div>
             </section>
+
+            <ScheduleSection opts={opts} setOption={setOption} />
 
             <section className="set-section">
                 <h3>{t('Encryption')}</h3>
@@ -744,7 +761,7 @@ const TeleCloudSyncSettings = () => {
             <section className="set-section">
                 <h3>{t('Cache')}</h3>
                 <div className="card set-card">
-                    <SettingRow icon="disc" title={t('Cache size')} desc={t('{bytes} used of {bytes2}. The least recently played tracks are removed first.', { bytes: formatBytes(status?.cacheBytes || 0), bytes2: formatBytes(cacheLimitBytes) })}>
+                    <SettingRow icon="disc" title={t('Cache size')} desc={t('{bytes} used of {bytes2}. The least recently played tracks are removed first; kept offline ones never are.', { bytes: formatBytes(status?.cacheBytes || 0), bytes2: formatBytes(cacheLimitBytes) })}>
                         <div className="row-gap">
                             <input className="input mono" type="number" min="0.5" max="2000" step="0.5" defaultValue={opts.cacheLimitGB || 5} key={opts.cacheLimitGB}
                                 onBlur={e => { const v = Number(e.target.value); if (v > 0 && v !== opts.cacheLimitGB) setOption({ cacheLimitGB: v }); }}
@@ -755,9 +772,10 @@ const TeleCloudSyncSettings = () => {
                     <div className="set-sub" style={{ background: 'transparent', paddingTop: 0 }}>
                         <Progress value={Math.min(100, ((status?.cacheBytes || 0) / cacheLimitBytes) * 100)} />
                     </div>
-                    <SettingRow icon="trash" title={t('Clear cache')} desc={t('Cloud tracks download again the next time you play them.')}>
+                    <SettingRow icon="trash" title={t('Clear cache')} desc={t('Cloud tracks download again the next time you play them. Albums and playlists kept offline stay.')}>
                         <button className="btn-ghost" onClick={clearCache} disabled={!status?.cacheBytes}>{t('Clear')}</button>
                     </SettingRow>
+                    <OfflineRows />
                 </div>
             </section>
 

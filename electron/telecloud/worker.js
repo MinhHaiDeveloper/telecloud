@@ -41,6 +41,13 @@ function createWorker(emit) {
   const streams = () => (streamer ||= createStreamer({ client: need, peerOf: (p) => peerOf(p), master: () => master, bigInt, folder }, emit));
   const tmpFile = (tag) => path.join(require('os').tmpdir(), 'telecloud', `tc-${tag}-${crypto.randomBytes(6).toString('hex')}`);
 
+  /** How a login code came: app (another signed-in Telegram), sms, call, flashCall, missedCall, email, ... */
+  const codeWay = (type) => (type ? String(type.className || '').replace(/^auth\.SentCodeType/, '').replace(/^./, c => c.toLowerCase()) || 'unknown' : null);
+  const sentCode = (r) => {
+    if (r instanceof Api.auth.SentCodeSuccess) throw new Error('Signed in already');
+    return { phoneCodeHash: r.phoneCodeHash, via: codeWay(r.type), next: codeWay(r.nextType), timeout: r.timeout || null, viaApp: r.type instanceof Api.auth.SentCodeTypeApp };
+  };
+
   const newClient = (session, apiId, apiHash) => new tg.TelegramClient(new tg.StringSession(session || ''), Number(apiId), apiHash, {
     connectionRetries: 5,
     autoReconnect: true,
@@ -170,12 +177,21 @@ function createWorker(emit) {
 
     setKey({ masterKey }) { master = masterKey ? Buffer.from(masterKey, 'base64') : null; return true; },
 
+    // A login code. Telegram says how it sent it (type), how a resend would come (nextType) and after how many
+    // seconds a resend may be asked for (timeout). Asking again goes through resendCode on the same request:
+    // a fresh sendCode starts over, and Telegram may quietly stop sending codes to a number asked too often.
     async sendCode({ apiId, apiHash, phone }) {
       if (client) { try { await client.disconnect(); } catch { /* ignore */ } }
       client = newClient('', apiId, apiHash);
       await client.connect();
-      const r = await client.sendCode({ apiId: Number(apiId), apiHash }, phone);
-      return { phoneCodeHash: r.phoneCodeHash };
+      const ask = () => client.invoke(new Api.auth.SendCode({ phoneNumber: phone, apiId: Number(apiId), apiHash, settings: new Api.CodeSettings({}) }));
+      let r;
+      try { r = await ask(); } catch (err) { if (/AUTH_RESTART/.test(err.errorMessage || err.message || '')) r = await ask(); else throw err; }
+      return sentCode(r);
+    },
+
+    async resendCode({ phone, phoneCodeHash }) {
+      return sentCode(await need().invoke(new Api.auth.ResendCode({ phoneNumber: phone, phoneCodeHash })));
     },
 
     async signIn({ phone, phoneCodeHash, code }) {

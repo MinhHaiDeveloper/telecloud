@@ -8,7 +8,10 @@ const path = require('path');
 const crypto = require('crypto');
 
 const CLIENT_ID = '1568091864295415848';
-const LOGO = 'telecloud'; // art asset uploaded to the Discord application
+// The picture when a track has no cover: the release logo is an art asset of the Discord application; a beta
+// (a version like 1.1.0-beta.18) shows the beta logo, from the website, as covers are shown from links
+const BETA = /-/.test(app.getVersion());
+const LOGO = BETA ? 'https://telecloud-music.pages.dev/assets/icon-beta.png' : 'telecloud';
 const DEFAULTS = { enabled: false, showPaused: true, showLastPlayed: true, onlineCover: true, showButton: true, statusText: '{track} by {artist}' };
 const BUTTON = { label: 'Get TeleCloud', url: 'https://telecloud-music.pages.dev/' };
 // Discord takes an update at any time but passes it on to its servers only every ~15 s, dropping what comes
@@ -78,7 +81,27 @@ const coverCache = new Map();
 function firstName(s) {
   return (s || '').split(/[;,、]|\s+[&/]\s+|\s+(?:feat\.?|ft\.?|featuring)\s+/i)[0].trim();
 }
+/**
+ * The link of the cover picked for this album from an online source (kept in the library, and in the tags when
+ * the cover went there): Discord shows that picture, not whatever a search finds. '' on the track means its cover
+ * was replaced by one without a link, so no other track's link is borrowed and the search runs as before.
+ */
+function rememberedCover(track) {
+  try {
+    const database = require('./database');
+    const row = track?.path ? database.getFileByPath(track.path) : null;
+    if (!row) return null;
+    if (row.cover_url != null) return row.cover_url || null;
+    if (!row.album) return null;
+    return database.initDatabase()
+      .prepare("SELECT cover_url FROM music_files WHERE album = ? AND IFNULL(album_artist, '') = IFNULL(?, '') AND cover_url LIKE 'https://%' LIMIT 1")
+      .get(row.album, row.album_artist)?.cover_url || null;
+  } catch { return null; }
+}
+
 async function findCover(track) {
+  const picked = rememberedCover(track);
+  if (picked && picked.length <= 256) return picked;
   const album = known(track?.album, 'Unknown Album');
   if (!album) return null;
   const owner = firstName(track.albumArtist);
@@ -348,6 +371,16 @@ async function updateCover() {
   lastSent = 'none'; refresh();
 }
 
+/** A cover was saved for these tracks: the one showing looks its picture up again */
+function coverChanged(paths) {
+  const now = showing()?.path;
+  if (!now || !options().enabled) return;
+  const norm = (p) => String(p || '').toLowerCase();
+  if (!paths.some(p => norm(p) === norm(now))) return;
+  coverCache.clear(); // an album's search result may have been kept from before
+  updateCover();
+}
+
 /** From the player: the track, whether it plays, and where it is */
 function update({ track, playing, position }) {
   if ((track?.path || null) !== (state.track?.path || null)) { plain = false; tries = 0; }
@@ -392,4 +425,4 @@ ipcMain.handle('discord:set-options', (e, patch) => setOptions(patch || {}));
 ipcMain.handle('discord:update', (e, s) => { update(s || {}); });
 app.on('before-quit', () => { clearTimeout(retryTimer); retryTimer = null; disconnect(); });
 
-module.exports = { report, buildActivity, fit, fill, options, artistChanged };
+module.exports = { report, buildActivity, fit, fill, options, artistChanged, coverChanged, _rememberedCover: rememberedCover };

@@ -80,6 +80,7 @@ async function parseTrack(filePath, stat) {
       // no lyrics in the tags: a .lrc with the same name next to the file counts too
       lyrics: extractLyrics(parsed) || sidecarLyrics(filePath),
       ...mqaTags(parsed),
+      ...coverLinkTags(parsed),
     };
   } catch (err) {
     console.error(`[Library] Could not parse ${filePath}: ${err.message}`);
@@ -96,6 +97,18 @@ function mqaTags(parsed) {
   if (!enc && !/\bMQA/i.test(encoder)) return {};
   const rate = Number(get(/^(MQA)?ORIGINALSAMPLERATE$/i)) || null;
   return { mqa: /studio/i.test(String(get(/^MQASTUDIO$/i) || '')) ? 2 : 1, mqaRate: rate };
+}
+
+/** The link of an online cover chosen in TeleCloud (COVER_URL, COVER_SOURCE), when the tags keep it */
+function coverLinkTags(parsed) {
+  const tags = Object.values(parsed.native || {}).flat();
+  const get = (name) => {
+    const v = tags.find(t => new RegExp(`(^|:)${name}$`, 'i').test(String(t.id)))?.value;
+    const s = String((Array.isArray(v) ? v[0] : v?.text ?? v) ?? '').trim();
+    return s || null;
+  };
+  const url = get('COVER_URL');
+  return /^https:\/\//i.test(url || '') ? { coverUrl: url, coverSource: get('COVER_SOURCE') } : {};
 }
 
 function sidecarLyrics(filePath) {

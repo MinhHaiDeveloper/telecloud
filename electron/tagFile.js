@@ -118,4 +118,60 @@ try { require('electron').app.on('will-quit', flushAll); } catch { /* outside El
 /** Is this file playing, or has it writes waiting? Then a write to it is held too (in order) */
 const isBusy = (file) => { const k = norm(file); return k === playing() || pending.has(k); };
 
-module.exports = { openTags, writeWhenFree, isBusy, flushAll, _pending: () => [...pending.values()].map(e => e.file) };
+// ---------- where an online cover came from
+// Two text fields, COVER_URL and COVER_SOURCE (the link of a cover chosen from Apple Music, QQ Music, ...
+// and which one), so the album's own picture can be shown where only links work (Discord). The same names
+// in every format: a TXXX frame in ID3v2, a field in Vorbis comments and APE, an iTunes "----" item in MP4.
+const LINK = { url: 'COVER_URL', source: 'COVER_SOURCE' };
+const ITUNES = 'com.apple.iTunes';
+
+/** The tags of these kinds this file holds, the right kind made when it has none */
+function linkTags(f, create) {
+  const { TagTypes } = require('node-taglib-sharp');
+  if (f instanceof DsfTags) return [{ kind: 'id3', tag: f.tag }];
+  const kinds = [[TagTypes.Xiph, 'xiph'], [TagTypes.Id3v2, 'id3'], [TagTypes.Apple, 'apple'], [TagTypes.Ape, 'ape']];
+  const found = kinds.map(([t, kind]) => ({ kind, tag: f.getTag(t, false) })).filter(x => x.tag);
+  if (found.length || !create) return found;
+  const ext = String(f.name || '').toLowerCase().match(/\.[^.]+$/)?.[0] || '';
+  const [t, kind] = /^\.(flac|ogg|oga|opus|spx)$/.test(ext) ? kinds[0] : /^\.(m4a|mp4|m4b|aac|alac)$/.test(ext) ? kinds[2] : /^\.(ape|wv|mpc)$/.test(ext) ? kinds[3] : kinds[1];
+  const tag = f.getTag(t, true);
+  return tag ? [{ kind, tag }] : [];
+}
+function readField({ kind, tag }, key) {
+  const { Id3v2UserTextInformationFrame: U, Id3v2FrameClassType } = require('node-taglib-sharp');
+  if (kind === 'xiph') return tag.getFieldFirstValue(key) || null;
+  if (kind === 'apple') return tag.getFirstItunesString(ITUNES, key) || null;
+  if (kind === 'ape') return tag.getItem(key)?.toString() || null;
+  const frame = U.findUserTextInformationFrame(tag.getFramesByClassType(Id3v2FrameClassType.UserTextInformationFrame), key, false);
+  return frame?.text?.[0] || null;
+}
+function writeField({ kind, tag }, key, value) {
+  const { Id3v2UserTextInformationFrame: U, Id3v2FrameClassType } = require('node-taglib-sharp');
+  if (kind === 'xiph') { if (value) tag.setFieldAsStrings(key, value); else tag.removeField(key); return; }
+  if (kind === 'apple') { tag.setItunesStrings(ITUNES, key, ...(value ? [value] : [])); return; }
+  if (kind === 'ape') { if (value) tag.setStringValue(key, value); else tag.removeItem(key); return; }
+  let frame = U.findUserTextInformationFrame(tag.getFramesByClassType(Id3v2FrameClassType.UserTextInformationFrame), key, false);
+  if (!value) { if (frame) tag.removeFrame(frame); return; }
+  if (!frame) { frame = U.fromDescription(key); tag.addFrame(frame); }
+  frame.text = [value];
+}
+/** { url, source } from an open file's tags, or null */
+function readCoverLink(f) {
+  for (const t of linkTags(f, false)) {
+    const url = readField(t, LINK.url);
+    if (url) return { url, source: readField(t, LINK.source) };
+  }
+  return null;
+}
+/** Puts the link in (or takes it out, for null) of an open file's tags. True when something changed; the caller saves. */
+function setCoverLink(f, link) {
+  const now = readCoverLink(f);
+  if ((now?.url || null) === (link?.url || null) && (now?.source || null) === (link?.source || null)) return false;
+  for (const t of linkTags(f, !!link)) {
+    writeField(t, LINK.url, link?.url || null);
+    writeField(t, LINK.source, link?.url ? link.source || null : null);
+  }
+  return true;
+}
+
+module.exports = { openTags, writeWhenFree, isBusy, flushAll, readCoverLink, setCoverLink, _pending: () => [...pending.values()].map(e => e.file) };

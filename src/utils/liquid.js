@@ -105,6 +105,56 @@ export function warmCanvases(n = 3) {
 }
 const borrow = () => pool.pop() || makeCanvas();
 
+/**
+ * Paint, once, a faint copy of what opening Now Playing draws: the blurred and scaled backdrop layers, the big
+ * cover with its shadow and a frosted pill. The first time the GPU draws these it builds their shaders and
+ * rasters the big cover (about 70 + 50 ms measured), which made the first flight from the mini player stutter;
+ * with it the first opening's longest frame went from 67-107 ms to 40 ms. It covers the window at 1% opacity,
+ * ignores the mouse and is gone after 8 frames.
+ */
+let npWarmed = false;
+export function warmNowPlaying(url) {
+  if (npWarmed || motionOff()) return;
+  npWarmed = true;
+  const idle = window.requestIdleCallback || ((f) => setTimeout(f, 300));
+  idle(() => {
+    const box = document.createElement('div');
+    box.setAttribute('aria-hidden', 'true');
+    box.style.cssText = 'position:fixed;inset:0;opacity:.01;pointer-events:none;z-index:2147483647;overflow:hidden;contain:strict;will-change:opacity';
+    const pic = (css) => {
+      const el = url ? document.createElement('img') : document.createElement('div');
+      if (url) { el.src = url; el.decoding = 'async'; } else el.style.background = 'linear-gradient(135deg,#a44,#48c)';
+      el.style.cssText += `;position:absolute;object-fit:cover;${css}`;
+      return el;
+    };
+    const layer = 'left:50%;top:50%;width:12%;height:12%;transform:translate(-50%,-50%) scale(10);will-change:transform';
+    box.append(
+      pic(`${layer};filter:blur(10px) saturate(1.4);opacity:.5`),
+      Object.assign(document.createElement('canvas'), { width: 64, height: 64 }),
+      pic('left:calc(50% - 230px);top:calc(50% - 300px);width:460px;height:460px;border-radius:22px;box-shadow:0 30px 80px rgba(0,0,0,.45)'),
+    );
+    box.children[1].style.cssText = `position:absolute;${layer};filter:blur(5px) saturate(1.3);opacity:.62`;
+    const pill = document.createElement('span');
+    pill.style.cssText = 'position:absolute;left:20px;top:20px;width:90px;height:34px;border-radius:999px;backdrop-filter:blur(10px);background:rgba(128,128,128,.3)';
+    // the title, artist and details in Now Playing's sizes, so their letters are drawn once too
+    const words = document.createElement('div');
+    words.style.cssText = 'position:absolute;left:20px;top:70px;width:430px;color:var(--text,#fff)';
+    const sample = `${document.querySelector('.player .meta')?.textContent || ''} Now Playing 0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz`;
+    for (const [size, weight] of [['30px', 800], ['15px', 500], ['13px', 700], ['13px', 500], ['10.5px', 700], ['14px', 700]]) {
+      const p = document.createElement('p');
+      p.style.cssText = `margin:0;font-size:${size};font-weight:${weight}`;
+      p.textContent = sample; // the track's own words as text, never as markup
+      words.append(p);
+    }
+    box.append(pill, words);
+    document.body.append(box);
+    // a few frames, so the GPU has drawn it, then gone
+    let n = 0;
+    const step = () => (++n < 8 ? requestAnimationFrame(step) : box.remove());
+    requestAnimationFrame(step);
+  }, { timeout: 4000 });
+}
+
 // The backdrop's canvas, made once ahead and kept: Now Playing opens without compiling anything
 let backdrop;
 export function backdropCanvas() {

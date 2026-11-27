@@ -447,6 +447,7 @@ const SongList = ({
             const allFav = selectedFiles.every(f => favSet.has(f.path));
             return <button className={`icon-btn sm ${allFav ? 'on' : ''}`} onClick={() => onFavoriteMany(selectedFiles, !allFav)} title={allFav ? t('Remove from favourites') : t('Add to favourites')}><Icon name="heart" filled={allFav} /></button>;
           })()}
+          {ctx.onDownloadMany && <button className="icon-btn sm" onClick={() => ctx.onDownloadMany(selectedFiles)} title={t('Download to the download folder (cloud tracks are fetched first)')}><Icon name="download" /></button>}
           {onBackupMany && <button className="icon-btn sm" onClick={() => onBackupMany(selectedFiles, t('{length} selected tracks', { length: selectedFiles.length }))} title={t('Back up to…')}><Icon name="cloud" /></button>}
           {onRemoveFromCloud && selectedFiles.some(f => f.telegram_message_id) && (
             <button className="btn-ghost sm danger" onClick={() => onRemoveFromCloud(selectedFiles.filter(f => f.telegram_message_id))}><Icon name="cloud" />{t('Remove from TeleCloud')}</button>

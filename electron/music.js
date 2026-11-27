@@ -113,6 +113,9 @@ function notifyCloudChanged(paths) {
   paths.forEach(p => database.setStorageType(p, 'local'));
   cloudChangeListeners.forEach(fn => { try { fn(paths); } catch (err) { console.error('[Library] cloud change listener:', err.message); } });
 }
+const addedListeners = [];
+/** Called with the paths of tracks that are new in the library (not changed ones) after each scan or refresh */
+const onTracksAdded = (fn) => addedListeners.push(fn);
 let cancelRequested = false;
 const BATCH = 200;          // rows per database transaction / UI update
 
@@ -184,6 +187,7 @@ async function syncLibrary({ mode = 'refresh', onProgress, onBatch } = {}) {
 
   let added = 0;
   let updated = 0;
+  const newPaths = [];
   let done = 0;
   const addedAt = Date.now();
   let pending = [];
@@ -208,7 +212,7 @@ async function syncLibrary({ mode = 'refresh', onProgress, onBatch } = {}) {
       const results = await tagPool.parseMany(chunk.map(({ p, stat }) => ({ path: p, mtimeMs: stat.mtimeMs, size: stat.size })));
       chunk.forEach(({ isNew }, i) => {
         pending.push({ ...results[i], addedAt });
-        if (isNew) added++; else updated++;
+        if (isNew) { added++; newPaths.push(results[i].path || chunk[i].p); } else updated++;
       });
       done += chunk.length;
       if (pending.length >= BATCH) await flush();
@@ -226,6 +230,7 @@ async function syncLibrary({ mode = 'refresh', onProgress, onBatch } = {}) {
   const cancelled = cancelRequested;
   cancelRequested = false;
   if (cloudChanged.length) notifyCloudChanged(cloudChanged);
+  if (newPaths.length) addedListeners.forEach(fn => { try { fn(newPaths); } catch (err) { console.error('[Library] new tracks listener:', err.message); } });
   // With onBatch the UI already has every change; skip re-sending the whole library
   const files = onBatch ? null : database.getAllFiles().map(toFrontend);
   const total = files ? files.length : database.countFiles();
@@ -500,4 +505,4 @@ ipcMain.handle('check-file-exists', async (event, filePath) => {
   }
 });
 
-module.exports = { syncLibrary, backgroundRefresh, parseTrack, toFrontend, upsertSingleFile, onCloudFilesChanged };
+module.exports = { syncLibrary, backgroundRefresh, parseTrack, toFrontend, upsertSingleFile, onCloudFilesChanged, onTracksAdded };

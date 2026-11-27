@@ -86,11 +86,20 @@ export function evenWords(line, next) {
   return { words: pieces.map((p, i) => { const w = { time: line.time + ((end - line.time) * acc) / total, text: p }; acc += len[i]; return w; }), end };
 }
 
-/** The line's time window: where its words may go */
+/**
+ * The line's time window in the word editor: up to the next line, and always wide enough to hold every word and
+ * the line's end with a little room. Word times from Cadence (or a file) can run past the next line's start;
+ * without the room, the last words and the end grip sat outside the strip, where they could not be dragged back.
+ */
 export function windowOf(lines, i, duration) {
   const l = lines[i];
   const next = lines[i + 1]?.time;
-  const a = Math.max(0, l.time - 0.5);
-  const b = Math.min(next != null ? next + 0.3 : (l.end ?? l.time + 6) + 1, duration || Infinity, l.time + 30);
+  const words = l.words || [];
+  const first = words.length ? Math.min(l.time, words[0].time) : l.time;
+  const last = Math.max(l.end ?? -Infinity, words.length ? words[words.length - 1].time + 0.3 : -Infinity);
+  const a = Math.max(0, first - 0.5);
+  let b = Math.min(next != null ? next + 0.3 : (l.end ?? l.time + 6) + 1, l.time + 30);
+  if (Number.isFinite(last)) b = Math.max(b, last + 0.6);
+  if (duration) b = Math.min(b, duration);
   return [a, Math.max(b, a + 1)];
 }

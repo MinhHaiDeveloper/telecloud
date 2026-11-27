@@ -23,7 +23,10 @@ const { tx } = require('../i18n');
 const CHANNEL_TITLE = 'TeleCloud Music Library';
 const CHANNEL_ABOUT = 'Private music library storage for TeleCloud';
 const MAX_ATTEMPTS = 3;
-const DEFAULT_OPTIONS = { encrypt: true, cacheLimitGB: 5, rateKBps: 0, paused: false };
+// autoBackup: new tracks in the music folders are backed up by themselves (off until turned on).
+// schedule: backups wait for a time window, for every track or only chosen folders and albums (off until turned on).
+const DEFAULT_SCHEDULE = { on: false, from: '01:00', to: '07:00', scope: 'all', folders: [], albums: [] };
+const DEFAULT_OPTIONS = { encrypt: true, cacheLimitGB: 5, rateKBps: 0, paused: false, autoBackup: false, autoBackupStorage: null, schedule: DEFAULT_SCHEDULE };
 const MIME = { '.flac': 'audio/flac', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.wav': 'audio/wav', '.aiff': 'audio/aiff', '.aif': 'audio/aiff', '.dsf': 'audio/dsf', '.dff': 'audio/dff', '.ape': 'audio/ape', '.wv': 'audio/wavpack' };
 
 const kv = new ElectronStore.default({ name: 'telecloud-sync', encryptionKey: 'telecloud-sync-secure-key-v1' });
@@ -167,7 +170,7 @@ async function refreshIndex(storage, { full = false } = {}) {
     const c = parseCaption(m.caption, key);
     if (!c.ours) continue;
     ours.push(m.id);
-    if (c.kind === 'manifest') { if (!c.needsKey && !c.wrongKey) store.storages.setManifest(storage.id, m.id, c.iv, m.date * 1000); continue; }
+    if (c.kind === 'manifest') { if (!c.needsKey && !c.wrongKey) store.storages.setManifest(storage.id, m.id, c.iv, m.date * 1000, false, c.sha256); continue; }
     if (c.kind === 'cover') { if (!c.needsKey && !c.wrongKey) store.covers.put(storage.id, c.key, m.id, c.iv); continue; }
     if (c.needsKey || c.wrongKey) { needKey++; continue; }
     const d = c.data;
@@ -310,9 +313,67 @@ let runner = null;
 let activeJob = null;
 let queueSnapshot = { active: null };
 
+// ---------- the upload schedule: a time window, for everything or for chosen folders and albums
+
+const minutesOf = (hm) => { const [h, m] = String(hm).split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+/** Now inside the window? It can run past midnight (23:30 to 06:00); from = to means all day. */
+function inWindow(sch, d = new Date()) {
+  const now = d.getHours() * 60 + d.getMinutes();
+  const a = minutesOf(sch.from), b = minutesOf(sch.to);
+  if (a === b) return true;
+  return a < b ? now >= a && now < b : now >= a || now < b;
+}
+function msUntilWindow(sch, d = new Date()) {
+  let mins = minutesOf(sch.from) - (d.getHours() * 60 + d.getMinutes());
+  if (mins <= 0) mins += 1440;
+  return mins * 60000 - d.getSeconds() * 1000 - d.getMilliseconds();
+}
+const under = (p, folder) => {
+  const f = String(folder).replace(/[\\/]+$/, '').toLowerCase();
+  const x = p.toLowerCase();
+  return x === f || x.startsWith(`${f}\\`) || x.startsWith(`${f}/`);
+};
+/** Does the schedule cover this track? Everything, or the chosen folders and albums */
+function inScope(sch, p) {
+  if (sch.scope !== 'chosen') return true;
+  if ((sch.folders || []).some(f => under(p, f))) return true;
+  const row = store.library.row(p);
+  if (!row) return false;
+  const owner = (row.album_artist || row.artist || '').toLowerCase();
+  return (sch.albums || []).some(a => (a.album || '').toLowerCase() === (row.album || '').toLowerCase() && (a.artist || '').toLowerCase() === owner);
+}
+let scheduleOverride = false; // "Back up now anyway": until this run ends
+let scheduleTimer = null;
+/** Waits for the window: the schedule is on, now is outside it, and the track is covered */
+function held(p) {
+  const sch = options().schedule;
+  return !!(sch?.on && !scheduleOverride && !inWindow(sch) && inScope(sch, p));
+}
+/** The next backup that may go now (held ones are skipped, not reordered) */
+function nextItem() {
+  const first = store.queue.next();
+  if (!first || !held(first.path)) return first;
+  for (const it of store.queue.queued()) if (!held(it.path)) return it;
+  return null;
+}
+/** Start the queue again when the window opens, if anything waits for it */
+function planWindow() {
+  clearTimeout(scheduleTimer);
+  scheduleTimer = null;
+  const sch = options().schedule;
+  if (!sch?.on || inWindow(sch)) return;
+  if (!store.queue.queued().some(it => held(it.path))) return;
+  const ms = msUntilWindow(sch);
+  scheduleTimer = setTimeout(() => { scheduleTimer = null; startRunner(); pushQueue(); }, ms);
+  scheduleTimer.unref?.();
+  console.log(`[TeleCloud] Backups wait for the upload window at ${sch.from} (in ${Math.round(ms / 60000)} min)`);
+}
+
 function queueState() {
   const counts = store.queue.counts();
-  return { ...counts, paused: options().paused, running: !!runner, active: queueSnapshot.active, errors: store.queue.errors().slice(0, 10) };
+  const sch = options().schedule;
+  const waiting = sch?.on ? store.queue.queued().filter(it => held(it.path)).length : 0;
+  return { ...counts, paused: options().paused, running: !!runner, active: queueSnapshot.active, errors: store.queue.errors().slice(0, 10), held: waiting, windowFrom: waiting ? sch.from : null, windowTo: waiting ? sch.to : null };
 }
 function pushQueue() {
   const s = queueState();
@@ -434,13 +495,13 @@ function startRunner() {
       }
       for (;;) {
         if (options().paused) break;
-        const item = store.queue.next();
+        const item = nextItem();
         if (!item) break;
         try {
           await uploadOne(item);
           store.queue.set(item.path, 'done');
           sinceCheckpoint++;
-          if (manifestDirty.size && (sinceCheckpoint >= CHECKPOINT_TRACKS || Date.now() - lastCheckpoint >= CHECKPOINT_MS) && store.queue.next()) {
+          if (manifestDirty.size && (sinceCheckpoint >= CHECKPOINT_TRACKS || Date.now() - lastCheckpoint >= CHECKPOINT_MS) && nextItem()) {
             queueSnapshot.active = { name: 'Library index', stage: 'manifest', size: 0, bytes: 0, done: 0 };
             pushQueue();
             await writeDirtyManifests();
@@ -482,6 +543,8 @@ function startRunner() {
     } finally {
       queueSnapshot.active = null;
       runner = null;
+      scheduleOverride = false;
+      planWindow(); // what waits for the window starts by itself then
       pushQueue();
       send('telecloud-sync:stopped');
     }
@@ -529,11 +592,12 @@ async function uploadSmall({ storage, buffer, fileName, caption, iv, mime }) {
   }
 }
 
-async function downloadSmall({ storage, messageId, iv }) {
+/** A small file (manifest, cover, GIF) into memory; with sha256, it must match (the worker checks it) */
+async function downloadSmall({ storage, messageId, iv, sha256 = null }) {
   const tmp = path.join(getTempDir(), `tc-dl-${crypto.randomBytes(6).toString('hex')}`);
   const jobId = `sd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   try {
-    await worker.call('download', { jobId, peer: store.toPeer(storage), messageId, targetPath: tmp, iv: iv || null, sha256: null });
+    await worker.call('download', { jobId, peer: store.toPeer(storage), messageId, targetPath: tmp, iv: iv || null, sha256 });
     return await fs.promises.readFile(tmp);
   } finally {
     fs.promises.rm(tmp, { force: true }).catch(() => {});
@@ -602,7 +666,8 @@ async function loadManifest(storage) {
     const cached = JSON.parse(await fs.promises.readFile(manifestFile(s.id), 'utf8'));
     if (cached.messageId === s.manifest_id) return cached.data;
   } catch { /* not cached yet */ }
-  const buf = await downloadSmall({ storage: s, messageId: s.manifest_id, iv: s.manifest_iv });
+  // checked against the checksum in its caption; one written before checksums (no manifest_sha) is read as before
+  const buf = await downloadSmall({ storage: s, messageId: s.manifest_id, iv: s.manifest_iv, sha256: s.manifest_sha || null });
   const data = JSON.parse(zlib.gunzipSync(buf).toString('utf8'));
   await saveManifestCache(s.id, s.manifest_id, data);
   return data;
@@ -631,14 +696,16 @@ async function writeManifest(storageId) {
   const artists = await artistGifs(s, prev);
   const data = { v: 1, at: Date.now(), tracks, artists, covers: store.covers.all(s.id).map(c => ({ key: c.cover_key, id: c.message_id, iv: c.iv })) };
   const iv = newIv();
+  const gz = zlib.gzipSync(Buffer.from(JSON.stringify(data)));
+  const sha = crypto.createHash('sha256').update(gz).digest('hex');
   const id = await uploadSmall({
-    storage: s, buffer: zlib.gzipSync(Buffer.from(JSON.stringify(data))), iv, mime: 'application/gzip',
+    storage: s, buffer: gz, iv, mime: 'application/gzip',
     fileName: iv ? 'library.tcm' : 'telecloud-library.json.gz',
-    caption: buildManifestCaption({ iv, master: masterKey() }),
+    caption: buildManifestCaption({ iv, master: masterKey(), sha256: sha }),
   });
   await worker.call('pin', { peer: store.toPeer(s), id }).catch(err => console.error('[TeleCloud] pin failed:', err.message));
   const old = s.manifest_id;
-  store.storages.setManifest(s.id, id, iv, Date.now(), true);
+  store.storages.setManifest(s.id, id, iv, Date.now(), true, sha);
   await saveManifestCache(s.id, id, data);
   console.log(`[TeleCloud] Index saved: ${tracks.length} ${tracks.length === 1 ? 'track' : 'tracks'}, ${data.covers.length} ${data.covers.length === 1 ? 'cover' : 'covers'}`);
   if (old && old !== id) await worker.call('deleteMessages', { peer: store.toPeer(s), ids: [old] }).catch(() => {});
@@ -722,6 +789,10 @@ async function fetchCover(storage, key, manifest) {
   const messageId = known?.message_id ?? known?.id;
   if (!messageId) return false;
   const buf = await downloadSmall({ storage, messageId, iv: known.iv });
+  // a cover's key is the start of its SHA-1: what came back must be that picture
+  if (/^[0-9a-f]{20}$/.test(key) && crypto.createHash('sha1').update(buf).digest('hex').slice(0, 20) !== key) {
+    throw new Error(`The cover ${key} in TeleCloud does not match its checksum`);
+  }
   await fs.promises.mkdir(path.dirname(local), { recursive: true });
   await fs.promises.writeFile(local, buf);
   return true;
@@ -850,9 +921,74 @@ async function readTagsFromCache(row, file) {
   }
 }
 
-/** Keep the cache under the limit, removing the least recently played files first */
+// ---------- kept offline: albums and playlists whose cloud tracks stay in the cache
+// Sets are { label, kind: 'album' | 'playlist', paths }, by a key the page gives ("album:<key>", "playlist:<id>").
+// The page sends a set's tracks again when they change (a track added to the playlist, restored into the album).
+// Their cloud-only tracks are downloaded in the background, one at a time, and the cache limit never removes them.
+
+const offlineSets = () => kv.get('offlineSets') || {};
+const pinnedPaths = () => new Set(Object.values(offlineSets()).flatMap(s => s.paths || []));
+const cloudOnly = (row) => !!row && (row.storage_type === 'cloud' || row.path.startsWith('tc://')) && !!row.telegram_message_id;
+const hasCache = (row) => !!row?.cache_path && isInAppStorage(row.cache_path) && fs.existsSync(row.cache_path);
+
+async function offlineList() {
+  const out = [];
+  for (const [key, set] of Object.entries(offlineSets())) {
+    let need = 0, ready = 0, bytes = 0;
+    for (const p of set.paths || []) {
+      const row = store.library.row(p);
+      if (!cloudOnly(row)) continue;
+      need++;
+      if (hasCache(row)) { ready++; try { bytes += (await fs.promises.stat(row.cache_path)).size; } catch { /* gone */ } }
+    }
+    out.push({ key, label: set.label, kind: set.kind, tracks: (set.paths || []).length, cloudTracks: need, ready, bytes });
+  }
+  return out.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function setOffline({ key, label, kind, paths, on }) {
+  key = String(key || '').slice(0, 300);
+  if (!key) throw new Error('No album or playlist');
+  const sets = offlineSets();
+  if (!on) delete sets[key];
+  else {
+    const list = [...new Set((Array.isArray(paths) ? paths : []).filter(p => typeof p === 'string').slice(0, 20000))];
+    const same = sets[key] && sets[key].paths.length === list.length && sets[key].paths.every((p, i) => p === list[i]) && sets[key].label === label;
+    if (same) return false;
+    sets[key] = { label: String(label || key).slice(0, 200), kind: kind === 'playlist' ? 'playlist' : 'album', paths: list };
+  }
+  kv.set('offlineSets', sets);
+  scheduleOfflineFetch(500);
+  return true;
+}
+
+let offlineRun = null;
+let offlineTimer = null;
+const scheduleOfflineFetch = (ms = 2000) => { clearTimeout(offlineTimer); offlineTimer = setTimeout(() => { offlineTimer = null; fetchOffline(); }, ms); };
+/** Download what the kept sets still miss; tells the page how far it is */
+function fetchOffline() {
+  if (offlineRun) { scheduleOfflineFetch(5000); return offlineRun; }
+  offlineRun = (async () => {
+    const todo = [...pinnedPaths()].map(p => store.library.row(p)).filter(r => cloudOnly(r) && !hasCache(r));
+    if (!todo.length) return;
+    console.log(`[TeleCloud] Keeping offline: ${todo.length} ${todo.length === 1 ? 'track' : 'tracks'} to download`);
+    let done = 0, failed = 0;
+    for (const row of todo) {
+      if (!pinnedPaths().has(row.path)) continue; // unpinned meanwhile
+      send('telecloud-sync:offline', { state: 'downloading', done, total: todo.length, name: row.title || path.basename(row.path) });
+      try { await cacheTrack(row.path); } catch (err) { failed++; console.warn(`[TeleCloud] Keep offline: ${row.path}: ${err.message}`); }
+      done++;
+    }
+    console.log(`[TeleCloud] Kept offline: ${done - failed} downloaded${failed ? `, ${failed} failed` : ''}`);
+    send('telecloud-sync:offline', { state: 'done', done: done - failed, failed, total: todo.length });
+  })().catch(err => console.error('[TeleCloud] keep offline:', err.message)).finally(() => { offlineRun = null; });
+  return offlineRun;
+}
+
+/** Keep the cache under the limit, removing the least recently played files first. Kept offline: never removed. */
 async function enforceCacheLimit(keep) {
   const limit = (Number(options().cacheLimitGB) > 0 ? Number(options().cacheLimitGB) : DEFAULT_OPTIONS.cacheLimitGB) * 1024 ** 3;
+  const pinned = pinnedPaths();
   const files = [];
   for (const r of store.library.cached()) {
     if (!isInAppStorage(r.cache_path)) continue;
@@ -864,7 +1000,7 @@ async function enforceCacheLimit(keep) {
   files.sort((a, b) => a.used - b.used);
   for (const f of files) {
     if (total <= limit) break;
-    if (f.cache_path === keep) continue;
+    if (f.cache_path === keep || pinned.has(f.path)) continue;
     await fs.promises.rm(f.cache_path, { force: true });
     store.library.setCache(f.path, null);
     evicted.push(f.path);
@@ -956,6 +1092,7 @@ async function restore() {
   pushTracks([...added, ...changed]);
   if (restored || updated) require('../dataPort').scheduleResolve(); // tracks an import was waiting for
   console.log(`[TeleCloud] Restore: ${restored} added, ${updated} updated, ${skipped} already here, ${coversFetched} covers, ${gifsFetched} artist GIFs${needKey ? `, ${needKey} need the recovery key` : ''}`);
+  if (Object.keys(offlineSets()).length) scheduleOfflineFetch(); // tracks of kept albums and playlists may be here now
   return { restoredCount: restored, skippedCount: skipped, updatedCount: updated, needKey, covers: coversFetched };
 }
 
@@ -1056,6 +1193,24 @@ function removeStorage({ id }) {
 }
 
 /** Queue tracks that aren't in TeleCloud yet for one storage; tell what was left out and why */
+/** Where a new track belongs: the storage holding most of its album, else its folder's backed-up tracks */
+function homeOf(row) {
+  const owner = row.album_artist || row.artist;
+  if (row.album && owner) {
+    const a = store.library.albumHome(row.album, owner);
+    const s = a && store.storages.byPeer(a.peer);
+    if (s) return s;
+  }
+  const dir = path.dirname(row.path);
+  const counts = new Map();
+  for (const r of store.library.backedUpUnder(dir + path.sep)) {
+    if (path.dirname(r.path).toLowerCase() !== dir.toLowerCase()) continue; // the same folder, not one below it
+    counts.set(r.peer, (counts.get(r.peer) || 0) + 1);
+  }
+  const best = [...counts.entries()].sort((x, y) => y[1] - x[1])[0];
+  return (best && store.storages.byPeer(best[0])) || null;
+}
+
 function backupTo({ paths, storageId }) {
   const storage = store.storages.get(storageId);
   if (!storage) throw new Error('Unknown storage');
@@ -1272,12 +1427,37 @@ function setupTeleCloudSyncHandlers() {
     if (!setup.apiId || !setup.apiHash) throw new Error(tx('API credentials not provided'));
     const r = await worker.call('sendCode', { apiId: setup.apiId, apiHash: setup.apiHash, phone: phoneNumber });
     setup.phoneCodeHash = r.phoneCodeHash;
-    return { success: true };
+    setup.codeNext = r.next;
+    console.log(`[TeleCloud] Login code sent: ${r.via}${r.next ? `, a resend would come by ${r.next}` : ''}${r.timeout ? ` after ${r.timeout} s` : ''}`);
+    return { success: true, viaApp: r.viaApp, via: r.via, next: r.next, timeout: r.timeout };
+  });
+
+  // Resend. Telegram's resend means "another way" (SMS, a call): when it offers one, use it; when it has none
+  // (SEND_CODE_UNAVAILABLE, or no next way given), ask for a code in the app again, as before.
+  handle('telecloud-sync:resend-code', async () => {
+    if (!setup.phoneCodeHash || !setup.phoneNumber) throw new Error(tx('Request a new code first'));
+    let r;
+    if (setup.codeNext) {
+      r = await worker.call('resendCode', { phone: setup.phoneNumber, phoneCodeHash: setup.phoneCodeHash }).catch((err) => {
+        if (/SEND_CODE_UNAVAILABLE/.test(err.message || '')) return null;
+        throw err;
+      });
+    }
+    if (!r) r = await worker.call('sendCode', { apiId: setup.apiId, apiHash: setup.apiHash, phone: setup.phoneNumber });
+    setup.codeNext = r.next;
+    setup.phoneCodeHash = r.phoneCodeHash;
+    console.log(`[TeleCloud] Login code sent again: ${r.via}${r.next ? `, next by ${r.next}` : ''}`);
+    return { success: true, viaApp: r.viaApp, via: r.via, next: r.next, timeout: r.timeout };
   });
 
   handle('telecloud-sync:verify-code', async ({ code, phoneNumber } = {}) => {
     if (!setup.phoneCodeHash) throw new Error(tx('Request a new code first'));
-    const r = await worker.call('signIn', { phone: phoneNumber || setup.phoneNumber, phoneCodeHash: setup.phoneCodeHash, code });
+    const r = await worker.call('signIn', { phone: phoneNumber || setup.phoneNumber, phoneCodeHash: setup.phoneCodeHash, code }).catch((err) => {
+      // each new code makes the last one stop working: say so in words
+      if (/PHONE_CODE_INVALID/.test(err.message || '')) throw new Error(tx('That code does not match. Check it, or use the newest code Telegram sent.'));
+      if (/PHONE_CODE_EXPIRED/.test(err.message || '')) throw new Error(tx('That code has expired. Ask for a new one.'));
+      throw err;
+    });
     if (r.passwordNeeded) return { success: true, passwordNeeded: true };
     setup.session = r.session;
     return { success: true };
@@ -1296,7 +1476,9 @@ function setupTeleCloudSyncHandlers() {
     setup = { apiId: creds.apiId, apiHash: creds.apiHash, phoneNumber: creds.phoneNumber, resign: true };
     const r = await worker.call('sendCode', { apiId: setup.apiId, apiHash: setup.apiHash, phone: setup.phoneNumber });
     setup.phoneCodeHash = r.phoneCodeHash;
-    return { success: true, phoneNumber: setup.phoneNumber };
+    setup.codeNext = r.next;
+    console.log(`[TeleCloud] Login code sent: ${r.via} (signing in again)`);
+    return { success: true, phoneNumber: setup.phoneNumber, viaApp: r.viaApp };
   });
   handle('telecloud-sync:resign-finish', async () => {
     if (!setup.resign || !setup.session) throw new Error(tx('Sign in first'));
@@ -1367,6 +1549,10 @@ function setupTeleCloudSyncHandlers() {
   handle('telecloud-sync:stop-sync', async () => { await pauseQueue(); return { success: true }; });
   handle('telecloud-sync:resume', async () => { if (hasTelegramStorage() && sessionEnded()) throw new Error(endedError()); setOptions({ paused: false }); store.queue.retryErrors(); startRunner(); pushQueue(); return { success: true }; });
   handle('telecloud-sync:queue-state', async () => queueState());
+  // outside the upload window: start the waiting backups now, this once
+  handle('telecloud-sync:backup-now-anyway', async () => { scheduleOverride = true; setOptions({ paused: false }); startRunner(); pushQueue(); return { success: true }; });
+  handle('telecloud-sync:offline-list', async () => ({ success: true, sets: await offlineList() }));
+  handle('telecloud-sync:offline-set', async (opts = {}) => { const changed = setOffline(opts); return { success: true, changed, sets: await offlineList() }; });
   handle('telecloud-sync:check-sync-status', async () => ({ isSyncing: !!runner }));
 
   handle('telecloud-sync:cache-track', async (libraryPath) => {
@@ -1449,14 +1635,28 @@ function setupTeleCloudSyncHandlers() {
     if (patch.encrypt !== undefined) next.encrypt = !!patch.encrypt;
     if (patch.cacheLimitGB !== undefined) next.cacheLimitGB = Math.min(2000, Math.max(0.5, Number(patch.cacheLimitGB) || DEFAULT_OPTIONS.cacheLimitGB));
     if (patch.rateKBps !== undefined) next.rateKBps = Math.max(0, Math.round(Number(patch.rateKBps) || 0));
+    if (patch.autoBackup !== undefined) next.autoBackup = !!patch.autoBackup;
+    if (patch.autoBackupStorage !== undefined) next.autoBackupStorage = store.storages.get(patch.autoBackupStorage) ? Number(patch.autoBackupStorage) : null;
+    if (patch.schedule !== undefined) {
+      const s = { ...DEFAULT_SCHEDULE, ...options().schedule, ...(patch.schedule || {}) };
+      const hm = (v, d) => (/^([01]\d|2[0-3]):[0-5]\d$/.test(String(v)) ? String(v) : d);
+      next.schedule = {
+        on: !!s.on, from: hm(s.from, DEFAULT_SCHEDULE.from), to: hm(s.to, DEFAULT_SCHEDULE.to), scope: s.scope === 'chosen' ? 'chosen' : 'all',
+        folders: [...new Set((Array.isArray(s.folders) ? s.folders : []).filter(f => typeof f === 'string' && path.isAbsolute(f)))].slice(0, 200),
+        albums: (Array.isArray(s.albums) ? s.albums : []).filter(a => a && typeof a.album === 'string').map(a => ({ album: a.album.slice(0, 300), artist: String(a.artist || '').slice(0, 300) })).slice(0, 500),
+      };
+    }
     setOptions(next);
+    if (next.schedule) { planWindow(); if (!runner) startRunner(); pushQueue(); }
     if (next.cacheLimitGB !== undefined) await enforceCacheLimit(null);
     return { success: true, options: options(), cacheBytes: await cacheUsage() };
   });
 
   handle('telecloud-sync:clear-cache', async () => {
     const cleared = [];
+    const pinned = pinnedPaths(); // kept offline: stays
     for (const c of store.library.cached()) {
+      if (pinned.has(c.path)) continue;
       if (isInAppStorage(c.cache_path)) await fs.promises.rm(c.cache_path, { force: true }).catch(() => {});
       store.library.setCache(c.path, null);
       cleared.push(c.path);
@@ -1477,6 +1677,34 @@ function setupTeleCloudSyncHandlers() {
     startRunner();
     pushQueue();
   });
+
+  // New tracks in the music folders (Settings > TeleCloud Sync > Back up new tracks): each goes where its album
+  // already is, else where its folder's backed-up tracks are, else the storage picked for new tracks
+  require('../music').onTracksAdded((paths) => {
+    const o = options();
+    if (!o.autoBackup || !store.storages.all().length) return;
+    const fallback = store.storages.get(o.autoBackupStorage) || store.storages.default();
+    if (!fallback) return;
+    const byStorage = new Map();
+    for (const p of paths) {
+      if (p.startsWith('tc://') || isInAppStorage(p)) continue;
+      const row = store.library.row(p);
+      if (!row || row.telegram_message_id) continue;
+      const home = homeOf(row) || fallback;
+      if (!byStorage.has(home.id)) byStorage.set(home.id, []);
+      byStorage.get(home.id).push(p);
+    }
+    if (!byStorage.size) return;
+    for (const [id, list] of byStorage) store.queue.add(list, id);
+    const n = [...byStorage.values()].reduce((a, l) => a + l.length, 0);
+    console.log(`[TeleCloud] Backing up ${n} new ${n === 1 ? 'track' : 'tracks'} by itself (${[...byStorage.keys()].map(id => store.storages.get(id)?.title).join(', ')})`);
+    startRunner();
+    pushQueue();
+  });
+
+  // kept offline: anything a set still misses (after a restart, a restore, a cleared cache)
+  setTimeout(() => { if (Object.keys(offlineSets()).length) fetchOffline(); }, 20000).unref?.();
+  planWindow();
 
   cleanTemp().catch(() => {});
   // Telegram ends a sign-in nobody uses: connecting when the app opens (and twice a day while it stays open)

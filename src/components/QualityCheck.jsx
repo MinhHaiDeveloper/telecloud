@@ -116,7 +116,7 @@ export function QualityNotice() {
 
 /** Settings > Library */
 export function QualitySettings() {
-  const { qualityBackground, setQualityBackground } = useContext(SongActions);
+  const { qualityBackground, setQualityBackground, qualityCopySign, setQualityCopySign } = useContext(SongActions);
   const [sum, setSum] = useState(null);
   const status = useQualityStatus();
   useEffect(() => {
@@ -139,6 +139,9 @@ export function QualitySettings() {
         {sum && (qualityBackground || sum.checked > 0) && (
           <SettingRow icon="info" title={parts.join(' · ')} desc={t('Results take a few hundred bytes a track, in the library database. Filter a list by Worth a look to see them.')} muted />
         )}
+        <SettingRow icon="queue" title={t('Sign copied results')} desc={t('Copy as text in the Quality check window ends with “Checked with TeleCloud” and the website, so a forum post says where the numbers come from.')}>
+          <Toggle checked={qualityCopySign !== false} onChange={setQualityCopySign} />
+        </SettingRow>
       </div>
     </section>
   );

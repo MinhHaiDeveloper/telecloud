@@ -46,9 +46,18 @@ function buildCaption({ name, size, sha256, info, enc, master }) {
 //   "tcm1:<enc>"         the library manifest (all tags, lyrics, cover references)
 //   "tcc1:<key>:<enc>"   an album cover, shared by every track that uses it,
 //                        or an artist's GIF when the key starts with "g"
-// where <enc> is "p" (plain) or "e.<key fingerprint>.<iv>" (encrypted with the user's key)
+// where <enc> is "p" (plain) or "e.<key fingerprint>.<iv>" (encrypted with the user's key).
+// The manifest's checksum (sha256 of the gzipped index) follows after a space, " s.<sha256>", sealed with the key
+// (AES-GCM) when encrypted, so it cannot be changed without the key. Versions before 1.1.0-beta.18 read only the
+// first word and still read the manifest; manifests they wrote have no checksum and are read as before.
 const encPart = (iv, master) => (iv ? `e.${fingerprint(master)}.${iv}` : 'p');
-const buildManifestCaption = ({ iv, master }) => `tcm1:${encPart(iv, master)}`;
+const buildManifestCaption = ({ iv, master, sha256 }) => `tcm1:${encPart(iv, master)}${sha256 ? ` s.${iv ? sealJson(master, { sha256 }) : sha256}` : ''}`;
+/** The checksum in a manifest caption: null when there is none, 'invalid' when it was changed or sealed with another key */
+function manifestSha(sealed, encrypted, master) {
+  if (!sealed) return null;
+  if (!encrypted) return /^[0-9a-f]{64}$/.test(sealed) ? sealed : 'invalid';
+  try { return openJson(master, sealed).sha256 || 'invalid'; } catch { return 'invalid'; }
+}
 const buildCoverCaption = ({ key, iv, master }) => `tcc1:${key}:${encPart(iv, master)}`;
 
 function parseEnc(enc, master) {
@@ -65,8 +74,11 @@ function parseEnc(enc, master) {
  */
 function parseCaption(text, master) {
   const s = String(text || '');
-  const m = s.match(/^tcm1:(\S+)/);
-  if (m) return { ours: true, kind: 'manifest', ...parseEnc(m[1], master) };
+  const m = s.match(/^tcm1:(\S+)(?:\s+s\.(\S+))?/);
+  if (m) {
+    const enc = parseEnc(m[1], master);
+    return { ours: true, kind: 'manifest', ...enc, sha256: enc.needsKey || enc.wrongKey ? null : manifestSha(m[2], !!enc.iv, master) };
+  }
   const c = s.match(/^tcc1:(g?[0-9a-f]+):(\S+)/);
   if (c) return { ours: true, kind: 'cover', key: c[1], ...parseEnc(c[2], master) };
   return { kind: 'track', ...parseTrackCaption(s, master) };

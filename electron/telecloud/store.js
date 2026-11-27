@@ -57,7 +57,7 @@ function db() {
         PRIMARY KEY (storage_id, cover_key)
       );
     `);
-    for (const col of ['manifest_id INTEGER', 'manifest_at INTEGER', 'manifest_iv TEXT', 'config TEXT']) {
+    for (const col of ['manifest_id INTEGER', 'manifest_at INTEGER', 'manifest_iv TEXT', 'config TEXT', 'manifest_sha TEXT']) {
       try { d.exec(`ALTER TABLE storages ADD COLUMN ${col}`); } catch { /* already there */ }
     }
     // anything "uploading" when the app closed starts over
@@ -95,13 +95,14 @@ const storages = {
   /** Remember the newest manifest message seen in the chat */
   // The newest by time, not by number: a folder's numbers are random. The one this computer just wrote always
   // counts (force), even if another computer's clock runs ahead.
-  setManifest: (id, messageId, iv, at, force = false) => {
+  // sha: the manifest's checksum from its caption (null for one written before checksums)
+  setManifest: (id, messageId, iv, at, force = false, sha = null) => {
     const when = at || Date.now();
-    if (force) return db().prepare('UPDATE storages SET manifest_id = ?, manifest_iv = ?, manifest_at = ? WHERE id = ?').run(messageId, iv || null, when, id);
-    return db().prepare(`UPDATE storages SET manifest_id = ?, manifest_iv = ?, manifest_at = ? WHERE id = ?
-      AND (manifest_id IS NULL OR manifest_at IS NULL OR manifest_at < ? OR (manifest_at = ? AND manifest_id <= ?))`).run(messageId, iv || null, when, id, when, when, messageId);
+    if (force) return db().prepare('UPDATE storages SET manifest_id = ?, manifest_iv = ?, manifest_at = ?, manifest_sha = ? WHERE id = ?').run(messageId, iv || null, when, sha, id);
+    return db().prepare(`UPDATE storages SET manifest_id = ?, manifest_iv = ?, manifest_at = ?, manifest_sha = ? WHERE id = ?
+      AND (manifest_id IS NULL OR manifest_at IS NULL OR manifest_at < ? OR (manifest_at = ? AND manifest_id <= ?))`).run(messageId, iv || null, when, sha, id, when, when, messageId);
   },
-  clearManifest: (id) => db().prepare('UPDATE storages SET manifest_id = NULL, manifest_iv = NULL, manifest_at = NULL WHERE id = ?').run(id),
+  clearManifest: (id) => db().prepare('UPDATE storages SET manifest_id = NULL, manifest_iv = NULL, manifest_at = NULL, manifest_sha = NULL WHERE id = ?').run(id),
   clear: () => db().prepare('DELETE FROM storages').run(),
   count: () => db().prepare('SELECT COUNT(*) AS n FROM storages').get().n,
   setDefault: (id) => db().transaction(() => {
@@ -161,6 +162,8 @@ const queue = {
     db().transaction(() => paths.forEach(p => st.run(p, storageId, now, now)))();
   },
   next: () => db().prepare("SELECT * FROM upload_queue WHERE status = 'queued' ORDER BY added_at, path LIMIT 1").get(),
+  /** Every waiting backup, in the order they go (the upload schedule skips the ones held until later) */
+  queued: () => db().prepare("SELECT * FROM upload_queue WHERE status = 'queued' ORDER BY added_at, path").all(),
   set: (p, status, extra = {}) => db().prepare('UPDATE upload_queue SET status = ?, error = ?, attempts = attempts + ?, size = COALESCE(?, size), updated_at = ? WHERE path = ?')
     .run(status, extra.error || null, extra.attempt ? 1 : 0, extra.size ?? null, Date.now(), p),
   counts() {
@@ -194,6 +197,12 @@ const library = {
     // a cloud track is here now: its quality can be checked
     if (cachePath) { try { require('../qualityScan').schedule(); } catch { /* tests without Electron */ } }
   },
+  /** The storage most of an album's backed-up tracks are in (by album name and album artist, else artist) */
+  albumHome: (album, artist) => db().prepare(`SELECT telegram_channel_id AS peer, COUNT(*) AS n FROM music_files
+    WHERE telegram_message_id IS NOT NULL AND album = ? AND COALESCE(NULLIF(album_artist, ''), artist) = ?
+    GROUP BY telegram_channel_id ORDER BY n DESC LIMIT 1`).get(album, artist),
+  /** Backed-up tracks whose path starts with this (a folder), with their storage */
+  backedUpUnder: (prefix) => db().prepare("SELECT path, telegram_channel_id AS peer FROM music_files WHERE telegram_message_id IS NOT NULL AND substr(lower(path), 1, ?) = lower(?)").all(prefix.length, prefix),
   setCover: (p, key) => db().prepare('UPDATE music_files SET cloud_cover = ? WHERE path = ?').run(key, p),
   /** Backed-up local tracks of this chat that have no cloud cover recorded yet */
   withoutCover: (peerId) => db().prepare("SELECT path FROM music_files WHERE telegram_channel_id = ? AND storage_type = 'both' AND (cloud_cover IS NULL OR cloud_cover = '') AND path NOT LIKE 'tc://%'").all(String(peerId)).map(r => r.path),
@@ -233,7 +242,7 @@ const library = {
       d.prepare("DELETE FROM music_files WHERE storage_type = 'cloud' OR path LIKE 'tc://%'").run();
       d.prepare("UPDATE music_files SET storage_type = 'local', telegram_message_id = NULL, telegram_channel_id = NULL, cloud_checksum = NULL, cache_path = NULL, last_synced_at = NULL, cloud_cover = NULL").run();
       d.prepare('DELETE FROM cloud_covers').run();
-      d.prepare('UPDATE storages SET manifest_id = NULL, manifest_iv = NULL, manifest_at = NULL').run();
+      d.prepare('UPDATE storages SET manifest_id = NULL, manifest_iv = NULL, manifest_at = NULL, manifest_sha = NULL').run();
       d.prepare('DELETE FROM sync_state').run();
     })();
   },

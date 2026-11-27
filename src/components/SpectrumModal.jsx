@@ -249,7 +249,7 @@ const MasteringHelp = () => (
 );
 
 /** Both tabs as plain text, to paste in a forum or a chat. The file's location stays out. */
-function asText(file, q, result) {
+function asText(file, q, result, sign = true) {
   const m = file.metadata || {};
   const lines = [
     'TeleCloud Quality check',
@@ -268,6 +268,8 @@ function asText(file, q, result) {
     lines.push('', `${t('Mastering')}: ${masteringVerdict(result.mastering, dr).title}`);
     rows.forEach(x => lines.push(row(x)));
   }
+  // a line at the end saying where it comes from (Settings > Library > Quality check can leave it out)
+  if (sign) lines.push('', t('Checked with TeleCloud · {url}', { url: 'https://telecloud-music.pages.dev' }));
   return lines.join('\n');
 }
 
@@ -315,7 +317,7 @@ const QualityHelp = () => (
   </div>
 );
 
-const SpectrumModal = ({ file, onClose }) => {
+const SpectrumModal = ({ file, onClose, signCopy = true }) => {
   const canvasRef = useRef(null);
   const holesRef = useRef(null);
   const [result, setResult] = useState(null);
@@ -395,7 +397,7 @@ const SpectrumModal = ({ file, onClose }) => {
   const [title, detail] = v ? verdictText(v, result) : [];
   const nyq = result ? result.sampleRate / 2 : 0;
   const copy = async () => {
-    try { await navigator.clipboard.writeText(asText(file, q, result)); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* clipboard refused */ }
+    try { await navigator.clipboard.writeText(asText(file, q, result, signCopy)); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* clipboard refused */ }
   };
   const confidence = v && { high: t('High confidence'), medium: t('Medium confidence'), low: t('Low confidence') }[v.confidence];
 

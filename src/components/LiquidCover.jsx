@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Cover from './Cover';
 import { coverUrl } from '../utils/audio';
-import { motionOff, warm, warmCanvases, beginChange, runningChange, playCoverChange } from '../utils/liquid';
+import { motionOff, warm, warmCanvases, warmNowPlaying, beginChange, runningChange, playCoverChange } from '../utils/liquid';
 
 // A cover that floods into the next one when the album changes: a growing circle with a wobbling rim,
 // rings running through both pictures and the colours splitting at the rim, like paint dropped in water.
@@ -45,7 +45,7 @@ const LiquidCover = ({ file, className, coverKey, ...rest }) => {
     setRun(beginChange(was.url, url));
   }, [url, album]);
   // read the cover ahead, so the next change has it ready
-  useEffect(() => { if (url && !motionOff()) { warm(url); warmCanvases(); } }, [url]);
+  useEffect(() => { if (url && !motionOff()) { warm(url); warmCanvases(); warmNowPlaying(url); } }, [url]);
   return (
     <Cover key={coverKey} file={file} className={`${className || ''} ${run ? 'liquid-on' : ''}`} {...rest}>
       {run && <Liquid key={run.id} change={run} onDone={() => setRun(r => (r === run ? null : r))} />}
