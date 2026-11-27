@@ -59,6 +59,10 @@ scripts/release.js   build one channel into beta/ or release/
 Each box is a file or a folder; arrows are calls (solid) and messages between processes (dotted). Four processes run beside the app's own window: the TeleCloud worker, the background quality check, Cadence while it times a song, and mpv for playback.
 
 ```mermaid
+---
+config:
+  layout: elk
+---
 flowchart LR
   subgraph PAGE["Page (src/, sandboxed)"]
     direction TB
@@ -183,19 +187,30 @@ flowchart LR
   PHONE <-.-> REM
   REM -.->|remote:query| HQ
 
-  classDef page fill:#e8f0ff,stroke:#5b7fd6,color:#1d2a4a
-  classDef proc fill:#fff3e0,stroke:#e8a33d,color:#4a3210
-  classDef data fill:#e9f7ef,stroke:#3c9a5f,color:#173d26
-  classDef ext fill:#eef1f5,stroke:#8a94a6,color:#2b313c
-  classDef bridge fill:#f6e8ff,stroke:#9b5fd6,color:#35184f
+  %% Colours: soft tints and strong outlines, no text colour, so GitHub's light and dark themes both read well.
+  classDef page fill:#3b82f624,stroke:#3b82f6,stroke-width:1.5px
+  classDef proc fill:#f59e0b24,stroke:#f59e0b,stroke-width:1.5px
+  classDef data fill:#10b98124,stroke:#10b981,stroke-width:1.5px
+  classDef ext fill:#64748b24,stroke:#64748b,stroke-width:1.5px
+  classDef bridge fill:#a855f72e,stroke:#a855f7,stroke-width:1.5px
   class APP,VIEWS,NP,SET,EQV,QCV,LYV,HQ,I18N page
   class MPV,QW,CW,TW,ASIO,TMED proc
   class DB,TSTORE data
   class TG,FOLDER,LSRC,SVCS,GH,PHONE,AEQ ext
   class BRIDGE bridge
+  style PAGE fill:#ec48990f,stroke:#ec4899
+  style MAIN fill:#14b8a60a,stroke:#14b8a6
+  style LIB fill:#f973160f,stroke:#f97316
+  style PLAY fill:#06b6d40f,stroke:#06b6d4
+  style QUAL fill:#22c55e0f,stroke:#22c55e
+  style WORDS fill:#a855f70f,stroke:#a855f7
+  style ONLINE fill:#ef44440f,stroke:#ef4444
+  style TC fill:#eab3080f,stroke:#eab308
+  style PROCS fill:#3b82f60f,stroke:#3b82f6
+  style EXT fill:#84cc160f,stroke:#84cc16
 ```
 
-Colours: blue the page, purple the bridge, orange the other processes, green the databases, grey what is outside the computer.
+Colours: blue the page, purple the bridge, orange the other processes, green the databases, grey what is outside the computer; each group has a tint of its own. The colours are tints with no text colour set, so the diagram reads in GitHub's light and dark themes. The `layout: elk` line asks for the ELK layout; where a viewer doesn't have it, Mermaid uses its default layout.
 
 What the arrows carry, in short:
 
